@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "rivertrees.jpg",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}
