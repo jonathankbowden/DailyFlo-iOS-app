@@ -1,0 +1,9 @@
+// SupabaseConfig.xcconfig.example
+// Template for SupabaseConfig.xcconfig. Copy this file to SupabaseConfig.xcconfig
+// and fill in real values. The real file is gitignored; this example is committed.
+//
+// xcconfig parses two slashes as a comment, so `//` inside a URL must be
+// escaped as `/$()/`. The full URL still reaches Info.plist intact.
+
+SUPABASE_URL = https:/$()/YOUR_SUPABASE_URL
+SUPABASE_PUBLISHABLE_KEY = YOUR_PUBLISHABLE_KEY

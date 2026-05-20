@@ -6,8 +6,13 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		E83FA7812FBE25A100FC41E9 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = E83FA7802FBE25A100FC41E9 /* Supabase */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		E80A618F2F311F9A0046C0E9 /* DailyFlo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DailyFlo.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E83FA7822FBE26F400FC41E9 /* SupabaseConfig.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = SupabaseConfig.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -36,6 +41,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E83FA7812FBE25A100FC41E9 /* Supabase in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -45,6 +51,7 @@
 		E80A61862F311F9A0046C0E9 = {
 			isa = PBXGroup;
 			children = (
+				E83FA7822FBE26F400FC41E9 /* SupabaseConfig.xcconfig */,
 				E80A61912F311F9A0046C0E9 /* DailyFlo */,
 				E80A61902F311F9A0046C0E9 /* Products */,
 			);
@@ -78,6 +85,7 @@
 			);
 			name = DailyFlo;
 			packageProductDependencies = (
+				E83FA7802FBE25A100FC41E9 /* Supabase */,
 			);
 			productName = DailyFlo;
 			productReference = E80A618F2F311F9A0046C0E9 /* DailyFlo.app */;
@@ -107,6 +115,9 @@
 			);
 			mainGroup = E80A61862F311F9A0046C0E9;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				E83FA77F2FBE25A100FC41E9 /* XCRemoteSwiftPackageReference "supabase-swift" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = E80A61902F311F9A0046C0E9 /* Products */;
 			projectDirPath = "";
@@ -140,6 +151,7 @@
 /* Begin XCBuildConfiguration section */
 		E80A61982F311F9C0046C0E9 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = E83FA7822FBE26F400FC41E9 /* SupabaseConfig.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -205,6 +217,7 @@
 		};
 		E80A61992F311F9C0046C0E9 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = E83FA7822FBE26F400FC41E9 /* SupabaseConfig.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -263,9 +276,11 @@
 		};
 		E80A619B2F311F9C0046C0E9 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = E83FA7822FBE26F400FC41E9 /* SupabaseConfig.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = DailyFlo/DailyFlo.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 5;
 				DEVELOPMENT_TEAM = 52K77TR9W3;
@@ -296,9 +311,11 @@
 		};
 		E80A619C2F311F9C0046C0E9 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = E83FA7822FBE26F400FC41E9 /* SupabaseConfig.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = DailyFlo/DailyFlo.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 5;
 				DEVELOPMENT_TEAM = 52K77TR9W3;
@@ -349,6 +366,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		E83FA77F2FBE25A100FC41E9 /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/supabase/supabase-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.5.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		E83FA7802FBE25A100FC41E9 /* Supabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E83FA77F2FBE25A100FC41E9 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Supabase;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = E80A61872F311F9A0046C0E9 /* Project object */;
 }

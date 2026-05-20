@@ -14,5 +14,9 @@
 	<string>DailyFlo uses your microphone to transcribe voice journal entries.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>DailyFlo uses speech recognition to turn your spoken words into journal text.</string>
+	<key>SUPABASE_URL</key>
+	<string>$(SUPABASE_URL)</string>
+	<key>SUPABASE_PUBLISHABLE_KEY</key>
+	<string>$(SUPABASE_PUBLISHABLE_KEY)</string>
 </dict>
 </plist>
