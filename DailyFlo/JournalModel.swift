@@ -53,6 +53,35 @@ enum CoreEmotion: String, CaseIterable, Codable {
         case .guilty: return "mtns"
         }
     }
+
+    /// Canonical noun form expected by emotion_entries.primary_emotion CHECK
+    /// constraint (Chip Dodd's 8 Core Emotions). UI display strings stay in `rawValue`.
+    var databaseValue: String {
+        switch self {
+        case .glad: return "glad"
+        case .sad: return "sad"
+        case .angry: return "anger"
+        case .afraid: return "fear"
+        case .ashamed: return "shame"
+        case .hurt: return "hurt"
+        case .lonely: return "lonely"
+        case .guilty: return "guilt"
+        }
+    }
+
+    init?(databaseValue: String) {
+        switch databaseValue {
+        case "glad": self = .glad
+        case "sad": self = .sad
+        case "anger": self = .angry
+        case "fear": self = .afraid
+        case "shame": self = .ashamed
+        case "hurt": self = .hurt
+        case "lonely": self = .lonely
+        case "guilt": self = .guilty
+        default: return nil
+        }
+    }
 }
 
 // MARK: - Journal Entry

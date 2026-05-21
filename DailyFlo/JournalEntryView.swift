@@ -22,13 +22,9 @@ struct JournalEntryView: View {
     @State private var isSaving: Bool = false
     @State private var hasAppeared: Bool = false
     @State private var showVoiceEntry: Bool = false
+    @State private var showTextEntry: Bool = false
     @State private var selectedPhoto: PhotosPickerItem? = nil
     @State private var photoImage: UIImage? = nil
-    @FocusState private var focusedField: FocusField?
-
-    enum FocusField {
-        case title, body
-    }
 
     // Chip Dodd's eight core feelings
     private let feelings = ["Sad", "Anger", "Fear", "Hurt", "Lonely", "Shame", "Guilt", "Glad"]
@@ -80,7 +76,7 @@ struct JournalEntryView: View {
                 }
                 .padding(.bottom, 120)
             }
-            .dismissKeyboardOnTap()
+            .scrollDismissesKeyboard(.interactively)
 
             // Floating bottom buttons
             VStack {
@@ -106,6 +102,22 @@ struct JournalEntryView: View {
                 },
                 onDismiss: {
                     showVoiceEntry = false
+                }
+            )
+            .presentationDetents([.large])
+            .presentationDragIndicator(.hidden)
+        }
+        .sheet(isPresented: $showTextEntry) {
+            TextEntryView(
+                initialTitle: entryTitle,
+                initialBody: entryBody,
+                onComplete: { title, body in
+                    entryTitle = title
+                    entryBody = body
+                    showTextEntry = false
+                },
+                onDismiss: {
+                    showTextEntry = false
                 }
             )
             .presentationDetents([.large])
@@ -385,93 +397,46 @@ struct JournalEntryView: View {
     // MARK: - 4. Text Card
     private var textCard: some View {
         cardWrapper {
-            VStack(spacing: 0) {
-                Button(action: {
-                    FloHaptics.light()
-                    focusedField = entryTitle.isEmpty ? .title : .body
-                }) {
-                    HStack(spacing: FloSpacing.md) {
-                        ZStack {
-                            Circle()
-                                .fill(Color.floSage.opacity(0.12))
-                                .frame(width: 56, height: 56)
+            Button(action: {
+                FloHaptics.medium()
+                showTextEntry = true
+            }) {
+                HStack(spacing: FloSpacing.md) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.floSage.opacity(0.12))
+                            .frame(width: 56, height: 56)
 
-                            Image(systemName: "square.and.pencil")
-                                .font(.system(size: 24, weight: .medium))
-                                .foregroundColor(.floSage)
-                        }
-
-                        VStack(alignment: .leading, spacing: FloSpacing.xxs) {
-                            Text("WRITE IT DOWN")
-                                .font(.floLabel)
-                                .fontWeight(.bold)
-                                .foregroundColor(.floCharcoal)
-                                .tracking(1.5)
-
-                            Text(entryTitle.isEmpty && entryBody.isEmpty ? "Title and body text" : (entryTitle.isEmpty ? entryBody : entryTitle))
-                                .font(.floBodySmall)
-                                .foregroundColor(.floGray)
-                                .lineLimit(1)
-                        }
-
-                        Spacer()
-
-                        Image(systemName: focusedField != nil ? "chevron.down" : "chevron.right")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundColor(.floGray.opacity(0.5))
+                        Image(systemName: "square.and.pencil")
+                            .font(.system(size: 24, weight: .medium))
+                            .foregroundColor(.floSage)
                     }
-                    .padding(FloSpacing.lg)
-                }
-                .buttonStyle(.floPressed)
 
-                // Expandable text fields
-                if focusedField != nil || !entryTitle.isEmpty || !entryBody.isEmpty {
-                    VStack(alignment: .leading, spacing: 0) {
-                        FloDivider(color: Color.floGray.opacity(0.1))
-                            .padding(.horizontal, FloSpacing.lg)
-
-                        TextField("ENTRY TITLE", text: $entryTitle)
+                    VStack(alignment: .leading, spacing: FloSpacing.xxs) {
+                        Text("WRITE IT DOWN")
                             .font(.floLabel)
-                            .fontWeight(.semibold)
+                            .fontWeight(.bold)
                             .foregroundColor(.floCharcoal)
-                            .tracking(1)
-                            .padding(.horizontal, FloSpacing.lg)
-                            .padding(.vertical, FloSpacing.md)
-                            .focused($focusedField, equals: .title)
-                            .submitLabel(.next)
-                            .onSubmit { focusedField = .body }
-                            .accessibilityLabel("Journal entry title")
+                            .tracking(1.5)
 
-                        FloDivider(color: Color.floGray.opacity(0.1))
-                            .padding(.horizontal, FloSpacing.lg)
-
-                        ZStack(alignment: .topLeading) {
-                            if entryBody.isEmpty {
-                                Text("Start typing here...")
-                                    .font(.floBodyMedium)
-                                    .foregroundColor(.floGray)
-                                    .padding(.top, FloSpacing.md + 8)
-                                    .padding(.horizontal, FloSpacing.lg)
-                                    .allowsHitTesting(false)
-                            }
-
-                            TextEditor(text: $entryBody)
-                                .font(.floBodyMedium)
-                                .foregroundColor(.floCharcoal)
-                                .frame(minHeight: 140)
-                                .scrollContentBackground(.hidden)
-                                .background(Color.clear)
-                                .padding(.horizontal, FloSpacing.md)
-                                .padding(.top, FloSpacing.sm)
-                                .focused($focusedField, equals: .body)
-                                .accessibilityLabel("Journal entry content")
-                        }
+                        Text(entryTitle.isEmpty && entryBody.isEmpty ? "Title and body text" : (entryTitle.isEmpty ? entryBody : entryTitle))
+                            .font(.floBodySmall)
+                            .foregroundColor(.floGray)
+                            .lineLimit(1)
                     }
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.floGray.opacity(0.5))
                 }
+                .padding(FloSpacing.lg)
             }
+            .buttonStyle(.floPressed)
         }
-        .animation(FloAnimation.springSnappy, value: focusedField != nil || !entryTitle.isEmpty || !entryBody.isEmpty)
+        .accessibilityLabel("Write it down")
+        .accessibilityHint("Opens title and body text fields")
     }
 
     // MARK: - Floating Bottom Buttons
@@ -498,8 +463,8 @@ struct JournalEntryView: View {
                     .shadow(color: Color.black.opacity(0.15), radius: 8, x: 0, y: 4)
                 }
                 .buttonStyle(.floPressed)
-                .disabled(isSaving || (entryTitle.isEmpty && entryBody.isEmpty))
-                .opacity((entryTitle.isEmpty && entryBody.isEmpty) ? 0.5 : 1.0)
+                .disabled(isSaving || !canSave)
+                .opacity(canSave ? 1.0 : 0.5)
                 .accessibilityLabel("Save entry")
 
                 // Share button
@@ -547,12 +512,18 @@ struct JournalEntryView: View {
                         endPoint: .init(x: 0.5, y: 0.4)
                     )
                 )
+                .allowsHitTesting(false)
         )
+    }
+
+    // MARK: - Save gate
+    private var canSave: Bool {
+        selectedFeeling != nil || !entryTitle.isEmpty || !entryBody.isEmpty
     }
 
     // MARK: - Actions
     private func saveEntry() {
-        guard !entryTitle.isEmpty || !entryBody.isEmpty else { return }
+        guard canSave else { return }
 
         FloHaptics.light()
         isSaving = true
@@ -582,6 +553,159 @@ struct JournalEntryView: View {
             isSaving = false
             FloHaptics.success()
             onDismiss()
+        }
+    }
+}
+
+// MARK: - Text Entry Drawer
+/// A full-screen sheet for writing a journal entry's title and body. Mirrors
+/// the voice entry flow so both modalities feel parallel.
+struct TextEntryView: View {
+    let initialTitle: String
+    let initialBody: String
+    var onComplete: (_ title: String, _ body: String) -> Void
+    var onDismiss: () -> Void
+
+    @State private var title: String = ""
+    @State private var bodyText: String = ""
+    @State private var hasAppeared: Bool = false
+    @FocusState private var focused: Field?
+
+    enum Field {
+        case title, body
+    }
+
+    var body: some View {
+        ZStack {
+            Color.floCream.ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                // Drag indicator
+                HStack {
+                    Spacer()
+                    Capsule()
+                        .fill(Color.floGray.opacity(0.3))
+                        .frame(width: 36, height: 5)
+                    Spacer()
+                }
+                .padding(.top, FloSpacing.sm)
+                .padding(.bottom, FloSpacing.md)
+
+                // Header
+                Text("Write it down")
+                    .font(.floSerif(size: 28))
+                    .foregroundColor(.floCharcoal)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, FloSpacing.lg)
+                    .padding(.bottom, FloSpacing.lg)
+                    .accessibilityAddTraits(.isHeader)
+
+                // Title field
+                TextField("Title", text: $title)
+                    .font(.floLabel)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.floCharcoal)
+                    .tracking(1)
+                    .padding(.horizontal, FloSpacing.lg)
+                    .padding(.vertical, FloSpacing.md)
+                    .background(Color.white)
+                    .cornerRadius(FloRadius.md)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: FloRadius.md)
+                            .stroke(
+                                focused == .title ? Color.floSage : Color.floGray.opacity(0.3),
+                                lineWidth: focused == .title ? 2 : 1
+                            )
+                    )
+                    .focused($focused, equals: .title)
+                    .submitLabel(.next)
+                    .onSubmit { focused = .body }
+                    .padding(.horizontal, FloSpacing.lg)
+                    .animation(FloAnimation.easeOutQuick, value: focused)
+                    .accessibilityLabel("Journal entry title")
+
+                // Body editor
+                ZStack(alignment: .topLeading) {
+                    if bodyText.isEmpty {
+                        Text("Start typing here...")
+                            .font(.floBodyMedium)
+                            .foregroundColor(.floGray)
+                            .padding(.top, FloSpacing.md + 4)
+                            .padding(.horizontal, FloSpacing.lg + 4)
+                            .allowsHitTesting(false)
+                    }
+
+                    TextEditor(text: $bodyText)
+                        .font(.floBodyMedium)
+                        .foregroundColor(.floCharcoal)
+                        .scrollContentBackground(.hidden)
+                        .padding(.horizontal, FloSpacing.md)
+                        .padding(.vertical, FloSpacing.sm)
+                        .focused($focused, equals: .body)
+                        .accessibilityLabel("Journal entry content")
+                }
+                .background(Color.white)
+                .cornerRadius(FloRadius.md)
+                .overlay(
+                    RoundedRectangle(cornerRadius: FloRadius.md)
+                        .stroke(
+                            focused == .body ? Color.floSage : Color.floGray.opacity(0.3),
+                            lineWidth: focused == .body ? 2 : 1
+                        )
+                )
+                .padding(.horizontal, FloSpacing.lg)
+                .padding(.top, FloSpacing.md)
+                .animation(FloAnimation.easeOutQuick, value: focused)
+
+                Spacer(minLength: FloSpacing.lg)
+
+                // Bottom actions
+                HStack(spacing: FloSpacing.md) {
+                    Button(action: {
+                        FloHaptics.light()
+                        onDismiss()
+                    }) {
+                        Text("Cancel")
+                            .font(.floButton)
+                            .foregroundColor(.floGray)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, FloSpacing.md)
+                            .background(Color.white)
+                            .cornerRadius(FloRadius.full)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: FloRadius.full)
+                                    .stroke(Color.floGray.opacity(0.3), lineWidth: 1)
+                            )
+                    }
+                    .buttonStyle(.floPressed)
+
+                    Button(action: {
+                        FloHaptics.success()
+                        onComplete(title, bodyText)
+                    }) {
+                        Text("Done")
+                            .font(.floButton)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, FloSpacing.md)
+                            .background(Color.floSage)
+                            .cornerRadius(FloRadius.full)
+                            .shadow(color: Color.floSage.opacity(0.3), radius: 8, x: 0, y: 4)
+                    }
+                    .buttonStyle(.floPressed)
+                }
+                .padding(.horizontal, FloSpacing.lg)
+                .padding(.bottom, FloSpacing.xl)
+            }
+        }
+        .onAppear {
+            title = initialTitle
+            bodyText = initialBody
+            // Defer focus until the sheet finishes mounting.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                focused = .title
+                hasAppeared = true
+            }
         }
     }
 }
