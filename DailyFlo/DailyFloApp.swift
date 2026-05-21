@@ -122,9 +122,14 @@ struct DailyFloApp: App {
                     }
                 }
             case .signedOut, .userDeleted:
-                if appState != .signIn {
+                // Route to whichever state the user belongs in given current
+                // local flags. After the in-app "Reset" wipes UserDefaults,
+                // hasCompletedOnboarding is false and we land at onboarding;
+                // otherwise we land at sign-in.
+                let target: AppState = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding") ? .signIn : .onboarding
+                if appState != target {
                     withAnimation(.easeInOut(duration: 0.5)) {
-                        appState = .signIn
+                        appState = target
                     }
                 }
             case .tokenRefreshed, .passwordRecovery, .userUpdated, .mfaChallengeVerified:

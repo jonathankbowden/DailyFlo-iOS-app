@@ -30,7 +30,7 @@ struct OnboardingView: View {
     @Binding var isOnboardingComplete: Bool
     @State private var currentPage = 0
     @State private var userName = ""
-    @State private var birthDate = Date()
+    @State private var birthDate: Date = Calendar.current.date(byAdding: .year, value: -18, to: Date()) ?? Date()
     @State private var lastPeriodDate = Date()
     @State private var cycleLength = 28
     @State private var periodLength = 5
@@ -56,27 +56,34 @@ struct OnboardingView: View {
         ),
         OnboardingPage(
             id: 2,
+            title: "When were you\nborn?",
+            subtitle: "DailyFlo is for ages 13 and up.",
+            imageName: nil,
+            inputType: .datePicker
+        ),
+        OnboardingPage(
+            id: 3,
             title: "When did your\nlast period start?",
             subtitle: "This helps us calculate your cycle phases.",
             imageName: nil,
             inputType: .datePicker
         ),
         OnboardingPage(
-            id: 3,
+            id: 4,
             title: "How long is your\ntypical cycle?",
             subtitle: "From the first day of one period to the first day of the next.",
             imageName: nil,
             inputType: .numberPicker(range: 21...35, unit: "days")
         ),
         OnboardingPage(
-            id: 4,
+            id: 5,
             title: "How many days does\nyour period last?",
             subtitle: "This helps us track your menstrual phase.",
             imageName: nil,
             inputType: .numberPicker(range: 3...7, unit: "days")
         ),
         OnboardingPage(
-            id: 5,
+            id: 6,
             title: "What are your\nwellness goals?",
             subtitle: "Select all that apply.",
             imageName: nil,
@@ -90,7 +97,7 @@ struct OnboardingView: View {
             ])
         ),
         OnboardingPage(
-            id: 6,
+            id: 7,
             title: "Any symptoms you'd\nlike to track?",
             subtitle: "We'll remind you to log these.",
             imageName: nil,
@@ -106,20 +113,26 @@ struct OnboardingView: View {
             ])
         ),
         OnboardingPage(
-            id: 7,
+            id: 8,
             title: "Your Four Phases",
             subtitle: "Your cycle has 4 distinct phases, each with unique characteristics.",
             imageName: nil,
             inputType: .none
         ),
         OnboardingPage(
-            id: 8,
+            id: 9,
             title: "You're all set!",
             subtitle: "Let's begin your journey to cycle-synced living.",
             imageName: nil,
             inputType: .none
         )
     ]
+
+    /// Age in whole years, used for the 13+ gate on page 2.
+    private var ageInYears: Int {
+        let comps = Calendar.current.dateComponents([.year], from: birthDate, to: Date())
+        return comps.year ?? 0
+    }
 
     var body: some View {
         ZStack {
@@ -226,8 +239,14 @@ struct OnboardingView: View {
         switch pages[currentPage].inputType {
         case .textField:
             return !userName.trimmingCharacters(in: .whitespaces).isEmpty
+        case .datePicker:
+            // Birth-date page enforces the 13+ gate. Last-period page (id 3) is unrestricted.
+            if currentPage == 2 {
+                return ageInYears >= 13
+            }
+            return true
         case .multiSelect:
-            if currentPage == 5 {
+            if currentPage == 6 {
                 return !selectedGoals.isEmpty
             }
             return true // Symptoms are optional
@@ -278,14 +297,19 @@ struct OnboardingView: View {
     private func completeOnboarding() {
         FloHaptics.success()
 
-        // Save user preferences to UserDefaults
+        // Save user preferences to UserDefaults. These also serve as the local
+        // cache for CycleManager / ProfileMainView. The pending flag tells
+        // CycleManager's auth observer to upsert this payload to Supabase the
+        // moment the user actually signs in.
         UserDefaults.standard.set(userName.trimmingCharacters(in: .whitespaces), forKey: "userName")
+        UserDefaults.standard.set(birthDate, forKey: "birthDate")
         UserDefaults.standard.set(lastPeriodDate, forKey: "lastPeriodDate")
         UserDefaults.standard.set(cycleLength, forKey: "cycleLength")
         UserDefaults.standard.set(periodLength, forKey: "periodLength")
         UserDefaults.standard.set(Array(selectedGoals), forKey: "selectedGoals")
         UserDefaults.standard.set(Array(selectedSymptoms), forKey: "selectedSymptoms")
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
+        UserDefaults.standard.set(true, forKey: "pendingOnboardingPayload")
 
         withAnimation(FloAnimation.easeOutMedium) {
             isOnboardingComplete = true
@@ -308,6 +332,12 @@ struct OnboardingPageView: View {
     @FocusState private var isTextFieldFocused: Bool
     @State private var hasAppeared = false
 
+    /// True when the entered birth date implies an age under 13.
+    private var ageGateFailed: Bool {
+        let comps = Calendar.current.dateComponents([.year], from: birthDate, to: Date())
+        return (comps.year ?? 0) < 13
+    }
+
     var body: some View {
         VStack(spacing: FloSpacing.xl) {
             Spacer()
@@ -316,10 +346,10 @@ struct OnboardingPageView: View {
             if page.id == 0 {
                 welcomeElement
                     .scaleFadeIn(delay: hasAppeared ? 0 : 0.1, from: 0.85)
-            } else if page.id == 7 {
+            } else if page.id == 8 {
                 phaseOverviewElement
                     .scaleFadeIn(delay: hasAppeared ? 0 : 0.1, from: 0.95)
-            } else if page.id == 8 {
+            } else if page.id == 9 {
                 completionElement
                     .scaleFadeIn(delay: hasAppeared ? 0 : 0.1, from: 0.85)
             }
@@ -491,18 +521,28 @@ struct OnboardingPageView: View {
             VStack(spacing: FloSpacing.md) {
                 DatePicker(
                     "",
-                    selection: page.id == 2 ? $lastPeriodDate : $birthDate,
+                    selection: page.id == 2 ? $birthDate : $lastPeriodDate,
                     in: ...Date(),
                     displayedComponents: .date
                 )
                 .datePickerStyle(.wheel)
                 .labelsHidden()
-                .accessibilityLabel(page.id == 2 ? "Last period start date" : "Birth date")
+                .accessibilityLabel(page.id == 2 ? "Birth date" : "Last period start date")
+
+                if showValidationError, page.id == 2, ageGateFailed {
+                    Text("DailyFlo is for ages 13 and up. Please double-check the date you entered.")
+                        .font(.floCaption)
+                        .foregroundColor(.floError)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, FloSpacing.lg)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
             }
+            .animation(FloAnimation.easeOutQuick, value: showValidationError)
 
         case .numberPicker(let range, let unit):
             VStack(spacing: FloSpacing.md) {
-                Picker("", selection: page.id == 3 ? $cycleLength : $periodLength) {
+                Picker("", selection: page.id == 4 ? $cycleLength : $periodLength) {
                     ForEach(range, id: \.self) { num in
                         Text("\(num) \(unit)")
                             .tag(num)
@@ -510,7 +550,7 @@ struct OnboardingPageView: View {
                 }
                 .pickerStyle(.wheel)
                 .frame(height: 150)
-                .accessibilityLabel(page.id == 3 ? "Cycle length in days" : "Period length in days")
+                .accessibilityLabel(page.id == 4 ? "Cycle length in days" : "Period length in days")
             }
 
         case .multiSelect(let options):
@@ -519,11 +559,11 @@ struct OnboardingPageView: View {
                     ForEach(Array(options.enumerated()), id: \.element) { index, option in
                         MultiSelectButton(
                             title: option,
-                            isSelected: page.id == 5 ? selectedGoals.contains(option) : selectedSymptoms.contains(option),
+                            isSelected: page.id == 6 ? selectedGoals.contains(option) : selectedSymptoms.contains(option),
                             action: {
                                 FloHaptics.selection()
                                 withAnimation(FloAnimation.springSnappy) {
-                                    if page.id == 5 {
+                                    if page.id == 6 {
                                         if selectedGoals.contains(option) {
                                             selectedGoals.remove(option)
                                         } else {
@@ -543,7 +583,7 @@ struct OnboardingPageView: View {
                     }
                 }
 
-                if showValidationError && page.id == 5 && selectedGoals.isEmpty {
+                if showValidationError && page.id == 6 && selectedGoals.isEmpty {
                     Text("Please select at least one goal")
                         .font(.floCaption)
                         .foregroundColor(.floError)

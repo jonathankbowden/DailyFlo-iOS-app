@@ -15,8 +15,10 @@ struct ProfileMainView: View {
     @State private var showConnect = false
     @State private var showAccountSettings = false
     @State private var showSignOutConfirm = false
+    @State private var showResetConfirm = false
     @State private var showComingSoon = false
     @State private var isSigningOut = false
+    @State private var isResetting = false
     @State private var signOutErrorMessage: String?
 
     @State private var profile: UserProfileRow?
@@ -110,6 +112,12 @@ struct ProfileMainView: View {
         } message: {
             Text("You'll need to sign in again to access your cycle and journal.")
         }
+        .alert("Reset DailyFLO?", isPresented: $showResetConfirm) {
+            Button("Reset", role: .destructive) { performReset() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("You'll be signed out, all local data will be wiped, and you'll go through onboarding again. Your cloud account is preserved — sign in to restore your data.")
+        }
         .overlay(alignment: .bottom) {
             if let message = signOutErrorMessage {
                 Text(message)
@@ -154,6 +162,36 @@ struct ProfileMainView: View {
             await MainActor.run {
                 profileLoadFailed = true
                 isLoadingProfile = false
+            }
+        }
+    }
+
+    // MARK: - Reset (wipe local data + sign out)
+    private func performReset() {
+        guard !isResetting else { return }
+        FloHaptics.medium()
+        isResetting = true
+
+        // Wipe the entire app's UserDefaults domain. This clears everything we
+        // store locally (onboarding flags, cycle cache, journal cache, etc) in
+        // one shot. Supabase Auth uses Keychain, not UserDefaults, so the
+        // separate signOut() below is what actually invalidates the session.
+        if let bundleID = Bundle.main.bundleIdentifier {
+            UserDefaults.standard.removePersistentDomain(forName: bundleID)
+        }
+
+        Task { @MainActor in
+            defer { isResetting = false }
+            do {
+                try await SupabaseClient.shared.auth.signOut()
+                // App-level auth observer routes to onboarding because
+                // hasCompletedOnboarding was just wiped.
+            } catch {
+                FloHaptics.error()
+                signOutErrorMessage = "Reset finished locally, but sign-out failed. \(error.localizedDescription)"
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                    withAnimation { signOutErrorMessage = nil }
+                }
             }
         }
     }
@@ -480,19 +518,19 @@ struct ProfileMainView: View {
             .accessibilityLabel("Sign out")
             .accessibilityHint("Sign out of your DailyFLO account")
 
-            // Reset onboarding (for demo/testing)
+            // Reset app & onboarding
             Button(action: {
-                FloHaptics.medium()
-                UserDefaults.standard.set(false, forKey: "hasCompletedOnboarding")
-                UserDefaults.standard.removeObject(forKey: "userName")
-                UserDefaults.standard.removeObject(forKey: "journal_entries")
-                // Force restart on next launch
-                exit(0)
+                FloHaptics.light()
+                showResetConfirm = true
             }) {
                 HStack {
-                    Image(systemName: "arrow.counterclockwise.circle")
-                        .font(.system(size: 20))
-                        .foregroundColor(.floGray)
+                    if isResetting {
+                        FloLoadingIndicator(size: 18, color: .floGray, lineWidth: 2)
+                    } else {
+                        Image(systemName: "arrow.counterclockwise.circle")
+                            .font(.system(size: 20))
+                            .foregroundColor(.floGray)
+                    }
 
                     Text("Reset App & Onboarding")
                         .font(.floBodyMedium)
@@ -514,7 +552,10 @@ struct ProfileMainView: View {
                 .cornerRadius(FloRadius.lg)
             }
             .buttonStyle(.floPressed)
+            .disabled(isResetting)
             .fadeIn(delay: hasAppeared ? 0 : 0.55)
+            .accessibilityLabel("Reset app and onboarding")
+            .accessibilityHint("Signs you out and wipes local data so you can start over")
 
             // Version info
             Text("DailyFlo v1.0")

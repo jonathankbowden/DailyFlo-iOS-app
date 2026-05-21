@@ -5,15 +5,49 @@
 //  Created by Jonathan Bowden on 3/10/26.
 //
 
+import Foundation
+import Supabase
 import SwiftUI
 
 // MARK: - Cycle Manager
-/// Central source of truth for cycle calculations using real onboarding data.
+/// Central source of truth for cycle calculations.
+///
+/// Persistence model: Supabase `profiles` (display_name, birth_date, defaults)
+/// and `cycles` (start_date of latest cycle) are authoritative; UserDefaults is
+/// the local cache so the read API stays synchronous and survives offline use.
+///
+/// Reads are unchanged — every property still reads from UserDefaults under the
+/// hood. The new behavior is on sign-in:
+///   1. If a `pendingOnboardingPayload` flag is set (from the most recent
+///      onboarding flow), UPSERT the profile and INSERT an initial cycles row,
+///      then clear the flag. UPSERT is required because the `handle_new_user`
+///      trigger on auth.users inserts a placeholder profile on signup, and we
+///      need to overwrite display_name + birth_date.
+///   2. Refresh from the server: pull the profile + latest cycle and write
+///      them through to UserDefaults so views see fresh data.
 @Observable
 class CycleManager {
     static let shared = CycleManager()
 
-    // MARK: - User Cycle Data (from onboarding)
+    private let profilesTable = "profiles"
+    private let cyclesTable = "cycles"
+
+    private static let dbDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .iso8601)
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = .current
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
+    init() {
+        Task { @MainActor in
+            await observeAuthState()
+        }
+    }
+
+    // MARK: - User Cycle Data (cached in UserDefaults)
     var lastPeriodDate: Date {
         UserDefaults.standard.object(forKey: "lastPeriodDate") as? Date ?? Date()
     }
@@ -30,6 +64,10 @@ class CycleManager {
 
     var userName: String {
         UserDefaults.standard.string(forKey: "userName") ?? "Friend"
+    }
+
+    var birthDate: Date? {
+        UserDefaults.standard.object(forKey: "birthDate") as? Date
     }
 
     // MARK: - Phase Boundaries (proportional to cycle length)
@@ -210,6 +248,229 @@ class CycleManager {
             }
         }
         return starts
+    }
+
+    // MARK: - Auth observation
+
+    @MainActor
+    private func observeAuthState() async {
+        for await (event, session) in SupabaseClient.shared.auth.authStateChanges {
+            switch event {
+            case .initialSession, .signedIn:
+                guard let session else { break }
+                await pushPendingOnboardingIfNeeded(userId: session.user.id)
+                await refresh(userId: session.user.id)
+            case .signedOut, .userDeleted:
+                clearLocalCache()
+            default:
+                break
+            }
+        }
+    }
+
+    // MARK: - Push pending onboarding payload (one-shot, post-sign-in fixup)
+
+    @MainActor
+    private func pushPendingOnboardingIfNeeded(userId: UUID) async {
+        guard UserDefaults.standard.bool(forKey: "pendingOnboardingPayload") else { return }
+
+        let pendingName = (UserDefaults.standard.string(forKey: "userName") ?? "").trimmingCharacters(in: .whitespaces)
+        let pendingBirth = UserDefaults.standard.object(forKey: "birthDate") as? Date
+        let pendingLastPeriod = UserDefaults.standard.object(forKey: "lastPeriodDate") as? Date ?? Date()
+        let storedCycle = UserDefaults.standard.integer(forKey: "cycleLength")
+        let storedPeriod = UserDefaults.standard.integer(forKey: "periodLength")
+        let pendingCycleLength = storedCycle > 0 ? storedCycle.clamped(to: 21...45) : 28
+        let pendingPeriodLength = storedPeriod > 0 ? storedPeriod.clamped(to: 2...10) : 5
+
+        guard let birth = pendingBirth else {
+            print("[CycleManager] pendingOnboardingPayload: birthDate missing — refusing to upsert")
+            return
+        }
+        guard !pendingName.isEmpty else {
+            print("[CycleManager] pendingOnboardingPayload: display name missing — refusing to upsert")
+            return
+        }
+
+        let profileRow = ProfileUpsertRow(
+            userId: userId,
+            displayName: pendingName,
+            birthDate: Self.dbDateFormatter.string(from: birth),
+            timezone: TimeZone.current.identifier,
+            defaultCycleLengthDays: pendingCycleLength,
+            defaultPeriodLengthDays: pendingPeriodLength,
+            onboardingCompletedAt: ISO8601DateFormatter().string(from: Date())
+        )
+
+        do {
+            try await SupabaseClient.shared
+                .from(profilesTable)
+                .upsert(profileRow, onConflict: "user_id")
+                .execute()
+            print("[CycleManager] profile upsert OK for user \(userId)")
+        } catch {
+            logRemoteError(operation: "profile upsert", error: error)
+            // Don't clear the flag — we want to retry next launch.
+            return
+        }
+
+        let predictedEnd = Calendar.current.date(byAdding: .day, value: pendingCycleLength, to: pendingLastPeriod) ?? pendingLastPeriod
+        let cycleRow = CycleInsertRow(
+            userId: userId,
+            startDate: Self.dbDateFormatter.string(from: pendingLastPeriod),
+            predictedEndDate: Self.dbDateFormatter.string(from: predictedEnd),
+            periodLengthDays: pendingPeriodLength,
+            isPredicted: true
+        )
+
+        do {
+            try await SupabaseClient.shared
+                .from(cyclesTable)
+                .insert(cycleRow)
+                .execute()
+            print("[CycleManager] initial cycle insert OK for user \(userId)")
+        } catch {
+            logRemoteError(operation: "initial cycle insert", error: error)
+            // Profile upsert already succeeded; we don't want to keep retrying
+            // the upsert. Clear the flag anyway and let the user log a cycle
+            // manually if needed.
+        }
+
+        UserDefaults.standard.set(false, forKey: "pendingOnboardingPayload")
+    }
+
+    // MARK: - Refresh from Supabase
+
+    /// Pulls the signed-in user's profile + most recent cycle and writes them
+    /// through to UserDefaults so the synchronous read API sees fresh data.
+    @MainActor
+    func refresh(userId: UUID) async {
+        do {
+            let profile: ProfileFetchRow = try await SupabaseClient.shared
+                .from(profilesTable)
+                .select("display_name, birth_date, default_cycle_length_days, default_period_length_days")
+                .eq("user_id", value: userId)
+                .single()
+                .execute()
+                .value
+
+            apply(profile: profile)
+        } catch {
+            logRemoteError(operation: "profile fetch", error: error)
+        }
+
+        do {
+            let cycles: [CycleFetchRow] = try await SupabaseClient.shared
+                .from(cyclesTable)
+                .select("start_date")
+                .eq("user_id", value: userId)
+                .filter("deleted_at", operator: "is", value: "null")
+                .order("start_date", ascending: false)
+                .limit(1)
+                .execute()
+                .value
+
+            if let mostRecent = cycles.first,
+               let date = Self.dbDateFormatter.date(from: mostRecent.startDate) {
+                UserDefaults.standard.set(date, forKey: "lastPeriodDate")
+            }
+        } catch {
+            logRemoteError(operation: "latest cycle fetch", error: error)
+        }
+    }
+
+    private func apply(profile: ProfileFetchRow) {
+        if !profile.displayName.isEmpty {
+            UserDefaults.standard.set(profile.displayName, forKey: "userName")
+        }
+        if let birthDateString = profile.birthDate,
+           let bd = Self.dbDateFormatter.date(from: birthDateString) {
+            UserDefaults.standard.set(bd, forKey: "birthDate")
+        }
+        if let cl = profile.defaultCycleLengthDays {
+            UserDefaults.standard.set(cl.clamped(to: 21...45), forKey: "cycleLength")
+        }
+        if let pl = profile.defaultPeriodLengthDays {
+            UserDefaults.standard.set(pl.clamped(to: 2...10), forKey: "periodLength")
+        }
+    }
+
+    // MARK: - Cache lifecycle
+
+    private func clearLocalCache() {
+        for key in ["userName", "birthDate", "lastPeriodDate", "cycleLength", "periodLength"] {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+    }
+
+    private func logRemoteError(operation: String, error: Error) {
+        if let pg = error as? PostgrestError {
+            print("[CycleManager] \(operation) failed — PostgrestError code=\(pg.code ?? "nil") message=\"\(pg.message)\" detail=\(pg.detail ?? "nil") hint=\(pg.hint ?? "nil")")
+        } else if let http = error as? HTTPError {
+            let body = String(data: http.data, encoding: .utf8) ?? "<non-utf8 body>"
+            print("[CycleManager] \(operation) failed — HTTP \(http.response.statusCode): \(body)")
+        } else {
+            print("[CycleManager] \(operation) failed — \(type(of: error)): \(error.localizedDescription)")
+        }
+    }
+}
+
+// MARK: - DB row representations
+
+private struct ProfileUpsertRow: Encodable {
+    let userId: UUID
+    let displayName: String
+    let birthDate: String              // "yyyy-MM-dd"
+    let timezone: String
+    let defaultCycleLengthDays: Int
+    let defaultPeriodLengthDays: Int
+    let onboardingCompletedAt: String  // ISO 8601 timestamp
+
+    enum CodingKeys: String, CodingKey {
+        case userId = "user_id"
+        case displayName = "display_name"
+        case birthDate = "birth_date"
+        case timezone
+        case defaultCycleLengthDays = "default_cycle_length_days"
+        case defaultPeriodLengthDays = "default_period_length_days"
+        case onboardingCompletedAt = "onboarding_completed_at"
+    }
+}
+
+private struct CycleInsertRow: Encodable {
+    let userId: UUID
+    let startDate: String         // "yyyy-MM-dd"
+    let predictedEndDate: String  // "yyyy-MM-dd"
+    let periodLengthDays: Int
+    let isPredicted: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case userId = "user_id"
+        case startDate = "start_date"
+        case predictedEndDate = "predicted_end_date"
+        case periodLengthDays = "period_length_days"
+        case isPredicted = "is_predicted"
+    }
+}
+
+private struct ProfileFetchRow: Decodable {
+    let displayName: String
+    let birthDate: String?
+    let defaultCycleLengthDays: Int?
+    let defaultPeriodLengthDays: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case displayName = "display_name"
+        case birthDate = "birth_date"
+        case defaultCycleLengthDays = "default_cycle_length_days"
+        case defaultPeriodLengthDays = "default_period_length_days"
+    }
+}
+
+private struct CycleFetchRow: Decodable {
+    let startDate: String
+
+    enum CodingKeys: String, CodingKey {
+        case startDate = "start_date"
     }
 }
 
