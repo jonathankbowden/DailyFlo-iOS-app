@@ -2,14 +2,18 @@
 //  SignInView.swift
 //  DailyFlo
 //
-//  Created by Jonathan Bowden on 2/3/26.
+//  Patreon-style: social providers first, email + password below.
 //
 
-import SwiftUI
 import AuthenticationServices
+import CryptoKit
+import Foundation
+import Supabase
+import SwiftUI
 
 struct SignInView: View {
     @Binding var isSignedIn: Bool
+
     @State private var email = ""
     @State private var password = ""
     @State private var isShowingPassword = false
@@ -17,6 +21,8 @@ struct SignInView: View {
     @State private var showError = false
     @State private var errorMessage = ""
     @State private var hasAppeared = false
+    @State private var currentNonce: String?
+
     @FocusState private var focusedField: Field?
 
     enum Field {
@@ -25,16 +31,13 @@ struct SignInView: View {
 
     var body: some View {
         ZStack {
-            // Background
             Color.floCream.ignoresSafeArea()
 
             ScrollView {
                 VStack(spacing: 0) {
-                    // Top branding section matching Figma: "Welcome to: Daily FLO"
                     brandingSection
                         .fadeIn(delay: hasAppeared ? 0 : 0.1)
 
-                    // Photo banner
                     Image("treetops")
                         .resizable()
                         .aspectRatio(contentMode: .fill)
@@ -43,18 +46,14 @@ struct SignInView: View {
                         .padding(.horizontal, FloSpacing.lg)
                         .fadeIn(delay: hasAppeared ? 0 : 0.2)
 
-                    // Log In form area
                     VStack(spacing: FloSpacing.lg) {
-                        // Sign in form
-                        signInForm
+                        socialSignInButtons
                             .fadeIn(delay: hasAppeared ? 0 : 0.3)
 
-                        // Or divider
                         orDivider
                             .fadeIn(delay: hasAppeared ? 0 : 0.35)
 
-                        // Social sign in buttons
-                        socialSignInButtons
+                        emailPasswordForm
                             .fadeIn(delay: hasAppeared ? 0 : 0.4)
                     }
                     .padding(.horizontal, FloSpacing.lg)
@@ -64,7 +63,6 @@ struct SignInView: View {
             }
             .dismissKeyboardOnTap()
 
-            // Error toast
             if showError {
                 VStack {
                     Spacer()
@@ -83,10 +81,9 @@ struct SignInView: View {
         }
     }
 
-    // MARK: - Branding Section (matches Figma: Welcome to: / Daily / FLO)
+    // MARK: - Branding
     private var brandingSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // FLO top-right
             HStack {
                 Spacer()
                 Text("FLO")
@@ -97,7 +94,6 @@ struct SignInView: View {
             .padding(.horizontal, FloSpacing.lg)
             .padding(.top, FloSpacing.xl)
 
-            // Welcome to:
             Text("Welcome to:")
                 .font(.floSerif(size: 36))
                 .foregroundColor(.floCharcoal)
@@ -105,14 +101,12 @@ struct SignInView: View {
                 .padding(.top, FloSpacing.md)
                 .accessibilityAddTraits(.isHeader)
 
-            // Daily (large serif)
             Text("Daily")
                 .font(.floSerif(size: 72))
                 .foregroundColor(.floCharcoal)
                 .padding(.horizontal, FloSpacing.lg)
                 .padding(.top, -8)
 
-            // FLO (bold)
             Text("FLO")
                 .font(.system(size: 20, weight: .black))
                 .foregroundColor(.floCharcoal)
@@ -124,50 +118,89 @@ struct SignInView: View {
         .accessibilityLabel("Welcome to Daily Flo")
     }
 
-    // MARK: - Sign In Form (matches Figma: Log In header, Google, email, password, forgot, LOGIN, create)
-    private var signInForm: some View {
-        VStack(alignment: .leading, spacing: FloSpacing.lg) {
-            // "Log In:" header
-            Text("Log In:")
-                .font(.floSerif(size: 22))
-                .foregroundColor(.floCharcoal)
-
-            // Google sign in button (first, per Figma)
-            Button(action: {
-                FloHaptics.light()
-                signInWithGoogle()
-            }) {
-                HStack(spacing: FloSpacing.md) {
-                    Image(systemName: "g.circle.fill")
-                        .font(.system(size: 24))
-                        .foregroundColor(.white)
-                        .frame(width: 40, height: 40)
-                        .background(Color.floCharcoal)
-                        .cornerRadius(FloRadius.sm)
-
-                    Text("Log in with Google+")
-                        .font(.floBodyMedium)
-                        .foregroundColor(.floCharcoal)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, FloSpacing.xs)
-                .padding(.horizontal, FloSpacing.sm)
-                .background(Color.white)
-                .cornerRadius(FloRadius.md)
-                .overlay(
-                    RoundedRectangle(cornerRadius: FloRadius.md)
-                        .stroke(Color.floGray.opacity(0.25), lineWidth: 1)
-                )
+    // MARK: - Social (Patreon pattern: Apple, Google, Meta — stacked)
+    private var socialSignInButtons: some View {
+        VStack(spacing: FloSpacing.sm) {
+            SignInWithAppleButton(.signIn) { request in
+                let nonce = Self.randomNonceString()
+                currentNonce = nonce
+                request.requestedScopes = [.fullName, .email]
+                request.nonce = Self.sha256(nonce)
+            } onCompletion: { result in
+                handleAppleCompletion(result)
             }
-            .buttonStyle(.floPressed)
-            .accessibilityLabel("Sign in with Google")
+            .signInWithAppleButtonStyle(.black)
+            .frame(height: 52)
+            .cornerRadius(FloRadius.md)
+            .disabled(isLoading)
+            .accessibilityLabel("Sign in with Apple")
 
-            // Divider
+            providerPlaceholderButton(
+                icon: "g.circle.fill",
+                label: "Continue with Google",
+                provider: "Google"
+            )
+            .accessibilityLabel("Continue with Google")
+
+            providerPlaceholderButton(
+                icon: "f.circle.fill",
+                label: "Continue with Meta",
+                provider: "Meta"
+            )
+            .accessibilityLabel("Continue with Meta")
+        }
+    }
+
+    private func providerPlaceholderButton(icon: String, label: String, provider: String) -> some View {
+        Button(action: {
+            FloHaptics.light()
+            print("TODO: \(provider) — configure provider in Supabase first")
+        }) {
+            HStack(spacing: FloSpacing.sm) {
+                Image(systemName: icon)
+                    .font(.system(size: 20))
+                    .foregroundColor(.floCharcoal)
+                    .frame(width: 24, height: 24)
+
+                Text(label)
+                    .font(.floButton)
+                    .foregroundColor(.floCharcoal)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 52)
+            .background(Color.white)
+            .cornerRadius(FloRadius.md)
+            .overlay(
+                RoundedRectangle(cornerRadius: FloRadius.md)
+                    .stroke(Color.floGray.opacity(0.3), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.floPressed)
+        .disabled(isLoading)
+    }
+
+    // MARK: - Or Divider
+    private var orDivider: some View {
+        HStack(spacing: FloSpacing.md) {
             Rectangle()
-                .fill(Color.floGray.opacity(0.2))
+                .fill(Color.floGray.opacity(0.25))
                 .frame(height: 1)
 
-            // Email field
+            Text("OR")
+                .font(.floLabel)
+                .foregroundColor(.floGray)
+                .tracking(1)
+
+            Rectangle()
+                .fill(Color.floGray.opacity(0.25))
+                .frame(height: 1)
+        }
+        .accessibilityHidden(true)
+    }
+
+    // MARK: - Email + Password (handles both sign up and sign in)
+    private var emailPasswordForm: some View {
+        VStack(alignment: .leading, spacing: FloSpacing.lg) {
             VStack(alignment: .leading, spacing: FloSpacing.xs) {
                 Text("Email address")
                     .font(.floBodyMedium)
@@ -191,14 +224,11 @@ struct SignInView: View {
                     .autocapitalization(.none)
                     .focused($focusedField, equals: .email)
                     .submitLabel(.next)
-                    .onSubmit {
-                        focusedField = .password
-                    }
+                    .onSubmit { focusedField = .password }
                     .accessibilityLabel("Email address")
             }
             .animation(FloAnimation.easeOutQuick, value: focusedField)
 
-            // Password field
             VStack(alignment: .leading, spacing: FloSpacing.xs) {
                 Text("Password")
                     .font(.floBodyMedium)
@@ -216,9 +246,7 @@ struct SignInView: View {
                     .focused($focusedField, equals: .password)
                     .submitLabel(.done)
                     .onSubmit {
-                        if isFormValid {
-                            signIn()
-                        }
+                        if isFormValid { submitEmailPassword() }
                     }
 
                     Button(action: {
@@ -245,7 +273,6 @@ struct SignInView: View {
             }
             .animation(FloAnimation.easeOutQuick, value: focusedField)
 
-            // Forgot password link
             Button(action: {}) {
                 Text("Forgot your password?")
                     .font(.floBodySmall)
@@ -254,13 +281,12 @@ struct SignInView: View {
             }
             .accessibilityLabel("Forgot your password")
 
-            // LOGIN button (black, per Figma)
-            Button(action: signIn) {
+            Button(action: submitEmailPassword) {
                 HStack(spacing: FloSpacing.sm) {
                     if isLoading {
                         FloLoadingIndicator(size: 20, color: .white, lineWidth: 2)
                     } else {
-                        Text("LOGIN")
+                        Text("CONTINUE")
                             .tracking(2)
                     }
                 }
@@ -274,8 +300,8 @@ struct SignInView: View {
             .buttonStyle(.floPressed)
             .disabled(isLoading || !isFormValid)
             .animation(FloAnimation.easeOutQuick, value: isFormValid)
-            .accessibilityLabel("Login")
-            .accessibilityHint(isFormValid ? "Double tap to sign in" : "Enter email and password to sign in")
+            .accessibilityLabel("Continue")
+            .accessibilityHint(isFormValid ? "Double tap to continue with email" : "Enter email and password to continue")
         }
     }
 
@@ -286,98 +312,132 @@ struct SignInView: View {
         email.contains("@")
     }
 
-    // MARK: - Or Divider
-    private var orDivider: some View {
-        HStack(spacing: FloSpacing.md) {
-            Rectangle()
-                .fill(Color.floGray.opacity(0.25))
-                .frame(height: 1)
+    // MARK: - Apple Sign In
+    private func handleAppleCompletion(_ result: Result<ASAuthorization, Error>) {
+        switch result {
+        case .success(let authorization):
+            guard
+                let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
+                let tokenData = credential.identityToken,
+                let idToken = String(data: tokenData, encoding: .utf8),
+                let nonce = currentNonce
+            else {
+                FloHaptics.error()
+                presentError("Apple Sign In didn't return a valid token. Please try again.")
+                return
+            }
 
-            Text("OR")
-                .font(.floLabel)
-                .foregroundColor(.floGray)
-                .tracking(1)
+            focusedField = nil
+            isLoading = true
 
-            Rectangle()
-                .fill(Color.floGray.opacity(0.25))
-                .frame(height: 1)
-        }
-        .accessibilityHidden(true)
-    }
-
-    // MARK: - Social Sign In Buttons
-    private var socialSignInButtons: some View {
-        VStack(spacing: FloSpacing.md) {
-            // Sign in with Apple
-            SignInWithAppleButton(.signIn) { request in
-                request.requestedScopes = [.fullName, .email]
-            } onCompletion: { result in
-                switch result {
-                case .success:
+            Task { @MainActor in
+                defer { isLoading = false }
+                do {
+                    _ = try await SupabaseClient.shared.auth.signInWithIdToken(
+                        credentials: OpenIDConnectCredentials(
+                            provider: .apple,
+                            idToken: idToken,
+                            nonce: nonce
+                        )
+                    )
                     FloHaptics.success()
                     withAnimation(FloAnimation.easeOutMedium) {
                         isSignedIn = true
                     }
-                case .failure:
+                } catch {
                     FloHaptics.error()
-                    errorMessage = "Apple Sign In failed. Please try again."
-                    showErrorTemporarily()
+                    presentError("Apple Sign In failed. \(error.localizedDescription)")
                 }
             }
-            .signInWithAppleButtonStyle(.black)
-            .frame(height: 52)
-            .cornerRadius(FloRadius.md)
-            .accessibilityLabel("Sign in with Apple")
 
-            // Create account / Skip for demo
-            Button(action: {
-                FloHaptics.light()
-                withAnimation(FloAnimation.easeOutMedium) {
-                    isSignedIn = true
-                }
-            }) {
-                Text("Create account")
-                    .font(.floBodyMedium)
-                    .foregroundColor(.floSage)
-                    .underline()
-            }
-            .buttonStyle(.floPressed)
-            .accessibilityHint("Skip sign in and continue as guest")
+        case .failure(let error):
+            if (error as? ASAuthorizationError)?.code == .canceled { return }
+            FloHaptics.error()
+            presentError("Apple Sign In failed. Please try again.")
         }
     }
 
-    // MARK: - Actions
-    private func signIn() {
+    // MARK: - Email + Password submission
+    private func submitEmailPassword() {
         guard isFormValid else { return }
 
         FloHaptics.light()
         focusedField = nil
         isLoading = true
 
-        // Simulate sign in delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            isLoading = false
-            FloHaptics.success()
-            withAnimation(FloAnimation.easeOutMedium) {
-                isSignedIn = true
+        let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        let pw = password
+
+        Task { @MainActor in
+            defer { isLoading = false }
+            do {
+                try await signUpOrSignIn(email: trimmedEmail, password: pw)
+                FloHaptics.success()
+                withAnimation(FloAnimation.easeOutMedium) {
+                    isSignedIn = true
+                }
+            } catch {
+                FloHaptics.error()
+                presentError(friendlyMessage(for: error))
             }
         }
     }
 
-    private func signInWithGoogle() {
-        // In a real app, implement Google Sign In
-        withAnimation(FloAnimation.easeOutMedium) {
-            isSignedIn = true
+    private func signUpOrSignIn(email: String, password: String) async throws {
+        let auth = SupabaseClient.shared.auth
+        do {
+            _ = try await auth.signUp(email: email, password: password)
+        } catch let AuthError.api(_, errorCode, _, _) where errorCode == .userAlreadyExists {
+            _ = try await auth.signIn(email: email, password: password)
         }
     }
 
-    private func showErrorTemporarily() {
+    private func friendlyMessage(for error: Error) -> String {
+        if let authError = error as? AuthError {
+            switch authError.errorCode {
+            case .invalidCredentials:
+                return "That email and password didn't match. Try again."
+            case .weakPassword:
+                return "Please choose a stronger password."
+            default:
+                return authError.message
+            }
+        }
+        return error.localizedDescription
+    }
+
+    // MARK: - Error toast
+    private func presentError(_ message: String) {
+        errorMessage = message
         showError = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-            withAnimation {
-                showError = false
+            withAnimation { showError = false }
+        }
+    }
+
+    // MARK: - Nonce helpers (Apple Sign In via Supabase)
+    private static func randomNonceString(length: Int = 32) -> String {
+        precondition(length > 0)
+        let charset: [Character] = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._")
+        var result = ""
+        var remaining = length
+        while remaining > 0 {
+            var randoms = [UInt8](repeating: 0, count: 16)
+            let status = SecRandomCopyBytes(kSecRandomDefault, randoms.count, &randoms)
+            precondition(status == errSecSuccess, "Unable to generate nonce: \(status)")
+            for random in randoms where remaining > 0 {
+                if random < charset.count {
+                    result.append(charset[Int(random)])
+                    remaining -= 1
+                }
             }
         }
+        return result
+    }
+
+    private static func sha256(_ input: String) -> String {
+        let hashed = SHA256.hash(data: Data(input.utf8))
+        return hashed.compactMap { String(format: "%02x", $0) }.joined()
     }
 }
 
