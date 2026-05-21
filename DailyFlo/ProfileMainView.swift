@@ -19,9 +19,24 @@ struct ProfileMainView: View {
     @State private var isSigningOut = false
     @State private var signOutErrorMessage: String?
 
+    @State private var profile: UserProfileRow?
+    @State private var profileEmail: String?
+    @State private var isLoadingProfile = false
+    @State private var profileLoadFailed = false
+
     private let cycleManager = CycleManager.shared
 
-    private var userName: String { cycleManager.userName }
+    private var displayName: String {
+        if let name = profile?.displayName, !name.isEmpty { return name }
+        let fallback = cycleManager.userName
+        if !fallback.isEmpty && fallback != "Friend" { return fallback }
+        if let email = profileEmail, let local = email.split(separator: "@").first {
+            return String(local)
+        }
+        return "Friend"
+    }
+
+    private var userName: String { displayName }
     private var currentPhase: String { cycleManager.currentPhaseLabel }
     private var nextPeriodDate: String { cycleManager.nextPeriodFormatted }
 
@@ -81,6 +96,9 @@ struct ProfileMainView: View {
                 hasAppeared = true
             }
         }
+        .task {
+            await loadProfile()
+        }
         .alert("Coming Soon", isPresented: $showComingSoon) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -99,6 +117,43 @@ struct ProfileMainView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     .padding(.bottom, FloSpacing.xxl)
                     .animation(FloAnimation.springGentle, value: signOutErrorMessage)
+            }
+        }
+    }
+
+    // MARK: - Profile loading
+    private func loadProfile() async {
+        let auth = SupabaseClient.shared.auth
+        guard let user = auth.currentSession?.user else {
+            profileLoadFailed = true
+            return
+        }
+
+        await MainActor.run {
+            profileEmail = user.email
+            isLoadingProfile = true
+            profileLoadFailed = false
+        }
+
+        do {
+            let row: UserProfileRow = try await SupabaseClient.shared
+                .from("profiles")
+                .select("display_name, life_stage, timezone, temperature_unit")
+                .eq("user_id", value: user.id)
+                .single()
+                .execute()
+                .value
+
+            await MainActor.run {
+                profile = row
+                isLoadingProfile = false
+            }
+        } catch {
+            // Profile row may not exist yet (e.g., trigger hasn't run) — fall back
+            // gracefully to email-derived display and don't block the UI.
+            await MainActor.run {
+                profileLoadFailed = true
+                isLoadingProfile = false
             }
         }
     }
@@ -343,20 +398,32 @@ struct ProfileMainView: View {
                             .fill(Color.floSage.opacity(0.2))
                             .frame(width: 48, height: 48)
 
-                        Text(String(userName.prefix(1)).uppercased())
-                            .font(.floDisplaySmall)
-                            .foregroundColor(.floSage)
+                        if isLoadingProfile && profile == nil {
+                            FloLoadingIndicator(size: 20, color: .floSage, lineWidth: 2)
+                        } else {
+                            Text(String(displayName.prefix(1)).uppercased())
+                                .font(.floDisplaySmall)
+                                .foregroundColor(.floSage)
+                        }
                     }
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(userName)
+                        Text(displayName)
                             .font(.floBodyLarge)
                             .fontWeight(.medium)
                             .foregroundColor(.floCharcoal)
 
-                        Text("Day \(cycleManager.currentDayOfCycle) of \(cycleManager.cycleLength)")
-                            .font(.floBodySmall)
-                            .foregroundColor(.floGray)
+                        if let email = profileEmail, !email.isEmpty {
+                            Text(email)
+                                .font(.floBodySmall)
+                                .foregroundColor(.floGray)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        } else {
+                            Text("Day \(cycleManager.currentDayOfCycle) of \(cycleManager.cycleLength)")
+                                .font(.floBodySmall)
+                                .foregroundColor(.floGray)
+                        }
                     }
 
                     Spacer()
@@ -487,6 +554,21 @@ struct ProfileMainView: View {
         }
         .buttonStyle(.floPressed)
         .accessibilityLabel(title)
+    }
+}
+
+// MARK: - Profile row (maps the columns this view reads from `profiles`)
+struct UserProfileRow: Decodable, Equatable {
+    let displayName: String
+    let lifeStage: String?
+    let timezone: String?
+    let temperatureUnit: String?
+
+    enum CodingKeys: String, CodingKey {
+        case displayName = "display_name"
+        case lifeStage = "life_stage"
+        case timezone
+        case temperatureUnit = "temperature_unit"
     }
 }
 
