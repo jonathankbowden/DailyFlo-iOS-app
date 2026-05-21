@@ -5,6 +5,7 @@
 //  Created by Jonathan Bowden on 2/3/26.
 //
 
+import Supabase
 import SwiftUI
 
 // MARK: - Profile Main View
@@ -15,6 +16,8 @@ struct ProfileMainView: View {
     @State private var showAccountSettings = false
     @State private var showSignOutConfirm = false
     @State private var showComingSoon = false
+    @State private var isSigningOut = false
+    @State private var signOutErrorMessage: String?
 
     private let cycleManager = CycleManager.shared
 
@@ -82,6 +85,42 @@ struct ProfileMainView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text("This feature will be available in a future update.")
+        }
+        .alert("Sign out of DailyFLO?", isPresented: $showSignOutConfirm) {
+            Button("Sign Out", role: .destructive) { performSignOut() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("You'll need to sign in again to access your cycle and journal.")
+        }
+        .overlay(alignment: .bottom) {
+            if let message = signOutErrorMessage {
+                Text(message)
+                    .floToast(.error)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .padding(.bottom, FloSpacing.xxl)
+                    .animation(FloAnimation.springGentle, value: signOutErrorMessage)
+            }
+        }
+    }
+
+    // MARK: - Sign Out
+    private func performSignOut() {
+        guard !isSigningOut else { return }
+        FloHaptics.medium()
+        isSigningOut = true
+
+        Task { @MainActor in
+            defer { isSigningOut = false }
+            do {
+                try await SupabaseClient.shared.auth.signOut()
+                // App-level auth listener will transition to .signIn
+            } catch {
+                FloHaptics.error()
+                signOutErrorMessage = "Couldn't sign out. \(error.localizedDescription)"
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                    withAnimation { signOutErrorMessage = nil }
+                }
+            }
         }
     }
 
@@ -341,6 +380,38 @@ struct ProfileMainView: View {
                 settingsRow(title: data.0, icon: data.1)
                     .fadeIn(delay: hasAppeared ? 0 : 0.3 + Double(index) * 0.05)
             }
+
+            // Sign out
+            Button(action: {
+                FloHaptics.light()
+                showSignOutConfirm = true
+            }) {
+                HStack(spacing: FloSpacing.sm) {
+                    if isSigningOut {
+                        FloLoadingIndicator(size: 18, color: .floError, lineWidth: 2)
+                    } else {
+                        Image(systemName: "rectangle.portrait.and.arrow.right")
+                            .font(.system(size: 18, weight: .medium))
+                    }
+
+                    Text("Sign Out")
+                        .font(.floButton)
+                }
+                .foregroundColor(.floError)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, FloSpacing.md)
+                .background(Color.white)
+                .cornerRadius(FloRadius.lg)
+                .overlay(
+                    RoundedRectangle(cornerRadius: FloRadius.lg)
+                        .stroke(Color.floError.opacity(0.3), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.floPressed)
+            .disabled(isSigningOut)
+            .fadeIn(delay: hasAppeared ? 0 : 0.5)
+            .accessibilityLabel("Sign out")
+            .accessibilityHint("Sign out of your DailyFLO account")
 
             // Reset onboarding (for demo/testing)
             Button(action: {

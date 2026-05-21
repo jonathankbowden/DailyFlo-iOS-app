@@ -5,6 +5,7 @@
 //  Created by Jonathan Bowden on 2/2/26.
 //
 
+import Supabase
 import SwiftUI
 
 // MARK: - App State
@@ -74,6 +75,9 @@ struct DailyFloApp: App {
             }
             // Single smooth crossfade between app states
             .animation(.easeInOut(duration: 1.0), value: appState)
+            .task {
+                await observeAuthState()
+            }
         }
     }
 
@@ -82,8 +86,53 @@ struct DailyFloApp: App {
         guard !hasAdvancedFromSplash else { return }
         hasAdvancedFromSplash = true
 
-        let targetState: AppState = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding") ? .main : .onboarding
-        appState = targetState
+        appState = initialDestination()
+    }
+
+    /// Resolves the launch destination based on the current Supabase session
+    /// and whether onboarding has been completed.
+    private func initialDestination() -> AppState {
+        let hasSession = SupabaseClient.shared.auth.currentSession != nil
+        let onboarded = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
+
+        if hasSession {
+            return .main
+        } else if onboarded {
+            return .signIn
+        } else {
+            return .onboarding
+        }
+    }
+
+    /// Subscribes to Supabase auth state. Drives sign-out (anywhere → sign-in)
+    /// and recovers from races where the initial session resolves after splash.
+    private func observeAuthState() async {
+        for await (event, session) in SupabaseClient.shared.auth.authStateChanges {
+            switch event {
+            case .initialSession:
+                if session != nil, appState == .signIn {
+                    withAnimation(.easeInOut(duration: 0.5)) {
+                        appState = .main
+                    }
+                }
+            case .signedIn:
+                if appState != .main {
+                    withAnimation(.easeInOut(duration: 0.5)) {
+                        appState = .main
+                    }
+                }
+            case .signedOut, .userDeleted:
+                if appState != .signIn {
+                    withAnimation(.easeInOut(duration: 0.5)) {
+                        appState = .signIn
+                    }
+                }
+            case .tokenRefreshed, .passwordRecovery, .userUpdated, .mfaChallengeVerified:
+                break
+            @unknown default:
+                break
+            }
+        }
     }
 }
 
