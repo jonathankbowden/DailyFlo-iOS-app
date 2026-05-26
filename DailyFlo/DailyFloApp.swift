@@ -5,6 +5,7 @@
 //  Created by Jonathan Bowden on 2/2/26.
 //
 
+import GoogleSignIn
 import Supabase
 import SwiftUI
 
@@ -77,6 +78,11 @@ struct DailyFloApp: App {
             .animation(.easeInOut(duration: 1.0), value: appState)
             .task {
                 await observeAuthState()
+            }
+            .onOpenURL { url in
+                // Delivers the OAuth redirect callback from Google Sign-In
+                // back into the SDK so it can complete the flow.
+                GIDSignIn.sharedInstance.handle(url)
             }
         }
     }

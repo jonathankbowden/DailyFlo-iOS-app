@@ -132,7 +132,7 @@ struct CalendarView: View {
     // MARK: - Day of Week Header
     private var dayOfWeekHeader: some View {
         HStack {
-            ForEach(daysOfWeek, id: \.self) { day in
+            ForEach(Array(daysOfWeek.enumerated()), id: \.offset) { _, day in
                 Text(day)
                     .font(.floLabel)
                     .fontWeight(.medium)

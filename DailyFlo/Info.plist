@@ -18,5 +18,18 @@
 	<string>$(SUPABASE_URL)</string>
 	<key>SUPABASE_PUBLISHABLE_KEY</key>
 	<string>$(SUPABASE_PUBLISHABLE_KEY)</string>
+	<key>GIDClientID</key>
+	<string>954188535649-rc6k2rrlooutp0i3irpj247f4517lok0.apps.googleusercontent.com</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.954188535649-rc6k2rrlooutp0i3irpj247f4517lok0</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

@@ -8,6 +8,7 @@
 import AuthenticationServices
 import CryptoKit
 import Foundation
+import GoogleSignIn
 import Supabase
 import SwiftUI
 
@@ -118,7 +119,7 @@ struct SignInView: View {
         .accessibilityLabel("Welcome to Daily Flo")
     }
 
-    // MARK: - Social (Patreon pattern: Apple, Google, Meta — stacked)
+    // MARK: - Social (Patreon pattern: Apple, Google — stacked)
     private var socialSignInButtons: some View {
         VStack(spacing: FloSpacing.sm) {
             SignInWithAppleButton(.signIn) { request in
@@ -135,26 +136,19 @@ struct SignInView: View {
             .disabled(isLoading)
             .accessibilityLabel("Sign in with Apple")
 
-            providerPlaceholderButton(
+            socialButton(
                 icon: "g.circle.fill",
                 label: "Continue with Google",
-                provider: "Google"
+                action: { signInWithGoogle() }
             )
             .accessibilityLabel("Continue with Google")
-
-            providerPlaceholderButton(
-                icon: "f.circle.fill",
-                label: "Continue with Meta",
-                provider: "Meta"
-            )
-            .accessibilityLabel("Continue with Meta")
         }
     }
 
-    private func providerPlaceholderButton(icon: String, label: String, provider: String) -> some View {
+    private func socialButton(icon: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: {
             FloHaptics.light()
-            print("TODO: \(provider) — configure provider in Supabase first")
+            action()
         }) {
             HStack(spacing: FloSpacing.sm) {
                 Image(systemName: icon)
@@ -355,6 +349,73 @@ struct SignInView: View {
             FloHaptics.error()
             presentError("Apple Sign In failed. Please try again.")
         }
+    }
+
+    // MARK: - Google Sign In
+    private func signInWithGoogle() {
+        guard let presenter = Self.topViewController() else {
+            FloHaptics.error()
+            presentError("Couldn't open Google Sign In. Please try again.")
+            return
+        }
+
+        focusedField = nil
+        isLoading = true
+
+        let rawNonce = Self.randomNonceString()
+        let hashedNonce = Self.sha256(rawNonce)
+
+        Task { @MainActor in
+            defer { isLoading = false }
+            do {
+                let result = try await GIDSignIn.sharedInstance.signIn(
+                    withPresenting: presenter,
+                    hint: nil,
+                    additionalScopes: nil,
+                    nonce: hashedNonce
+                )
+
+                guard let idToken = result.user.idToken?.tokenString else {
+                    FloHaptics.error()
+                    presentError("Google Sign In didn't return a valid token. Please try again.")
+                    return
+                }
+
+                _ = try await SupabaseClient.shared.auth.signInWithIdToken(
+                    credentials: OpenIDConnectCredentials(
+                        provider: .google,
+                        idToken: idToken,
+                        nonce: rawNonce
+                    )
+                )
+
+                FloHaptics.success()
+                withAnimation(FloAnimation.easeOutMedium) {
+                    isSignedIn = true
+                }
+            } catch {
+                // User-cancelled is silent; everything else surfaces a toast.
+                if (error as NSError).code == GIDSignInError.canceled.rawValue { return }
+                FloHaptics.error()
+                presentError("Google Sign In failed. \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Walks the active window scene to find the topmost presented controller —
+    /// the right anchor for GIDSignIn's presentation sheet from SwiftUI.
+    private static func topViewController() -> UIViewController? {
+        let scenes = UIApplication.shared.connectedScenes
+        guard let scene = scenes.first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene
+                ?? scenes.first as? UIWindowScene,
+              let window = scene.windows.first(where: { $0.isKeyWindow }) ?? scene.windows.first
+        else { return nil }
+
+        var vc = window.rootViewController
+        while let presented = vc?.presentedViewController {
+            vc = presented
+        }
+        return vc
     }
 
     // MARK: - Email + Password submission

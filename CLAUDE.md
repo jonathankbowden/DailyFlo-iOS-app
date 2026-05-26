@@ -72,9 +72,19 @@ These are settled — don't re-litigate them in suggestions:
 - **Single parameterized onboarding flow**, not branched by age. Captures age early, adapts subsequent screens.
 - **13+ age gate.** No parental consent flow for v1. Under-13 use case revisits in v1.x.
 - **BBT (basal body temperature) is in v1** as an optional simple field on `cycle_entries`. Framed as body literacy, not fertility tracking. No fertile-window predictions from it.
+- **Never ask for symptoms (locked May 26).** No symptom picker, chips, or physical-symptom inputs anywhere. The `Symptom`/`SymptomCategory`/`SymptomPickerSheet` machinery in `LogCycleView.swift` is being removed. The `cycle_entries.symptoms` column becomes vestigial — leave it unused.
+- **Never ask for cycle flow / "heaviness" (locked May 26).** No light/medium/heavy selector. The `FlowLevel` enum + `FlowLevelButton` in `LogCycleView.swift` are being removed. The `cycle_entries.flow` column becomes vestigial. Net effect: v1 cycle logging = **period start date + optional BBT only**. This deliberately differentiates DailyFLO from clinical trackers (Flo, Clue).
+- **No pinks or purples (reinforced May 26).** They read as stereotypically "female." Reject pink/purple even as accents. Palette stays soft neutrals + nature tones (floCream / floSage / floCharcoal / floGray / floMint + phase colors).
 - **Legal entity:** DailyFLO LLC (Colorado, formed May 18). Apple Developer Program Individual → Organization conversion pending DUNS.
 - **Music approach:** Suno Pro for the library + a church musician for signature originals (hybrid). Suno Pro plan required for commercial rights.
 - **Emotion framework:** Currently scoped to Chip Dodd's 8 Core Emotions (hurt, lonely, sad, anger, fear, shame, guilt, glad). Brittany is deciding whether to ask permission or build a distinct framework — schema is framework-agnostic so the CHECK constraint can swap if needed.
+
+## Planned UI changes (locked May 26, 2026 — designed, not yet built)
+
+Build these honoring the locked design constraints above (no symptoms, no flow/heaviness, no pinks/purples).
+
+- **Tab bar restructure.** New bottom nav, left→right: **Profile, Calendar, [+] FAB (new journal entry), Journal, Pause (Meditation)**. Profile becomes the far-left, **default-selected** tab on launch, and its landing view IS the current Home dashboard (`HomeView` content moves into the Profile tab). The existing account/settings (`ProfileMainView`: sign-out, stats) lives lower in the same Profile tab as a scroll/section, not a separate tab. Touches `ContentView.swift`: tab order, tag indices, default `selectedTab`, and the icon row.
+- **Journal "view all" base view (the Journal tab's base screen — NOT the cycle calendar).** A 2D day-card grid: each day is a full-screen card whose face = that day's **most-recent** entry (tap expands to all entries via `JournalEntryDetailView`); empty days show a calm empty-state. **Horizontal paging = ±1 day** (left=prev, right=next); **vertical paging = ±7 days**, same weekday (up=prev week, down=next week) — i.e. the calendar grid navigated one day at a time. Reuse `SingleDayView` (day card + `journalManager.entries(for:)`). Build with iOS-17 paging `ScrollView`s (`.scrollTargetBehavior(.paging)`), NOT nested `TabView`s. Client-side only, no schema change.
 
 ## Supabase schema (live as of May 19)
 
