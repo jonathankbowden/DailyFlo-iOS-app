@@ -476,11 +476,13 @@ struct JournalGridView: View {
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
+            Color.floCream.ignoresSafeArea()
+
             GeometryReader { geo in
                 ScrollView(.vertical, showsIndicators: false) {
                     LazyVStack(spacing: 0) {
                         ForEach(weekRange, id: \.self) { weekIdx in
-                            weekRow(weekIdx: weekIdx, size: geo.size)
+                            weekRow(weekIdx: weekIdx, pageSize: geo.size)
                                 .frame(width: geo.size.width, height: geo.size.height)
                                 .id(weekIdx)
                         }
@@ -490,7 +492,6 @@ struct JournalGridView: View {
                 .scrollTargetBehavior(.paging)
                 .scrollPosition(id: $currentWeekIdx)
             }
-            .ignoresSafeArea()
 
             // Toggle to the searchable list view.
             Button {
@@ -524,25 +525,37 @@ struct JournalGridView: View {
 
     // MARK: - Week row (horizontal paging by day)
     @ViewBuilder
-    private func weekRow(weekIdx: Int, size: CGSize) -> some View {
+    private func weekRow(weekIdx: Int, pageSize: CGSize) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             LazyHStack(spacing: 0) {
                 ForEach(0..<7, id: \.self) { dayIdx in
                     let cellDate = date(weekIdx: weekIdx, dayIdx: dayIdx)
-                    dayCard(for: cellDate)
-                        .frame(width: size.width, height: size.height)
+                    dayCardPage(for: cellDate)
+                        .frame(width: pageSize.width, height: pageSize.height)
                         .id(dayIdx)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            FloHaptics.light()
-                            detailDate = cellDate
-                        }
                 }
             }
             .scrollTargetLayout()
         }
         .scrollTargetBehavior(.paging)
         .scrollPosition(id: $currentDayIdx)
+    }
+
+    /// One page = cream margins + a contained, rounded card with a soft shadow.
+    /// The bottom inset leaves room for the floating tab bar.
+    private func dayCardPage(for cellDate: Date) -> some View {
+        dayCard(for: cellDate)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipShape(RoundedRectangle(cornerRadius: FloRadius.xl, style: .continuous))
+            .shadow(color: Color.black.opacity(0.12), radius: 14, x: 0, y: 6)
+            .contentShape(RoundedRectangle(cornerRadius: FloRadius.xl, style: .continuous))
+            .onTapGesture {
+                FloHaptics.light()
+                detailDate = cellDate
+            }
+            .padding(.horizontal, FloSpacing.lg)
+            .padding(.top, FloSpacing.md)
+            .padding(.bottom, 130)
     }
 
     // MARK: - Day card
@@ -623,11 +636,9 @@ struct JournalGridView: View {
                 }
             }
             .padding(.horizontal, FloSpacing.lg)
-            .padding(.top, FloSpacing.xxxl + FloSpacing.lg)
-            .padding(.bottom, FloSpacing.xxxl + FloSpacing.xl)
+            .padding(.vertical, FloSpacing.xl)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .clipped()
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(entry.emotion.rawValue) on \(entry.formattedDate). \(total > 1 ? "\(total) entries this day. " : "")Tap to open.")
     }
@@ -635,7 +646,7 @@ struct JournalGridView: View {
     private func emptyCard(date: Date) -> some View {
         let isFuture = date > calendar.startOfDay(for: Date())
         return ZStack(alignment: .topLeading) {
-            Color.floCream
+            Color.white
 
             VStack(alignment: .leading, spacing: 0) {
                 Text(weekdayString(date).uppercased())
@@ -670,11 +681,13 @@ struct JournalGridView: View {
                 Spacer()
             }
             .padding(.horizontal, FloSpacing.lg)
-            .padding(.top, FloSpacing.xxxl + FloSpacing.lg)
-            .padding(.bottom, FloSpacing.xxxl + FloSpacing.xl)
+            .padding(.vertical, FloSpacing.xl)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .clipped()
+        .overlay(
+            RoundedRectangle(cornerRadius: FloRadius.xl, style: .continuous)
+                .stroke(Color.floGray.opacity(0.15), lineWidth: 1)
+        )
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(isFuture ? "Future day" : "No entries") on \(longDateString(date)).")
     }
