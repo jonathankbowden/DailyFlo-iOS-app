@@ -387,16 +387,18 @@ struct OnboardingPageView: View {
         VStack(spacing: FloSpacing.sm) {
             ForEach(CyclePhase.allCases, id: \.self) { phase in
                 HStack(spacing: FloSpacing.md) {
-                    // Phase number circle
+                    // Phase number circle — soft tint with charcoal numeral
+                    // so the light backgrounds stay legible and we avoid the
+                    // pink/yellow accent palette per product rule.
                     ZStack {
                         Circle()
-                            .fill(phase.color)
+                            .fill(phase.backgroundColor)
                             .frame(width: 44, height: 44)
 
                         Text(phase.number)
                             .font(.floLabel)
                             .fontWeight(.bold)
-                            .foregroundColor(.white)
+                            .foregroundColor(.floCharcoal)
                     }
 
                     // Phase info

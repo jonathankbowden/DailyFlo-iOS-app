@@ -448,16 +448,8 @@ struct DayCellWithPhase: View {
 
     @ViewBuilder
     private var phaseBackgroundColor: some View {
-        switch phase {
-        case .menstrual:
-            Color(hex: "ADD1B7")
-        case .follicular:
-            Color(hex: "EDF0E7")
-        case .ovulation:
-            Color(hex: "DFE8ED")
-        case .luteal:
-            Color(hex: "EAF3EC")
-        }
+        // Source of truth: CyclePhase.backgroundColor (PhaseModel.swift).
+        phase.backgroundColor
     }
 
     @ViewBuilder

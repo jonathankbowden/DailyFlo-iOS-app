@@ -45,12 +45,15 @@ enum CyclePhase: Int, CaseIterable {
         }
     }
     
+    /// Canonical soft tints used for calendar blocks and onboarding tiles.
+    /// Single source of truth — DO NOT duplicate these hexes elsewhere.
+    /// No pinks or yellows by product rule (CLAUDE.md).
     var backgroundColor: Color {
         switch self {
-        case .menstrual: return Color(hex: "F5E6E6")
-        case .follicular: return Color(hex: "E8F0E8")
-        case .ovulation: return Color(hex: "FDF4E7")
-        case .luteal: return Color(hex: "E8EEF2")
+        case .menstrual: return Color(hex: "ADD1B7")
+        case .follicular: return Color(hex: "EDF0E7")
+        case .ovulation: return Color(hex: "DFE8ED")
+        case .luteal: return Color(hex: "EAF3EC")
         }
     }
     
