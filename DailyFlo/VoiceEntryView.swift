@@ -114,7 +114,7 @@ struct VoiceEntryView: View {
             if permissionDenied {
                 Text("Microphone or speech permission was denied.\nPlease enable them in Settings.")
                     .font(.floBodySmall)
-                    .foregroundColor(.phaseMenstrual)
+                    .foregroundColor(.floError)
                     .multilineTextAlignment(.center)
                     .padding(.top, FloSpacing.sm)
             }

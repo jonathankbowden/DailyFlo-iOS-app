@@ -21,10 +21,10 @@ extension Color {
     static let floGray = Color(hex: "6B7280")           // Secondary text
     static let floLightGray = Color(hex: "E5E5E5")      // Borders and dividers
 
-    // Phase colors (for cycle tracking)
-    static let phaseMenstrual = Color(hex: "C97C7C")    // Soft red/pink
+    // Phase colors (for cycle tracking) — no pinks/yellows per product rule.
+    static let phaseMenstrual = Color(hex: "6FA98C")    // Deeper mint-green
     static let phaseFollicular = Color(hex: "8BA888")   // Sage green
-    static let phaseOvulation = Color(hex: "E8B86D")    // Warm gold
+    static let phaseOvulation = Color(hex: "8FB9C2")    // Dusty teal-blue
     static let phaseLuteal = Color(hex: "7BA3B5")       // Soft blue
 
     // Emotion colors (Chip Dodd framework)
