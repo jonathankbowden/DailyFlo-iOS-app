@@ -13,8 +13,6 @@ struct DayLogData {
     let phase: CyclePhase
     let dayOfCycle: Int
     let isPeriodDay: Bool
-    let flowLevel: FlowLevel?
-    let symptoms: [String]
     let journalEntry: String?
     let meditatedMinutes: Int?
     let mood: String?
@@ -65,8 +63,6 @@ struct SingleDayView: View {
             phase: pagePhase,
             dayOfCycle: cycleManager.dayOfCycle(for: pageDate),
             isPeriodDay: pagePhase == .menstrual,
-            flowLevel: nil,
-            symptoms: [],
             journalEntry: journalText,
             meditatedMinutes: nil,
             mood: mood
@@ -262,29 +258,6 @@ struct SingleDayView: View {
                     value: data.meditatedMinutes != nil ? "\(data.meditatedMinutes!) min" : "None",
                     color: .floTeal
                 )
-
-                // Symptoms
-                activityItem(
-                    icon: "heart.text.square.fill",
-                    label: "Symptoms",
-                    value: data.symptoms.isEmpty ? "None" : "\(data.symptoms.count) logged",
-                    color: .phaseMenstrual
-                )
-            }
-
-            // Symptoms list if any
-            if !data.symptoms.isEmpty {
-                HStack(spacing: FloSpacing.xs) {
-                    ForEach(data.symptoms, id: \.self) { symptom in
-                        Text(symptom)
-                            .font(.floLabel)
-                            .foregroundColor(.floCharcoal)
-                            .padding(.horizontal, FloSpacing.sm)
-                            .padding(.vertical, FloSpacing.xs)
-                            .background(Color.floMint.opacity(0.5))
-                            .cornerRadius(FloRadius.full)
-                    }
-                }
             }
         }
         .padding(FloSpacing.lg)
