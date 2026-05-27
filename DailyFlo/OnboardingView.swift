@@ -91,7 +91,6 @@ struct OnboardingView: View {
                 "Understand my moods",
                 "Optimize my energy",
                 "Plan for fertility",
-                "Manage PMS symptoms",
                 "Mindfulness & meditation"
             ])
         ),
