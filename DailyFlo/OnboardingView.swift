@@ -35,7 +35,6 @@ struct OnboardingView: View {
     @State private var cycleLength = 28
     @State private var periodLength = 5
     @State private var selectedGoals: Set<String> = []
-    @State private var selectedSymptoms: Set<String> = []
     @State private var isTransitioning = false
     @State private var showValidationError = false
 
@@ -98,29 +97,13 @@ struct OnboardingView: View {
         ),
         OnboardingPage(
             id: 7,
-            title: "Any symptoms you'd\nlike to track?",
-            subtitle: "We'll remind you to log these.",
-            imageName: nil,
-            inputType: .multiSelect(options: [
-                "Cramps",
-                "Bloating",
-                "Headaches",
-                "Mood changes",
-                "Fatigue",
-                "Breast tenderness",
-                "Acne",
-                "Back pain"
-            ])
-        ),
-        OnboardingPage(
-            id: 8,
             title: "Your Four Phases",
             subtitle: "Your cycle has 4 distinct phases, each with unique characteristics.",
             imageName: nil,
             inputType: .none
         ),
         OnboardingPage(
-            id: 9,
+            id: 8,
             title: "You're all set!",
             subtitle: "Let's begin your journey to cycle-synced living.",
             imageName: nil,
@@ -156,7 +139,6 @@ struct OnboardingView: View {
                             cycleLength: $cycleLength,
                             periodLength: $periodLength,
                             selectedGoals: $selectedGoals,
-                            selectedSymptoms: $selectedSymptoms,
                             showValidationError: $showValidationError
                         )
                         .tag(page.id)
@@ -246,10 +228,8 @@ struct OnboardingView: View {
             }
             return true
         case .multiSelect:
-            if currentPage == 6 {
-                return !selectedGoals.isEmpty
-            }
-            return true // Symptoms are optional
+            // Only the wellness-goals page uses multiSelect; goals are required.
+            return !selectedGoals.isEmpty
         default:
             return true
         }
@@ -307,7 +287,6 @@ struct OnboardingView: View {
         UserDefaults.standard.set(cycleLength, forKey: "cycleLength")
         UserDefaults.standard.set(periodLength, forKey: "periodLength")
         UserDefaults.standard.set(Array(selectedGoals), forKey: "selectedGoals")
-        UserDefaults.standard.set(Array(selectedSymptoms), forKey: "selectedSymptoms")
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
         UserDefaults.standard.set(true, forKey: "pendingOnboardingPayload")
 
@@ -326,7 +305,6 @@ struct OnboardingPageView: View {
     @Binding var cycleLength: Int
     @Binding var periodLength: Int
     @Binding var selectedGoals: Set<String>
-    @Binding var selectedSymptoms: Set<String>
     @Binding var showValidationError: Bool
 
     @FocusState private var isTextFieldFocused: Bool
@@ -346,10 +324,10 @@ struct OnboardingPageView: View {
             if page.id == 0 {
                 welcomeElement
                     .scaleFadeIn(delay: hasAppeared ? 0 : 0.1, from: 0.85)
-            } else if page.id == 8 {
+            } else if page.id == 7 {
                 phaseOverviewElement
                     .scaleFadeIn(delay: hasAppeared ? 0 : 0.1, from: 0.95)
-            } else if page.id == 9 {
+            } else if page.id == 8 {
                 completionElement
                     .scaleFadeIn(delay: hasAppeared ? 0 : 0.1, from: 0.85)
             }
@@ -554,27 +532,20 @@ struct OnboardingPageView: View {
             }
 
         case .multiSelect(let options):
+            // Only the wellness-goals page (id 6) uses multiSelect now.
             VStack(alignment: .leading, spacing: FloSpacing.xs) {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: FloSpacing.sm) {
                     ForEach(Array(options.enumerated()), id: \.element) { index, option in
                         MultiSelectButton(
                             title: option,
-                            isSelected: page.id == 6 ? selectedGoals.contains(option) : selectedSymptoms.contains(option),
+                            isSelected: selectedGoals.contains(option),
                             action: {
                                 FloHaptics.selection()
                                 withAnimation(FloAnimation.springSnappy) {
-                                    if page.id == 6 {
-                                        if selectedGoals.contains(option) {
-                                            selectedGoals.remove(option)
-                                        } else {
-                                            selectedGoals.insert(option)
-                                        }
+                                    if selectedGoals.contains(option) {
+                                        selectedGoals.remove(option)
                                     } else {
-                                        if selectedSymptoms.contains(option) {
-                                            selectedSymptoms.remove(option)
-                                        } else {
-                                            selectedSymptoms.insert(option)
-                                        }
+                                        selectedGoals.insert(option)
                                     }
                                 }
                             }
@@ -583,7 +554,7 @@ struct OnboardingPageView: View {
                     }
                 }
 
-                if showValidationError && page.id == 6 && selectedGoals.isEmpty {
+                if showValidationError && selectedGoals.isEmpty {
                     Text("Please select at least one goal")
                         .font(.floCaption)
                         .foregroundColor(.floError)
