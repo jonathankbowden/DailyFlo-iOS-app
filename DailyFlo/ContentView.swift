@@ -16,7 +16,9 @@ struct ContentView: View {
         self.animateFromSplash = animateFromSplash
     }
 
-    @State private var selectedTab = 0  // 0=Home, 1=Calendar, 2=Journal, 3=Profile, 4=Meditation
+    // 0=Profile (dashboard + account), 1=Calendar, 2=Journal, 3=Meditation.
+    // Profile is the default tab on launch per the locked planned-UI changes.
+    @State private var selectedTab = 0
     @State private var showJournalEntry = false
     @State private var fabScale: CGFloat = 1.0
     @State private var fabRotation: Double = 0
@@ -26,7 +28,7 @@ struct ContentView: View {
         ZStack {
             // Main content
             TabView(selection: $selectedTab) {
-                HomeView(greeting: greeting, animateFromSplash: animateFromSplash)
+                ProfileTabView(greeting: greeting, animateFromSplash: animateFromSplash)
                     .tag(0)
 
                 CalendarView()
@@ -35,11 +37,8 @@ struct ContentView: View {
                 JournalView()
                     .tag(2)
 
-                ProfileView()
-                    .tag(3)
-
                 MeditationView()
-                    .tag(4)
+                    .tag(3)
             }
             .onChange(of: selectedTab) { oldValue, newValue in
                 previousTab = oldValue
@@ -67,25 +66,24 @@ struct ContentView: View {
             let bottomSafeArea = geometry.safeAreaInsets.bottom
 
             ZStack(alignment: .bottom) {
-                // Black tab bar with icons
+                // Black tab bar with icons — L→R: Profile, Calendar, [+], Journal, Pause
                 VStack(spacing: 0) {
-                    // Main tab bar content
                     HStack(spacing: 0) {
-                        // Home tab
-                        tabBarItemCustom(icon: "home", tag: 0, size: 24)
+                        // Profile (dashboard + account) — default tab
+                        tabBarItemCustom(icon: "partner", tag: 0, size: 24)
 
-                        // Calendar tab
+                        // Calendar
                         tabBarItemCustom(icon: "calendar", tag: 1, size: 24)
 
-                        // Spacer for FAB alignment
+                        // Spacer for centered FAB alignment
                         Spacer()
                             .frame(width: 80)
 
-                        // Profile tab
-                        tabBarItemCustom(icon: "partner", tag: 3, size: 24)
+                        // Journal
+                        tabBarItemSF(icon: "square.and.pencil", tag: 2, size: 22)
 
-                        // Meditation tab
-                        tabBarItemCustom(icon: "pause", tag: 4, size: 24)
+                        // Pause (Meditation)
+                        tabBarItemCustom(icon: "pause", tag: 3, size: 24)
                     }
                     .padding(.horizontal, FloSpacing.xl)
                     .frame(height: 88)
@@ -100,8 +98,8 @@ struct ContentView: View {
                             tabIndicator(tag: 0)
                             tabIndicator(tag: 1)
                             Spacer().frame(width: 80)
+                            tabIndicator(tag: 2)
                             tabIndicator(tag: 3)
-                            tabIndicator(tag: 4)
                         }
                         .padding(.horizontal, FloSpacing.xl)
                         .padding(.bottom, 4)
@@ -200,11 +198,10 @@ struct ContentView: View {
 
     private func tabAccessibilityLabel(for tag: Int) -> String {
         switch tag {
-        case 0: return "Home, your daily dashboard"
+        case 0: return "Profile, your dashboard and account"
         case 1: return "Calendar, view your cycle"
         case 2: return "Journal, view your entries"
-        case 3: return "Profile, settings and stats"
-        case 4: return "Meditation, guided sessions"
+        case 3: return "Pause, guided meditation sessions"
         default: return "Tab"
         }
     }
@@ -228,7 +225,6 @@ struct TabBarButtonStyle: ButtonStyle {
 }
 
 // MARK: - Tab Views
-// Each tab now uses its full implementation
 
 struct JournalView: View {
     var body: some View {
@@ -236,9 +232,30 @@ struct JournalView: View {
     }
 }
 
-struct ProfileView: View {
+/// Profile tab: dashboard on top, account/stats/sign-out below — one scroll.
+/// Composes HomeView and ProfileMainView in embedded mode so both views'
+/// content flows inside a single outer ScrollView.
+struct ProfileTabView: View {
+    let greeting: SplashGreeting
+    let animateFromSplash: Bool
+
     var body: some View {
-        ProfileMainView()
+        ZStack {
+            Color.floCream.ignoresSafeArea()
+
+            ScrollView {
+                VStack(spacing: 0) {
+                    HomeView(greeting: greeting, animateFromSplash: animateFromSplash, isEmbedded: true)
+
+                    ProfileMainView(isEmbedded: true)
+
+                    // Space for the tab bar
+                    Spacer(minLength: 140)
+                }
+            }
+            .scrollIndicators(.hidden)
+            .ignoresSafeArea(edges: .top)
+        }
     }
 }
 

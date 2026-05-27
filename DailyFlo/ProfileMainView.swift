@@ -10,6 +10,11 @@ import SwiftUI
 
 // MARK: - Profile Main View
 struct ProfileMainView: View {
+    /// When true, render as content-only (no full-bleed background, no inner
+    /// ScrollView) so this view can be embedded inside a parent ScrollView —
+    /// e.g. the Profile tab that stacks Home + ProfileMainView in one scroll.
+    var isEmbedded: Bool = false
+
     @State private var selectedTab: ProfileTab = .cycle
     @State private var hasAppeared = false
     @State private var showConnect = false
@@ -49,48 +54,41 @@ struct ProfileMainView: View {
     }
 
     var body: some View {
-        ZStack {
-            Color.white.ignoresSafeArea()
+        Group {
+            if isEmbedded {
+                profileContent
+            } else {
+                ZStack {
+                    Color.white.ignoresSafeArea()
 
-            VStack(spacing: 0) {
-                // Header
-                headerView
-                    .fadeIn(delay: hasAppeared ? 0 : 0.1)
-
-                // Greeting section
-                greetingSection
-                    .fadeIn(delay: hasAppeared ? 0 : 0.15)
-
-                // Top divider line
-                Rectangle()
-                    .fill(Color(hex: "E5E5E5"))
-                    .frame(height: 1)
-                    .padding(.top, FloSpacing.lg)
-
-                // Tab selector
-                tabSelector
-                    .fadeIn(delay: hasAppeared ? 0 : 0.2)
-
-                // Bottom divider line
-                Rectangle()
-                    .fill(Color(hex: "707070"))
-                    .frame(height: 1)
-
-                // Tab content
-                ScrollView {
                     VStack(spacing: 0) {
-                        switch selectedTab {
-                        case .cycle:
-                            cycleTabContent
-                        case .sync:
-                            syncTabContent
-                        case .settings:
-                            settingsTabContent
+                        headerView
+                            .fadeIn(delay: hasAppeared ? 0 : 0.1)
+
+                        greetingSection
+                            .fadeIn(delay: hasAppeared ? 0 : 0.15)
+
+                        Rectangle()
+                            .fill(Color(hex: "E5E5E5"))
+                            .frame(height: 1)
+                            .padding(.top, FloSpacing.lg)
+
+                        tabSelector
+                            .fadeIn(delay: hasAppeared ? 0 : 0.2)
+
+                        Rectangle()
+                            .fill(Color(hex: "707070"))
+                            .frame(height: 1)
+
+                        ScrollView {
+                            VStack(spacing: 0) {
+                                tabContent
+                            }
+                            .padding(.bottom, 140)
                         }
+                        .background(Color(hex: "F8F8F8"))
                     }
-                    .padding(.bottom, 140) // Space for tab bar
                 }
-                .background(Color(hex: "F8F8F8"))
             }
         }
         .onAppear {
@@ -126,6 +124,47 @@ struct ProfileMainView: View {
                     .padding(.bottom, FloSpacing.xxl)
                     .animation(FloAnimation.springGentle, value: signOutErrorMessage)
             }
+        }
+    }
+
+    // MARK: - Embedded content (no inner ScrollView, no full-bleed background)
+    @ViewBuilder
+    private var profileContent: some View {
+        VStack(spacing: 0) {
+            headerView
+                .fadeIn(delay: hasAppeared ? 0 : 0.1)
+
+            greetingSection
+                .fadeIn(delay: hasAppeared ? 0 : 0.15)
+
+            Rectangle()
+                .fill(Color(hex: "E5E5E5"))
+                .frame(height: 1)
+                .padding(.top, FloSpacing.lg)
+
+            tabSelector
+                .fadeIn(delay: hasAppeared ? 0 : 0.2)
+
+            Rectangle()
+                .fill(Color(hex: "707070"))
+                .frame(height: 1)
+
+            VStack(spacing: 0) {
+                tabContent
+            }
+            .background(Color(hex: "F8F8F8"))
+        }
+    }
+
+    @ViewBuilder
+    private var tabContent: some View {
+        switch selectedTab {
+        case .cycle:
+            cycleTabContent
+        case .sync:
+            syncTabContent
+        case .settings:
+            settingsTabContent
         }
     }
 

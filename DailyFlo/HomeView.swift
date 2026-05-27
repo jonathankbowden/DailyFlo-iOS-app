@@ -11,10 +11,15 @@ import PhotosUI
 struct HomeView: View {
     let greeting: SplashGreeting
     var animateFromSplash: Bool
+    /// When true, render as content-only (no GeometryReader/ScrollView/full-bleed
+    /// background) so this view can be embedded inside a parent ScrollView —
+    /// e.g. the Profile tab that stacks Home + ProfileMainView in one scroll.
+    var isEmbedded: Bool = false
 
-    init(greeting: SplashGreeting = .random, animateFromSplash: Bool = false) {
+    init(greeting: SplashGreeting = .random, animateFromSplash: Bool = false, isEmbedded: Bool = false) {
         self.greeting = greeting
         self.animateFromSplash = animateFromSplash
+        self.isEmbedded = isEmbedded
     }
 
     @State private var hasAppeared = false
@@ -28,26 +33,32 @@ struct HomeView: View {
     private let cycleManager = CycleManager.shared
 
     var body: some View {
-        GeometryReader { outerGeo in
-            ZStack {
-                Color.floCream.ignoresSafeArea()
+        Group {
+            if isEmbedded {
+                dashboardContent
+            } else {
+                GeometryReader { outerGeo in
+                    ZStack {
+                        Color.floCream.ignoresSafeArea()
 
-                ScrollView {
-                    VStack(spacing: 0) {
-                        heroSection(topInset: outerGeo.safeAreaInsets.top, screenHeight: outerGeo.size.height + outerGeo.safeAreaInsets.top + outerGeo.safeAreaInsets.bottom)
+                        ScrollView {
+                            VStack(spacing: 0) {
+                                heroSection(topInset: outerGeo.safeAreaInsets.top, screenHeight: outerGeo.size.height + outerGeo.safeAreaInsets.top + outerGeo.safeAreaInsets.bottom)
 
-                        todaySection
-                            .padding(.top, FloSpacing.xs)
+                                todaySection
+                                    .padding(.top, FloSpacing.xs)
 
-                        actionWidgets
-                            .padding(.top, FloSpacing.xl)
+                                actionWidgets
+                                    .padding(.top, FloSpacing.xl)
 
-                        Spacer(minLength: 140)
+                                Spacer(minLength: 140)
+                            }
+                        }
+                        .scrollIndicators(.hidden)
                     }
+                    .ignoresSafeArea(edges: .top)
                 }
-                .scrollIndicators(.hidden)
             }
-            .ignoresSafeArea(edges: .top)
         }
         .onAppear {
             hasAppeared = true
@@ -69,6 +80,69 @@ struct HomeView: View {
                 journalManager: JournalManager.shared,
                 onDismiss: { showPhotoJournal = false }
             )
+        }
+    }
+
+    // MARK: - Embedded content (no outer ScrollView/GeometryReader)
+    @ViewBuilder
+    private var dashboardContent: some View {
+        VStack(spacing: 0) {
+            embeddedHero
+
+            todaySection
+                .padding(.top, FloSpacing.xs)
+
+            actionWidgets
+                .padding(.top, FloSpacing.xl)
+        }
+    }
+
+    /// Hero with a fixed height for use when nested inside another scroll —
+    /// no safe-area-top inset compensation (the parent scroll handles that).
+    private var embeddedHero: some View {
+        let heroHeight: CGFloat = 280
+
+        return ZStack(alignment: .bottomLeading) {
+            Image(greeting.imageName)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(height: heroHeight)
+                .clipped()
+
+            LinearGradient(
+                colors: [
+                    Color.black.opacity(0.55),
+                    Color.black.opacity(0.35),
+                    Color.black.opacity(0.6)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+
+            VStack(alignment: .leading, spacing: FloSpacing.md) {
+                Text("FLO")
+                    .font(.system(size: 13, weight: .black))
+                    .foregroundColor(.white.opacity(0.85))
+                    .tracking(5)
+
+                Text(greeting.text)
+                    .font(.custom("LUNARY free", size: 46))
+                    .foregroundColor(.white)
+                    .lineSpacing(10)
+                    .shadow(color: Color.black.opacity(0.25), radius: 8, x: 0, y: 2)
+            }
+            .padding(.horizontal, FloSpacing.lg)
+            .padding(.bottom, FloSpacing.xxl)
+        }
+        .frame(height: heroHeight)
+        .frame(maxWidth: .infinity)
+        .clipped()
+        .overlay(alignment: .bottom) {
+            Color.floCream
+                .frame(height: FloRadius.xl)
+                .clipShape(
+                    RoundedCorner(radius: FloRadius.xl, corners: [.topLeft, .topRight])
+                )
         }
     }
 
