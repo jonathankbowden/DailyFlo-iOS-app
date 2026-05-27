@@ -437,3 +437,443 @@ struct JournalEntryDetailView: View {
 #Preview {
     EmotionJournalView()
 }
+
+// MARK: - Journal Grid (2D day-card grid)
+/// Journal tab's base view. Each day is a full-screen card whose face is the
+/// most recent entry; empty days show a calm empty-state. Navigation is
+/// anchored on today: left/right paging by ±1 day, up/down paging by ±7 days
+/// (same weekday) using iOS-17 paging ScrollViews.
+struct JournalGridView: View {
+    @State private var journalManager = JournalManager.shared
+    @State private var currentWeekIdx: Int? = 0
+    @State private var currentDayIdx: Int?
+    @State private var detailDate: Date? = nil
+    @State private var showListView = false
+
+    /// Window of weeks shown (centered on today's week). ~13 months back gives
+    /// plenty of history; a small forward window lets users browse upcoming days.
+    private let weekRange = -56...4
+
+    private let calendar = Calendar.current
+
+    init() {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        let todayWeekday = cal.component(.weekday, from: today)
+        // 0..6 within the week, anchored on the locale's firstWeekday.
+        let dayIdx = (todayWeekday - cal.firstWeekday + 7) % 7
+        _currentDayIdx = State(initialValue: dayIdx)
+    }
+
+    private func date(weekIdx: Int, dayIdx: Int) -> Date {
+        let today = calendar.startOfDay(for: Date())
+        let todayWeekday = calendar.component(.weekday, from: today)
+        let todayDayIdx = (todayWeekday - calendar.firstWeekday + 7) % 7
+        let startOfThisWeek = calendar.date(byAdding: .day, value: -todayDayIdx, to: today) ?? today
+        let startOfTargetWeek = calendar.date(byAdding: .weekOfYear, value: weekIdx, to: startOfThisWeek) ?? startOfThisWeek
+        return calendar.date(byAdding: .day, value: dayIdx, to: startOfTargetWeek) ?? startOfTargetWeek
+    }
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            GeometryReader { geo in
+                ScrollView(.vertical, showsIndicators: false) {
+                    LazyVStack(spacing: 0) {
+                        ForEach(weekRange, id: \.self) { weekIdx in
+                            weekRow(weekIdx: weekIdx, size: geo.size)
+                                .frame(width: geo.size.width, height: geo.size.height)
+                                .id(weekIdx)
+                        }
+                    }
+                    .scrollTargetLayout()
+                }
+                .scrollTargetBehavior(.paging)
+                .scrollPosition(id: $currentWeekIdx)
+            }
+            .ignoresSafeArea()
+
+            // Toggle to the searchable list view.
+            Button {
+                FloHaptics.light()
+                showListView = true
+            } label: {
+                Image(systemName: "list.bullet")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.floCharcoal)
+                    .padding(FloSpacing.sm)
+                    .background(Color.white.opacity(0.85))
+                    .clipShape(Circle())
+                    .shadow(color: .black.opacity(0.15), radius: 6, x: 0, y: 2)
+            }
+            .padding(.top, FloSpacing.lg)
+            .padding(.trailing, FloSpacing.lg)
+            .accessibilityLabel("Show journal as list")
+        }
+        .sheet(item: Binding(
+            get: { detailDate.map { JournalDayAnchor(date: $0) } },
+            set: { detailDate = $0?.date }
+        )) { anchor in
+            JournalDaySheet(date: anchor.date, journalManager: journalManager) {
+                detailDate = nil
+            }
+        }
+        .sheet(isPresented: $showListView) {
+            EmotionJournalView()
+        }
+    }
+
+    // MARK: - Week row (horizontal paging by day)
+    @ViewBuilder
+    private func weekRow(weekIdx: Int, size: CGSize) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            LazyHStack(spacing: 0) {
+                ForEach(0..<7, id: \.self) { dayIdx in
+                    let cellDate = date(weekIdx: weekIdx, dayIdx: dayIdx)
+                    dayCard(for: cellDate)
+                        .frame(width: size.width, height: size.height)
+                        .id(dayIdx)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            FloHaptics.light()
+                            detailDate = cellDate
+                        }
+                }
+            }
+            .scrollTargetLayout()
+        }
+        .scrollTargetBehavior(.paging)
+        .scrollPosition(id: $currentDayIdx)
+    }
+
+    // MARK: - Day card
+    @ViewBuilder
+    private func dayCard(for date: Date) -> some View {
+        let entries = journalManager.entries(for: date).sorted { $0.date > $1.date }
+        if let mostRecent = entries.first {
+            populatedCard(date: date, entry: mostRecent, total: entries.count)
+        } else {
+            emptyCard(date: date)
+        }
+    }
+
+    private func populatedCard(date: Date, entry: JournalEntry, total: Int) -> some View {
+        ZStack(alignment: .topLeading) {
+            // Nature photo for this emotion, full-bleed.
+            Image(entry.emotion.photoName)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .clipped()
+
+            // Darken for text legibility.
+            LinearGradient(
+                colors: [
+                    Color.black.opacity(0.55),
+                    Color.black.opacity(0.15),
+                    Color.black.opacity(0.65)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+
+            VStack(alignment: .leading, spacing: 0) {
+                // Top — date
+                Text(weekdayString(date).uppercased())
+                    .font(.floLabel)
+                    .foregroundColor(.white.opacity(0.85))
+                    .tracking(3)
+
+                Text(dateString(date))
+                    .font(.custom("LUNARY free", size: 40))
+                    .foregroundColor(.white)
+                    .padding(.top, FloSpacing.xxs)
+
+                Spacer()
+
+                // Bottom — most recent entry summary
+                VStack(alignment: .leading, spacing: FloSpacing.sm) {
+                    Text(entry.emotion.rawValue.uppercased())
+                        .font(.floLabel)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                        .tracking(3)
+
+                    HStack(spacing: 4) {
+                        ForEach(1...5, id: \.self) { i in
+                            Circle()
+                                .fill(i <= entry.intensity ? Color.white : Color.white.opacity(0.3))
+                                .frame(width: 6, height: 6)
+                        }
+                    }
+
+                    if !entry.note.isEmpty {
+                        Text(entry.note)
+                            .font(.floBodyMedium)
+                            .foregroundColor(.white)
+                            .lineLimit(4)
+                            .multilineTextAlignment(.leading)
+                            .padding(.top, FloSpacing.xs)
+                    }
+
+                    if total > 1 {
+                        Text("\(total) entries this day")
+                            .font(.floCaption)
+                            .foregroundColor(.white.opacity(0.75))
+                            .padding(.top, FloSpacing.xs)
+                    }
+                }
+            }
+            .padding(.horizontal, FloSpacing.lg)
+            .padding(.top, FloSpacing.xxxl + FloSpacing.lg)
+            .padding(.bottom, FloSpacing.xxxl + FloSpacing.xl)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .clipped()
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(entry.emotion.rawValue) on \(entry.formattedDate). \(total > 1 ? "\(total) entries this day. " : "")Tap to open.")
+    }
+
+    private func emptyCard(date: Date) -> some View {
+        let isFuture = date > calendar.startOfDay(for: Date())
+        return ZStack(alignment: .topLeading) {
+            Color.floCream
+
+            VStack(alignment: .leading, spacing: 0) {
+                Text(weekdayString(date).uppercased())
+                    .font(.floLabel)
+                    .foregroundColor(.floGray)
+                    .tracking(3)
+
+                Text(dateString(date))
+                    .font(.custom("LUNARY free", size: 40))
+                    .foregroundColor(.floCharcoal)
+                    .padding(.top, FloSpacing.xxs)
+
+                Spacer()
+
+                VStack(alignment: .leading, spacing: FloSpacing.md) {
+                    Image(systemName: "leaf")
+                        .font(.system(size: 36))
+                        .foregroundColor(.floSage.opacity(0.6))
+
+                    Text(isFuture ? "Not yet." : "Nothing logged.")
+                        .font(.floDisplaySmall)
+                        .foregroundColor(.floCharcoal)
+
+                    Text(isFuture
+                         ? "This day hasn't happened yet."
+                         : "Tap to look back on this day.")
+                        .font(.floBodyMedium)
+                        .foregroundColor(.floGray)
+                        .multilineTextAlignment(.leading)
+                }
+
+                Spacer()
+            }
+            .padding(.horizontal, FloSpacing.lg)
+            .padding(.top, FloSpacing.xxxl + FloSpacing.lg)
+            .padding(.bottom, FloSpacing.xxxl + FloSpacing.xl)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .clipped()
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(isFuture ? "Future day" : "No entries") on \(longDateString(date)).")
+    }
+
+    // MARK: - Date formatting
+
+    private func weekdayString(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "EEEE"
+        return f.string(from: date)
+    }
+
+    private func dateString(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "MMMM d"
+        return f.string(from: date)
+    }
+
+    private func longDateString(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "EEEE, MMMM d, yyyy"
+        return f.string(from: date)
+    }
+}
+
+/// Identifiable wrapper so a Date can drive a `.sheet(item:)`.
+private struct JournalDayAnchor: Identifiable {
+    let date: Date
+    var id: Date { date }
+}
+
+// MARK: - Journal Day Sheet
+/// Sheet presented when a day card is tapped. Hands off to JournalEntryDetailView
+/// for single entries, lists them for multi-entry days, and shows a calm
+/// empty state when nothing has been logged.
+struct JournalDaySheet: View {
+    let date: Date
+    let journalManager: JournalManager
+    let onDismiss: () -> Void
+
+    @State private var selectedEntry: JournalEntry? = nil
+
+    private var entries: [JournalEntry] {
+        journalManager.entries(for: date).sorted { $0.date > $1.date }
+    }
+
+    var body: some View {
+        if entries.count == 1, let only = entries.first {
+            // Single entry — go straight to the detail view.
+            JournalEntryDetailView(entry: only, journalManager: journalManager, onDismiss: onDismiss)
+        } else {
+            multiOrEmptyView
+        }
+    }
+
+    @ViewBuilder
+    private var multiOrEmptyView: some View {
+        ZStack {
+            Color.floCream.ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                // Header
+                HStack {
+                    Button {
+                        FloHaptics.light()
+                        onDismiss()
+                    } label: {
+                        HStack(spacing: FloSpacing.xs) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 16, weight: .medium))
+                            Text("Journal")
+                                .font(.floBodyMedium)
+                        }
+                        .foregroundColor(.floSage)
+                    }
+
+                    Spacer()
+                }
+                .padding(.horizontal, FloSpacing.lg)
+                .padding(.vertical, FloSpacing.md)
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: FloSpacing.lg) {
+                        VStack(alignment: .leading, spacing: FloSpacing.xs) {
+                            Text(dayHeader.uppercased())
+                                .font(.floLabel)
+                                .foregroundColor(.floGray)
+                                .tracking(2)
+
+                            Text(longDay)
+                                .font(.floDisplaySmall)
+                                .foregroundColor(.floCharcoal)
+                        }
+
+                        if entries.isEmpty {
+                            emptyState
+                        } else {
+                            entryList
+                        }
+                    }
+                    .padding(.horizontal, FloSpacing.lg)
+                    .padding(.bottom, FloSpacing.xxl)
+                }
+            }
+        }
+        .sheet(item: $selectedEntry) { entry in
+            JournalEntryDetailView(entry: entry, journalManager: journalManager, onDismiss: {
+                selectedEntry = nil
+            })
+        }
+    }
+
+    private var entryList: some View {
+        VStack(spacing: FloSpacing.md) {
+            ForEach(entries) { entry in
+                Button {
+                    FloHaptics.light()
+                    selectedEntry = entry
+                } label: {
+                    entryRow(entry)
+                }
+                .buttonStyle(.floPressed)
+            }
+        }
+    }
+
+    private func entryRow(_ entry: JournalEntry) -> some View {
+        HStack(spacing: FloSpacing.md) {
+            ZStack {
+                Circle()
+                    .fill(entry.emotion.color.opacity(0.15))
+                    .frame(width: 44, height: 44)
+
+                Image(systemName: entry.emotion.icon)
+                    .font(.system(size: 18))
+                    .foregroundColor(entry.emotion.color)
+            }
+
+            VStack(alignment: .leading, spacing: FloSpacing.xxs) {
+                Text(entry.emotion.rawValue)
+                    .font(.floBodyMedium)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.floCharcoal)
+
+                Text(entry.formattedTime)
+                    .font(.floBodySmall)
+                    .foregroundColor(.floGray)
+
+                if !entry.note.isEmpty {
+                    Text(entry.note)
+                        .font(.floBodySmall)
+                        .foregroundColor(.floCharcoal)
+                        .lineLimit(2)
+                        .padding(.top, FloSpacing.xxs)
+                }
+            }
+
+            Spacer()
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(.floGray)
+        }
+        .padding(FloSpacing.md)
+        .background(Color.white)
+        .cornerRadius(FloRadius.lg)
+        .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 2)
+    }
+
+    private var emptyState: some View {
+        VStack(alignment: .leading, spacing: FloSpacing.md) {
+            Image(systemName: "leaf")
+                .font(.system(size: 36))
+                .foregroundColor(.floSage.opacity(0.6))
+
+            Text("Nothing logged on this day.")
+                .font(.floBodyLarge)
+                .foregroundColor(.floCharcoal)
+
+            Text("Use the + button on the tab bar to add an entry.")
+                .font(.floBodySmall)
+                .foregroundColor(.floGray)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(FloSpacing.lg)
+        .background(Color.white)
+        .cornerRadius(FloRadius.lg)
+        .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 2)
+    }
+
+    private var dayHeader: String {
+        let f = DateFormatter()
+        f.dateFormat = "EEEE"
+        return f.string(from: date)
+    }
+
+    private var longDay: String {
+        let f = DateFormatter()
+        f.dateFormat = "MMMM d, yyyy"
+        return f.string(from: date)
+    }
+}
