@@ -338,6 +338,42 @@ class CycleManager {
         UserDefaults.standard.set(false, forKey: "pendingOnboardingPayload")
     }
 
+    // MARK: - Log a confirmed cycle start (post-onboarding)
+
+    /// Records a real (user-confirmed) period start. Writes UserDefaults
+    /// optimistically so the UI is instant, then inserts a `cycles` row with
+    /// `is_predicted = false`. If there's no signed-in session, the local
+    /// write still lands and the remote insert is skipped gracefully.
+    @MainActor
+    func logCycle(startDate: Date) async {
+        // Optimistic local write — preserves the offline-cache contract.
+        UserDefaults.standard.set(startDate, forKey: "lastPeriodDate")
+
+        guard let userId = SupabaseClient.shared.auth.currentSession?.user.id else {
+            print("[CycleManager] logCycle: no signed-in session — saved locally only")
+            return
+        }
+
+        let predictedEnd = Calendar.current.date(byAdding: .day, value: cycleLength, to: startDate) ?? startDate
+        let row = CycleInsertRow(
+            userId: userId,
+            startDate: Self.dbDateFormatter.string(from: startDate),
+            predictedEndDate: Self.dbDateFormatter.string(from: predictedEnd),
+            periodLengthDays: periodLength,
+            isPredicted: false
+        )
+
+        do {
+            try await SupabaseClient.shared
+                .from(cyclesTable)
+                .insert(row)
+                .execute()
+            print("[CycleManager] logCycle insert OK for user \(userId)")
+        } catch {
+            logRemoteError(operation: "logCycle insert", error: error)
+        }
+    }
+
     // MARK: - Refresh from Supabase
 
     /// Pulls the signed-in user's profile + most recent cycle and writes them

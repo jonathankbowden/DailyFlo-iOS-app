@@ -834,8 +834,12 @@ struct LogCycleModal: View {
                     // Log Cycle button
                     Button(action: {
                         FloHaptics.success()
-                        // Save cycle start date to UserDefaults
-                        UserDefaults.standard.set(selectedDate, forKey: "lastPeriodDate")
+                        // CycleManager handles the local UserDefaults write
+                        // and the Supabase insert; the Task is fire-and-forget
+                        // so dismissing the modal doesn't block on the network.
+                        Task { @MainActor in
+                            await CycleManager.shared.logCycle(startDate: selectedDate)
+                        }
                         isPresented = false
                     }) {
                         HStack(spacing: FloSpacing.sm) {
