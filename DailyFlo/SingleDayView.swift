@@ -357,6 +357,7 @@ struct SingleDayView: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(FloSpacing.lg)
         .background(Color.floMint.opacity(0.3))
         .cornerRadius(FloRadius.lg)
