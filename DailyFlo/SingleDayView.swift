@@ -175,18 +175,19 @@ struct SingleDayView: View {
     // MARK: - Phase Info Card
     private func phaseInfoCard(for data: DayLogData) -> some View {
         VStack(spacing: 0) {
-            // Header with phase color
+            // Header — soft phase tint to match the calendar block exactly,
+            // with charcoal type for legible contrast across all four phases.
             HStack {
                 VStack(alignment: .leading, spacing: FloSpacing.xs) {
                     Text("DAY \(data.dayOfCycle) OF CYCLE")
                         .font(.floLabel)
                         .fontWeight(.medium)
-                        .foregroundColor(.white.opacity(0.8))
+                        .foregroundColor(.floCharcoal.opacity(0.7))
                         .tracking(1)
 
                     Text(data.phase.name)
                         .font(.floDisplaySmall)
-                        .foregroundColor(.white)
+                        .foregroundColor(.floCharcoal)
                 }
 
                 Spacer()
@@ -194,10 +195,10 @@ struct SingleDayView: View {
                 // Phase number
                 Text(data.phase.number)
                     .font(.custom("LUNARY free", size: 48))
-                    .foregroundColor(.white.opacity(0.5))
+                    .foregroundColor(.floCharcoal.opacity(0.35))
             }
             .padding(FloSpacing.lg)
-            .background(data.phase.color)
+            .background(data.phase.backgroundColor)
 
             // Phase description
             VStack(alignment: .leading, spacing: FloSpacing.sm) {
