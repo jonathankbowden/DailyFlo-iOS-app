@@ -400,15 +400,15 @@ struct DayCellWithPhase: View {
 
             VStack(spacing: 2) {
                 ZStack {
-                    // Current date circle outline (black)
+                    // Current date: charcoal outline only — phase tint shows
+                    // through. Takes priority over the selected-fill so today
+                    // stays an outline even when it's also the selected day.
                     if isToday {
                         Circle()
                             .stroke(Color.floCharcoal, lineWidth: 1.5)
                             .frame(width: 32, height: 32)
-                    }
-
-                    // Selected state with subtle scale animation
-                    if isSelected {
+                    } else if isSelected {
+                        // Selected state (non-today) with subtle scale animation
                         Circle()
                             .fill(Color.floSage)
                             .frame(width: 32, height: 32)
@@ -419,7 +419,7 @@ struct DayCellWithPhase: View {
                     Text("\(day)")
                         .font(.floBodyMedium)
                         .fontWeight(isToday || isSelected ? .semibold : .regular)
-                        .foregroundColor(isSelected ? .white : .floCharcoal)
+                        .foregroundColor(isSelected && !isToday ? .white : .floCharcoal)
                 }
                 .frame(width: 32, height: 32)
                 .scaleEffect(isSelected ? 1.05 : 1.0)
