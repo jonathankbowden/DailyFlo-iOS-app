@@ -228,9 +228,9 @@ struct TabBarButtonStyle: ButtonStyle {
 
 struct JournalView: View {
     var body: some View {
-        // Base view is the 2D day-card grid; EmotionJournalView remains
-        // reachable from inside it as a searchable list.
-        JournalGridView()
+        // Greeting + search header on top, with the 2D day-card grid below
+        // when search is empty (or filtered results when it isn't).
+        JournalBaseView()
     }
 }
 

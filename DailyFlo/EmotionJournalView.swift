@@ -448,7 +448,6 @@ struct JournalGridView: View {
     @State private var currentWeekIdx: Int? = 0
     @State private var currentDayIdx: Int?
     @State private var detailDate: Date? = nil
-    @State private var showListView = false
     @State private var showNewEntry = false
 
     /// Window of weeks shown (centered on today's week). ~13 months back gives
@@ -476,40 +475,19 @@ struct JournalGridView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
-            Color.floCream.ignoresSafeArea()
-
-            GeometryReader { geo in
-                ScrollView(.vertical, showsIndicators: false) {
-                    LazyVStack(spacing: 0) {
-                        ForEach(weekRange, id: \.self) { weekIdx in
-                            weekRow(weekIdx: weekIdx, pageSize: geo.size)
-                                .frame(width: geo.size.width, height: geo.size.height)
-                                .id(weekIdx)
-                        }
+        GeometryReader { geo in
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVStack(spacing: 0) {
+                    ForEach(weekRange, id: \.self) { weekIdx in
+                        weekRow(weekIdx: weekIdx, pageSize: geo.size)
+                            .frame(width: geo.size.width, height: geo.size.height)
+                            .id(weekIdx)
                     }
-                    .scrollTargetLayout()
                 }
-                .scrollTargetBehavior(.paging)
-                .scrollPosition(id: $currentWeekIdx)
+                .scrollTargetLayout()
             }
-
-            // Toggle to the searchable list view.
-            Button {
-                FloHaptics.light()
-                showListView = true
-            } label: {
-                Image(systemName: "list.bullet")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundColor(.floCharcoal)
-                    .padding(FloSpacing.sm)
-                    .background(Color.white.opacity(0.85))
-                    .clipShape(Circle())
-                    .shadow(color: .black.opacity(0.15), radius: 6, x: 0, y: 2)
-            }
-            .padding(.top, FloSpacing.lg)
-            .padding(.trailing, FloSpacing.lg)
-            .accessibilityLabel("Show journal as list")
+            .scrollTargetBehavior(.paging)
+            .scrollPosition(id: $currentWeekIdx)
         }
         .sheet(item: Binding(
             get: { detailDate.map { JournalDayAnchor(date: $0) } },
@@ -518,9 +496,6 @@ struct JournalGridView: View {
             JournalDaySheet(date: anchor.date, journalManager: journalManager) {
                 detailDate = nil
             }
-        }
-        .sheet(isPresented: $showListView) {
-            EmotionJournalView()
         }
         .sheet(isPresented: $showNewEntry) {
             JournalEntryView(
@@ -894,5 +869,150 @@ struct JournalDaySheet: View {
         let f = DateFormatter()
         f.dateFormat = "MMMM d, yyyy"
         return f.string(from: date)
+    }
+}
+
+// MARK: - Journal Base View (header + grid or filtered list)
+/// Journal tab's base view. Persistent header with greeting + search at top.
+/// Below the header: the 2D paged day-card grid when search is empty, or a
+/// filtered list of entries when the user is searching.
+struct JournalBaseView: View {
+    @State private var journalManager = JournalManager.shared
+    @State private var searchText: String = ""
+    @State private var selectedEntry: JournalEntry? = nil
+    @State private var hasAppeared = false
+    @FocusState private var isSearchFocused: Bool
+
+    private var userName: String { CycleManager.shared.userName }
+
+    private var filteredEntries: [JournalEntry] {
+        let query = searchText.lowercased()
+        return journalManager.entries.filter {
+            $0.note.lowercased().contains(query) ||
+            $0.emotion.rawValue.lowercased().contains(query) ||
+            $0.formattedDate.lowercased().contains(query)
+        }
+    }
+
+    var body: some View {
+        ZStack {
+            Color.floCream.ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                header
+                    .padding(.horizontal, FloSpacing.lg)
+                    .padding(.bottom, FloSpacing.md)
+
+                if searchText.isEmpty {
+                    JournalGridView()
+                } else {
+                    searchResultsList
+                }
+            }
+        }
+        .dismissKeyboardOnTap()
+        .sheet(item: $selectedEntry) { entry in
+            JournalEntryDetailView(entry: entry, journalManager: journalManager, onDismiss: {
+                selectedEntry = nil
+            })
+        }
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                hasAppeared = true
+            }
+        }
+    }
+
+    // MARK: - Header (greeting + search)
+    private var header: some View {
+        VStack(alignment: .leading, spacing: FloSpacing.lg) {
+            VStack(alignment: .leading, spacing: FloSpacing.xs) {
+                Text("Hello, \(userName)!")
+                    .font(.floSerif(size: 36))
+                    .foregroundColor(.floCharcoal)
+                    .accessibilityAddTraits(.isHeader)
+
+                Text("WAY TO TAKE TIME TO WRITE IT DOWN.")
+                    .font(.floLabel)
+                    .fontWeight(.medium)
+                    .foregroundColor(.floCharcoal)
+                    .tracking(1)
+            }
+            .padding(.top, FloSpacing.md)
+
+            searchBar
+        }
+    }
+
+    private var searchBar: some View {
+        HStack(spacing: FloSpacing.sm) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 16))
+                .foregroundColor(isSearchFocused ? .floSage : .floGray)
+                .animation(FloAnimation.easeOutQuick, value: isSearchFocused)
+
+            TextField("keyword search", text: $searchText)
+                .font(.floSerif(size: 16))
+                .foregroundColor(.floCharcoal)
+                .focused($isSearchFocused)
+                .submitLabel(.search)
+                .accessibilityLabel("Search journal entries")
+
+            if !searchText.isEmpty {
+                Button(action: {
+                    FloHaptics.light()
+                    searchText = ""
+                }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundColor(.floGray)
+                }
+                .buttonStyle(.floPressed)
+                .transition(.opacity.combined(with: .scale))
+            }
+        }
+        .padding(.horizontal, FloSpacing.lg)
+        .padding(.vertical, FloSpacing.md)
+        .background(Color.white)
+        .cornerRadius(FloRadius.xl)
+        .overlay(
+            RoundedRectangle(cornerRadius: FloRadius.xl)
+                .stroke(isSearchFocused ? Color.floSage : Color.clear, lineWidth: 2)
+        )
+        .shadow(color: FloShadow.small.color, radius: FloShadow.small.radius, x: 0, y: FloShadow.small.y)
+        .animation(FloAnimation.easeOutQuick, value: searchText.isEmpty)
+    }
+
+    // MARK: - Search results list
+    private var searchResultsList: some View {
+        ScrollView {
+            LazyVStack(spacing: FloSpacing.lg) {
+                let entries = filteredEntries
+                if entries.isEmpty {
+                    VStack(spacing: FloSpacing.md) {
+                        Spacer().frame(height: FloSpacing.xxl)
+
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 36))
+                            .foregroundColor(.floGray.opacity(0.4))
+
+                        Text("No entries match \"\(searchText)\"")
+                            .font(.floBodyMedium)
+                            .foregroundColor(.floGray)
+                    }
+                    .frame(maxWidth: .infinity)
+                } else {
+                    ForEach(entries) { entry in
+                        JournalCardView(
+                            entry: entry,
+                            onTap: { selectedEntry = entry }
+                        )
+                    }
+                }
+            }
+            .padding(.horizontal, FloSpacing.lg)
+            .padding(.top, FloSpacing.md)
+            .padding(.bottom, 140)
+        }
     }
 }
