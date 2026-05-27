@@ -449,6 +449,7 @@ struct JournalGridView: View {
     @State private var currentDayIdx: Int?
     @State private var detailDate: Date? = nil
     @State private var showListView = false
+    @State private var showNewEntry = false
 
     /// Window of weeks shown (centered on today's week). ~13 months back gives
     /// plenty of history; a small forward window lets users browse upcoming days.
@@ -521,6 +522,12 @@ struct JournalGridView: View {
         .sheet(isPresented: $showListView) {
             EmotionJournalView()
         }
+        .sheet(isPresented: $showNewEntry) {
+            JournalEntryView(
+                journalManager: JournalManager.shared,
+                onDismiss: { showNewEntry = false }
+            )
+        }
     }
 
     // MARK: - Week row (horizontal paging by day)
@@ -542,16 +549,24 @@ struct JournalGridView: View {
     }
 
     /// One page = cream margins + a contained, rounded card with a soft shadow.
-    /// The bottom inset leaves room for the floating tab bar.
+    /// The bottom inset leaves room for the floating tab bar. Tap dispatches
+    /// to the day-detail sheet (with entries) or the new-entry composer (empty).
     private func dayCardPage(for cellDate: Date) -> some View {
-        dayCard(for: cellDate)
+        let hasEntries = !journalManager.entries(for: cellDate).isEmpty
+
+        return dayCard(for: cellDate)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.white)
             .clipShape(RoundedRectangle(cornerRadius: FloRadius.xl, style: .continuous))
             .shadow(color: Color.black.opacity(0.12), radius: 14, x: 0, y: 6)
             .contentShape(RoundedRectangle(cornerRadius: FloRadius.xl, style: .continuous))
             .onTapGesture {
                 FloHaptics.light()
-                detailDate = cellDate
+                if hasEntries {
+                    detailDate = cellDate
+                } else {
+                    showNewEntry = true
+                }
             }
             .padding(.horizontal, FloSpacing.lg)
             .padding(.top, FloSpacing.md)
@@ -570,74 +585,66 @@ struct JournalGridView: View {
     }
 
     private func populatedCard(date: Date, entry: JournalEntry, total: Int) -> some View {
-        ZStack(alignment: .topLeading) {
-            // Nature photo for this emotion, full-bleed.
+        VStack(spacing: 0) {
+            // ~Square image on top — nature photo for the entry's emotion.
             Image(entry.emotion.photoName)
                 .resizable()
-                .aspectRatio(contentMode: .fill)
+                .aspectRatio(1, contentMode: .fill)
+                .frame(maxWidth: .infinity)
                 .clipped()
 
-            // Darken for text legibility.
-            LinearGradient(
-                colors: [
-                    Color.black.opacity(0.55),
-                    Color.black.opacity(0.15),
-                    Color.black.opacity(0.65)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-
-            VStack(alignment: .leading, spacing: 0) {
-                // Top — date
+            // White content area below.
+            VStack(alignment: .leading, spacing: FloSpacing.xs) {
                 Text(weekdayString(date).uppercased())
                     .font(.floLabel)
-                    .foregroundColor(.white.opacity(0.85))
-                    .tracking(3)
+                    .foregroundColor(.floGray)
+                    .tracking(2)
 
                 Text(dateString(date))
-                    .font(.custom("LUNARY free", size: 40))
-                    .foregroundColor(.white)
-                    .padding(.top, FloSpacing.xxs)
+                    .font(.floDisplaySmall)
+                    .foregroundColor(.floCharcoal)
 
-                Spacer()
+                HStack(spacing: FloSpacing.sm) {
+                    Image(systemName: entry.emotion.icon)
+                        .font(.system(size: 14))
+                        .foregroundColor(entry.emotion.color)
 
-                // Bottom — most recent entry summary
-                VStack(alignment: .leading, spacing: FloSpacing.sm) {
-                    Text(entry.emotion.rawValue.uppercased())
-                        .font(.floLabel)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.white)
-                        .tracking(3)
+                    Text(entry.emotion.rawValue)
+                        .font(.floBodySmall)
+                        .fontWeight(.medium)
+                        .foregroundColor(.floCharcoal)
 
-                    HStack(spacing: 4) {
+                    HStack(spacing: 3) {
                         ForEach(1...5, id: \.self) { i in
                             Circle()
-                                .fill(i <= entry.intensity ? Color.white : Color.white.opacity(0.3))
-                                .frame(width: 6, height: 6)
+                                .fill(i <= entry.intensity ? Color.floCharcoal : Color.floGray.opacity(0.25))
+                                .frame(width: 5, height: 5)
                         }
                     }
-
-                    if !entry.note.isEmpty {
-                        Text(entry.note)
-                            .font(.floBodyMedium)
-                            .foregroundColor(.white)
-                            .lineLimit(4)
-                            .multilineTextAlignment(.leading)
-                            .padding(.top, FloSpacing.xs)
-                    }
-
-                    if total > 1 {
-                        Text("\(total) entries this day")
-                            .font(.floCaption)
-                            .foregroundColor(.white.opacity(0.75))
-                            .padding(.top, FloSpacing.xs)
-                    }
                 }
+                .padding(.top, FloSpacing.xs)
+
+                if !entry.note.isEmpty {
+                    Text(entry.note)
+                        .font(.floBodyMedium)
+                        .foregroundColor(.floCharcoal)
+                        .lineLimit(5)
+                        .multilineTextAlignment(.leading)
+                        .padding(.top, FloSpacing.sm)
+                }
+
+                if total > 1 {
+                    Text("+ \(total - 1) more this day")
+                        .font(.floCaption)
+                        .foregroundColor(.floGray)
+                        .padding(.top, FloSpacing.xs)
+                }
+
+                Spacer(minLength: 0)
             }
-            .padding(.horizontal, FloSpacing.lg)
-            .padding(.vertical, FloSpacing.xl)
+            .padding(FloSpacing.lg)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(Color.white)
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(entry.emotion.rawValue) on \(entry.formattedDate). \(total > 1 ? "\(total) entries this day. " : "")Tap to open.")
@@ -645,51 +652,50 @@ struct JournalGridView: View {
 
     private func emptyCard(date: Date) -> some View {
         let isFuture = date > calendar.startOfDay(for: Date())
-        return ZStack(alignment: .topLeading) {
-            Color.white
+        return VStack(spacing: 0) {
+            // Placeholder sliver — a thin tinted band where the image would be.
+            Color.floMint.opacity(0.35)
+                .frame(height: 64)
 
-            VStack(alignment: .leading, spacing: 0) {
+            // White prompt area below.
+            VStack(alignment: .leading, spacing: FloSpacing.xs) {
                 Text(weekdayString(date).uppercased())
                     .font(.floLabel)
                     .foregroundColor(.floGray)
-                    .tracking(3)
+                    .tracking(2)
 
                 Text(dateString(date))
-                    .font(.custom("LUNARY free", size: 40))
+                    .font(.floDisplaySmall)
                     .foregroundColor(.floCharcoal)
-                    .padding(.top, FloSpacing.xxs)
 
-                Spacer()
+                Spacer(minLength: FloSpacing.xl)
 
-                VStack(alignment: .leading, spacing: FloSpacing.md) {
-                    Image(systemName: "leaf")
-                        .font(.system(size: 36))
-                        .foregroundColor(.floSage.opacity(0.6))
+                VStack(alignment: .leading, spacing: FloSpacing.sm) {
+                    Image(systemName: isFuture ? "calendar" : "plus.circle")
+                        .font(.system(size: 28))
+                        .foregroundColor(isFuture ? .floGray.opacity(0.5) : .floSage)
 
-                    Text(isFuture ? "Not yet." : "Nothing logged.")
-                        .font(.floDisplaySmall)
+                    Text(isFuture ? "Not yet." : "Tap to add an entry.")
+                        .font(.floBodyLarge)
+                        .fontWeight(.medium)
                         .foregroundColor(.floCharcoal)
 
                     Text(isFuture
                          ? "This day hasn't happened yet."
-                         : "Tap to look back on this day.")
-                        .font(.floBodyMedium)
+                         : "Capture how you're feeling today.")
+                        .font(.floBodySmall)
                         .foregroundColor(.floGray)
                         .multilineTextAlignment(.leading)
                 }
 
-                Spacer()
+                Spacer(minLength: 0)
             }
-            .padding(.horizontal, FloSpacing.lg)
-            .padding(.vertical, FloSpacing.xl)
+            .padding(FloSpacing.lg)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(Color.white)
         }
-        .overlay(
-            RoundedRectangle(cornerRadius: FloRadius.xl, style: .continuous)
-                .stroke(Color.floGray.opacity(0.15), lineWidth: 1)
-        )
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(isFuture ? "Future day" : "No entries") on \(longDateString(date)).")
+        .accessibilityLabel("\(isFuture ? "Future day" : "No entries") on \(longDateString(date)). Tap to add an entry.")
     }
 
     // MARK: - Date formatting
