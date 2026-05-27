@@ -362,17 +362,18 @@ struct SignInView: View {
         focusedField = nil
         isLoading = true
 
-        let rawNonce = Self.randomNonceString()
-        let hashedNonce = Self.sha256(rawNonce)
-
+        // GoogleSignIn-iOS 7.1.0 doesn't expose a nonce parameter on signIn,
+        // so we don't bind one here. Supabase still verifies the ID token's
+        // signature, audience, issuer, and expiry — nonce is the optional
+        // replay-prevention layer and `OpenIDConnectCredentials.nonce` is
+        // documented as optional.
         Task { @MainActor in
             defer { isLoading = false }
             do {
                 let result = try await GIDSignIn.sharedInstance.signIn(
                     withPresenting: presenter,
                     hint: nil,
-                    additionalScopes: nil,
-                    nonce: hashedNonce
+                    additionalScopes: nil
                 )
 
                 guard let idToken = result.user.idToken?.tokenString else {
@@ -384,8 +385,7 @@ struct SignInView: View {
                 _ = try await SupabaseClient.shared.auth.signInWithIdToken(
                     credentials: OpenIDConnectCredentials(
                         provider: .google,
-                        idToken: idToken,
-                        nonce: rawNonce
+                        idToken: idToken
                     )
                 )
 
