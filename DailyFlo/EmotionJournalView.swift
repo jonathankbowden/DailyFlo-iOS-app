@@ -476,19 +476,31 @@ struct JournalGridView: View {
 
     var body: some View {
         GeometryReader { geo in
-            ScrollView(.vertical, showsIndicators: false) {
-                LazyVStack(spacing: 0) {
-                    ForEach(weekRange, id: \.self) { weekIdx in
-                        weekRow(weekIdx: weekIdx, pageSize: geo.size)
-                            .frame(width: geo.size.width, height: geo.size.height)
-                            .id(weekIdx)
+            ScrollViewReader { proxy in
+                ScrollView(.vertical, showsIndicators: false) {
+                    LazyVStack(spacing: 0) {
+                        ForEach(weekRange, id: \.self) { weekIdx in
+                            weekRow(weekIdx: weekIdx, pageSize: geo.size)
+                                .frame(width: geo.size.width, height: geo.size.height)
+                                .id(weekIdx)
+                        }
+                    }
+                    .scrollTargetLayout()
+                }
+                .scrollTargetBehavior(.paging)
+                .scrollPosition(id: $currentWeekIdx, anchor: .top)
+                .contentMargins(.top, 0, for: .scrollContent)
+                .onAppear {
+                    // After layout settles, force the scroll to today's row
+                    // top-anchored. scrollPosition(id:) alone gets confused
+                    // when the LazyVStack lazy-loads rows above the target.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                        withTransaction(Transaction(animation: nil)) {
+                            proxy.scrollTo(0, anchor: .top)
+                        }
                     }
                 }
-                .scrollTargetLayout()
             }
-            .scrollTargetBehavior(.paging)
-            .scrollPosition(id: $currentWeekIdx, anchor: .top)
-            .contentMargins(.top, 0, for: .scrollContent)
         }
         .sheet(item: Binding(
             get: { detailDate.map { JournalDayAnchor(date: $0) } },
