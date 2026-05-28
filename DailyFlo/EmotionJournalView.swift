@@ -467,19 +467,21 @@ struct JournalGridView: View {
     }
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            LazyHStack(spacing: 0) {
-                ForEach(dates, id: \.self) { date in
-                    dayCardPage(for: date)
-                        .containerRelativeFrame([.horizontal, .vertical])
-                        .id(date)
+        GeometryReader { reader in
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 0) {
+                    ForEach(dates, id: \.self) { date in
+                        dayCardPage(for: date, pageHeight: reader.size.height)
+                            .containerRelativeFrame(.horizontal)
+                            .id(date)
+                    }
                 }
+                .scrollTargetLayout()
             }
-            .scrollTargetLayout()
+            .scrollTargetBehavior(.paging)
+            .scrollPosition(id: $currentDate, anchor: .leading)
+            .simultaneousGesture(verticalSwipeGesture)
         }
-        .scrollTargetBehavior(.paging)
-        .scrollPosition(id: $currentDate, anchor: .leading)
-        .simultaneousGesture(verticalSwipeGesture)
         .sheet(item: Binding(
             get: { detailDate.map { JournalDayAnchor(date: $0) } },
             set: { detailDate = $0?.date }
@@ -519,9 +521,11 @@ struct JournalGridView: View {
     }
 
     /// One page = cream margins + a contained, rounded card with a soft shadow.
-    /// The bottom inset leaves room for the floating tab bar. Tap dispatches
-    /// to the day-detail sheet (with entries) or the new-entry composer (empty).
-    private func dayCardPage(for cellDate: Date) -> some View {
+    /// Vertical sizing comes from the parent GeometryReader (pageHeight) rather
+    /// than containerRelativeFrame(.vertical) — container-relative in the
+    /// cross-axis of a horizontal scroll has unreliable initial-paint math,
+    /// which would otherwise show as a top cutoff on first load.
+    private func dayCardPage(for cellDate: Date, pageHeight: CGFloat) -> some View {
         let hasEntries = !journalManager.entries(for: cellDate).isEmpty
 
         return dayCard(for: cellDate)
@@ -540,6 +544,7 @@ struct JournalGridView: View {
             }
             .padding(.horizontal, FloSpacing.lg)
             .padding(.bottom, 130)
+            .frame(height: pageHeight)
     }
 
     // MARK: - Day card
