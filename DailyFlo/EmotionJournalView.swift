@@ -895,7 +895,6 @@ struct JournalBaseView: View {
                 tabHeaderBar
 
                 header
-                    .padding(.horizontal, FloSpacing.lg)
                     .padding(.bottom, FloSpacing.md)
 
                 if searchText.isEmpty {
@@ -949,9 +948,10 @@ struct JournalBaseView: View {
                 .foregroundColor(.floCharcoal)
                 .accessibilityAddTraits(.isHeader)
                 .padding(.top, FloSpacing.md)
+                .padding(.horizontal, FloSpacing.lg)
 
-            // Bracketed subtitle — same divider styling as CalendarView's
-            // day-letter row (lighter line above, darker line below).
+            // Bracketed subtitle — full-bleed divider lines matching
+            // CalendarView's day-letter row (lighter above, darker below).
             VStack(spacing: 0) {
                 Rectangle()
                     .fill(Color(hex: "E5E5E5"))
@@ -963,6 +963,7 @@ struct JournalBaseView: View {
                     .foregroundColor(.floCharcoal)
                     .tracking(1)
                     .padding(.vertical, FloSpacing.sm)
+                    .padding(.horizontal, FloSpacing.lg)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 Rectangle()
@@ -973,6 +974,7 @@ struct JournalBaseView: View {
 
             searchBar
                 .padding(.top, FloSpacing.lg)
+                .padding(.horizontal, FloSpacing.lg)
         }
     }
 
