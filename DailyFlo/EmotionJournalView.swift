@@ -438,70 +438,48 @@ struct JournalEntryDetailView: View {
     EmotionJournalView()
 }
 
-// MARK: - Journal Grid (2D day-card grid)
+// MARK: - Journal Grid (2D day-card navigation)
 /// Journal tab's base view. Each day is a full-screen card whose face is the
 /// most recent entry; empty days show a calm empty-state. Navigation is
-/// anchored on today: left/right paging by ±1 day, up/down paging by ±7 days
-/// (same weekday) using iOS-17 paging ScrollViews.
+/// anchored on today: left/right paging by ±1 day comes from a single
+/// horizontal paging ScrollView; up/down by ±7 days (same weekday) comes
+/// from a DragGesture that jumps the scroll position. One ScrollView keeps
+/// the initial position rock-steady and avoids nested-scroll layout races.
 struct JournalGridView: View {
     @State private var journalManager = JournalManager.shared
-    @State private var currentWeekIdx: Int? = 0
-    @State private var currentDayIdx: Int?
+    @State private var currentDate: Date?
     @State private var detailDate: Date? = nil
     @State private var showNewEntry = false
 
-    /// Window of weeks shown (centered on today's week). ~13 months back gives
-    /// plenty of history; a small forward window lets users browse upcoming days.
-    private let weekRange = -56...4
-
     private let calendar = Calendar.current
 
-    init() {
+    /// Days available to scroll through. A year of history + ~a month forward.
+    private let dates: [Date] = {
         let cal = Calendar.current
         let today = cal.startOfDay(for: Date())
-        let todayWeekday = cal.component(.weekday, from: today)
-        // 0..6 within the week, anchored on the locale's firstWeekday.
-        let dayIdx = (todayWeekday - cal.firstWeekday + 7) % 7
-        _currentDayIdx = State(initialValue: dayIdx)
-    }
+        return (-365...30).compactMap { offset in
+            cal.date(byAdding: .day, value: offset, to: today)
+        }
+    }()
 
-    private func date(weekIdx: Int, dayIdx: Int) -> Date {
-        let today = calendar.startOfDay(for: Date())
-        let todayWeekday = calendar.component(.weekday, from: today)
-        let todayDayIdx = (todayWeekday - calendar.firstWeekday + 7) % 7
-        let startOfThisWeek = calendar.date(byAdding: .day, value: -todayDayIdx, to: today) ?? today
-        let startOfTargetWeek = calendar.date(byAdding: .weekOfYear, value: weekIdx, to: startOfThisWeek) ?? startOfThisWeek
-        return calendar.date(byAdding: .day, value: dayIdx, to: startOfTargetWeek) ?? startOfTargetWeek
+    init() {
+        _currentDate = State(initialValue: Calendar.current.startOfDay(for: Date()))
     }
 
     var body: some View {
-        GeometryReader { geo in
-            ScrollViewReader { proxy in
-                ScrollView(.vertical, showsIndicators: false) {
-                    LazyVStack(spacing: 0) {
-                        ForEach(weekRange, id: \.self) { weekIdx in
-                            weekRow(weekIdx: weekIdx, pageSize: geo.size)
-                                .frame(width: geo.size.width, height: geo.size.height)
-                                .id(weekIdx)
-                        }
-                    }
-                    .scrollTargetLayout()
-                }
-                .scrollTargetBehavior(.paging)
-                .scrollPosition(id: $currentWeekIdx, anchor: .top)
-                .contentMargins(.top, 0, for: .scrollContent)
-                .onAppear {
-                    // After layout settles, force the scroll to today's row
-                    // top-anchored. scrollPosition(id:) alone gets confused
-                    // when the LazyVStack lazy-loads rows above the target.
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                        withTransaction(Transaction(animation: nil)) {
-                            proxy.scrollTo(0, anchor: .top)
-                        }
-                    }
+        ScrollView(.horizontal, showsIndicators: false) {
+            LazyHStack(spacing: 0) {
+                ForEach(dates, id: \.self) { date in
+                    dayCardPage(for: date)
+                        .containerRelativeFrame([.horizontal, .vertical])
+                        .id(date)
                 }
             }
+            .scrollTargetLayout()
         }
+        .scrollTargetBehavior(.paging)
+        .scrollPosition(id: $currentDate, anchor: .leading)
+        .simultaneousGesture(verticalSwipeGesture)
         .sheet(item: Binding(
             get: { detailDate.map { JournalDayAnchor(date: $0) } },
             set: { detailDate = $0?.date }
@@ -518,23 +496,26 @@ struct JournalGridView: View {
         }
     }
 
-    // MARK: - Week row (horizontal paging by day)
-    @ViewBuilder
-    private func weekRow(weekIdx: Int, pageSize: CGSize) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            LazyHStack(spacing: 0) {
-                ForEach(0..<7, id: \.self) { dayIdx in
-                    let cellDate = date(weekIdx: weekIdx, dayIdx: dayIdx)
-                    dayCardPage(for: cellDate)
-                        .frame(width: pageSize.width, height: pageSize.height)
-                        .id(dayIdx)
+    /// Vertical swipe → ±7 days (same weekday). Attached as a simultaneous
+    /// gesture so it doesn't fight the horizontal ScrollView's paging.
+    private var verticalSwipeGesture: some Gesture {
+        DragGesture(minimumDistance: 30)
+            .onEnded { value in
+                let dx = value.translation.width
+                let dy = value.translation.height
+                // Only react to predominantly vertical swipes.
+                guard abs(dy) > abs(dx), abs(dy) > 50 else { return }
+                // SwiftUI: +y is down. Swipe DOWN (dy > 0) = next week.
+                let weekDelta = dy > 0 ? 7 : -7
+                guard let current = currentDate,
+                      let target = calendar.date(byAdding: .day, value: weekDelta, to: current),
+                      dates.contains(where: { calendar.isDate($0, inSameDayAs: target) })
+                else { return }
+                FloHaptics.light()
+                withAnimation(.snappy) {
+                    currentDate = target
                 }
             }
-            .scrollTargetLayout()
-        }
-        .scrollTargetBehavior(.paging)
-        .scrollPosition(id: $currentDayIdx, anchor: .leading)
-        .contentMargins(.leading, 0, for: .scrollContent)
     }
 
     /// One page = cream margins + a contained, rounded card with a soft shadow.
