@@ -641,7 +641,7 @@ struct JournalGridView: View {
                     .tracking(2)
 
                 Text(dateString(date))
-                    .font(.floDisplaySmall)
+                    .font(.custom("LUNARY free", size: 44))
                     .foregroundColor(.floCharcoal)
 
                 Spacer(minLength: FloSpacing.xl)
