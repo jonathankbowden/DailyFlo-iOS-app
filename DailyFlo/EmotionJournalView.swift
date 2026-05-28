@@ -568,61 +568,54 @@ struct JournalGridView: View {
                 .frame(maxWidth: .infinity)
                 .clipped()
 
-            // White content area below.
-            VStack(alignment: .leading, spacing: FloSpacing.xs) {
-                Text(weekdayString(date).uppercased())
-                    .font(.floLabel)
-                    .foregroundColor(.floGray)
-                    .tracking(2)
-
-                Text(dateString(date))
-                    .font(.floDisplaySmall)
+            // White content area below — prominent title, then date posted.
+            VStack(alignment: .leading, spacing: FloSpacing.lg) {
+                Text(entryTitle(entry))
+                    .font(.floSerif(size: 30))
                     .foregroundColor(.floCharcoal)
+                    .lineLimit(3)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
 
-                HStack(spacing: FloSpacing.sm) {
-                    Image(systemName: entry.emotion.icon)
-                        .font(.system(size: 14))
-                        .foregroundColor(entry.emotion.color)
-
-                    Text(entry.emotion.rawValue)
-                        .font(.floBodySmall)
-                        .fontWeight(.medium)
+                VStack(alignment: .leading, spacing: FloSpacing.xxs) {
+                    Text("DATE POSTED:")
+                        .font(.floLabel)
+                        .fontWeight(.semibold)
                         .foregroundColor(.floCharcoal)
+                        .tracking(1.5)
 
-                    HStack(spacing: 3) {
-                        ForEach(1...5, id: \.self) { i in
-                            Circle()
-                                .fill(i <= entry.intensity ? Color.floCharcoal : Color.floGray.opacity(0.25))
-                                .frame(width: 5, height: 5)
-                        }
-                    }
-                }
-                .padding(.top, FloSpacing.xs)
-
-                if !entry.note.isEmpty {
-                    Text(entry.note)
+                    Text("\(weekdayString(date)), \(dateString(date))")
                         .font(.floBodyMedium)
                         .foregroundColor(.floCharcoal)
-                        .lineLimit(5)
-                        .multilineTextAlignment(.leading)
-                        .padding(.top, FloSpacing.sm)
                 }
 
                 if total > 1 {
                     Text("+ \(total - 1) more this day")
                         .font(.floCaption)
                         .foregroundColor(.floGray)
-                        .padding(.top, FloSpacing.xs)
                 }
 
                 Spacer(minLength: 0)
             }
-            .padding(FloSpacing.lg)
+            .padding(FloSpacing.xl)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(Color.white)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(entry.emotion.rawValue) on \(entry.formattedDate). \(total > 1 ? "\(total) entries this day. " : "")Tap to open.")
+        .accessibilityLabel("\(entryTitle(entry)). Posted \(weekdayString(date)), \(dateString(date)). \(total > 1 ? "\(total) entries this day. " : "")Tap to open.")
+    }
+
+    /// Pull a short title out of the entry. The composer joins title + body
+    /// with a newline, so the first non-empty line is the user's intended
+    /// title. Falls back to the trimmed note or the emotion name.
+    private func entryTitle(_ entry: JournalEntry) -> String {
+        let trimmedWhole = entry.note.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let firstNewline = trimmedWhole.firstIndex(of: "\n") {
+            let candidate = String(trimmedWhole[..<firstNewline])
+                .trimmingCharacters(in: .whitespaces)
+            if !candidate.isEmpty { return candidate }
+        }
+        return trimmedWhole.isEmpty ? entry.emotion.rawValue : trimmedWhole
     }
 
     private func emptyCard(date: Date) -> some View {
