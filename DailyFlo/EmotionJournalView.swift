@@ -892,6 +892,8 @@ struct JournalBaseView: View {
             Color.floCream.ignoresSafeArea()
 
             VStack(spacing: 0) {
+                tabHeaderBar
+
                 header
                     .padding(.horizontal, FloSpacing.lg)
                     .padding(.bottom, FloSpacing.md)
@@ -916,7 +918,30 @@ struct JournalBaseView: View {
         }
     }
 
-    // MARK: - Header (greeting + search)
+    // MARK: - Tab header bar (journal icon left, FLO wordmark right)
+    private var tabHeaderBar: some View {
+        HStack {
+            Image("journal")
+                .renderingMode(.template)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 24, height: 24)
+                .foregroundColor(.floCharcoal)
+                .accessibilityLabel("Journal")
+
+            Spacer()
+
+            Text("FLO")
+                .font(.system(size: 20, weight: .black))
+                .foregroundColor(.floCharcoal)
+                .tracking(3)
+                .accessibilityHidden(true)
+        }
+        .padding(.horizontal, FloSpacing.lg)
+        .padding(.vertical, FloSpacing.md)
+    }
+
+    // MARK: - Greeting + search
     private var header: some View {
         VStack(alignment: .leading, spacing: FloSpacing.lg) {
             VStack(alignment: .leading, spacing: FloSpacing.xs) {
@@ -1008,4 +1033,12 @@ struct JournalBaseView: View {
             .padding(.bottom, 140)
         }
     }
+}
+
+#Preview("Journal Grid (focused card)") {
+    JournalGridView()
+}
+
+#Preview("Journal Tab (header + grid)") {
+    JournalBaseView()
 }
