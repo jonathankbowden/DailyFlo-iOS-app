@@ -475,18 +475,21 @@ struct JournalGridView: View {
     }
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            LazyVStack(spacing: 0) {
-                ForEach(weekRange, id: \.self) { weekIdx in
-                    weekRow(weekIdx: weekIdx)
-                        .containerRelativeFrame([.horizontal, .vertical])
-                        .id(weekIdx)
+        GeometryReader { geo in
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVStack(spacing: 0) {
+                    ForEach(weekRange, id: \.self) { weekIdx in
+                        weekRow(weekIdx: weekIdx, pageSize: geo.size)
+                            .frame(width: geo.size.width, height: geo.size.height)
+                            .id(weekIdx)
+                    }
                 }
+                .scrollTargetLayout()
             }
-            .scrollTargetLayout()
+            .scrollTargetBehavior(.paging)
+            .scrollPosition(id: $currentWeekIdx, anchor: .top)
+            .contentMargins(.top, 0, for: .scrollContent)
         }
-        .scrollTargetBehavior(.paging)
-        .scrollPosition(id: $currentWeekIdx)
         .sheet(item: Binding(
             get: { detailDate.map { JournalDayAnchor(date: $0) } },
             set: { detailDate = $0?.date }
@@ -505,20 +508,21 @@ struct JournalGridView: View {
 
     // MARK: - Week row (horizontal paging by day)
     @ViewBuilder
-    private func weekRow(weekIdx: Int) -> some View {
+    private func weekRow(weekIdx: Int, pageSize: CGSize) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             LazyHStack(spacing: 0) {
                 ForEach(0..<7, id: \.self) { dayIdx in
                     let cellDate = date(weekIdx: weekIdx, dayIdx: dayIdx)
                     dayCardPage(for: cellDate)
-                        .containerRelativeFrame([.horizontal, .vertical])
+                        .frame(width: pageSize.width, height: pageSize.height)
                         .id(dayIdx)
                 }
             }
             .scrollTargetLayout()
         }
         .scrollTargetBehavior(.paging)
-        .scrollPosition(id: $currentDayIdx)
+        .scrollPosition(id: $currentDayIdx, anchor: .leading)
+        .contentMargins(.leading, 0, for: .scrollContent)
     }
 
     /// One page = cream margins + a contained, rounded card with a soft shadow.
