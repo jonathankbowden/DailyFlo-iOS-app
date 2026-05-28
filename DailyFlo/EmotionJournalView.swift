@@ -543,6 +543,9 @@ struct JournalGridView: View {
                 }
             }
             .padding(.horizontal, FloSpacing.lg)
+            // Mirror the gap above the search bar (header `searchBar.padding(.top, .lg)`)
+            // so the vertical rhythm above/below the bar matches.
+            .padding(.top, FloSpacing.lg)
             .padding(.bottom, 130)
             .frame(height: pageHeight)
     }
