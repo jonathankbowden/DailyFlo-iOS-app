@@ -475,20 +475,18 @@ struct JournalGridView: View {
     }
 
     var body: some View {
-        GeometryReader { geo in
-            ScrollView(.vertical, showsIndicators: false) {
-                LazyVStack(spacing: 0) {
-                    ForEach(weekRange, id: \.self) { weekIdx in
-                        weekRow(weekIdx: weekIdx, pageSize: geo.size)
-                            .frame(width: geo.size.width, height: geo.size.height)
-                            .id(weekIdx)
-                    }
+        ScrollView(.vertical, showsIndicators: false) {
+            LazyVStack(spacing: 0) {
+                ForEach(weekRange, id: \.self) { weekIdx in
+                    weekRow(weekIdx: weekIdx)
+                        .containerRelativeFrame([.horizontal, .vertical])
+                        .id(weekIdx)
                 }
-                .scrollTargetLayout()
             }
-            .scrollTargetBehavior(.paging)
-            .scrollPosition(id: $currentWeekIdx)
+            .scrollTargetLayout()
         }
+        .scrollTargetBehavior(.paging)
+        .scrollPosition(id: $currentWeekIdx)
         .sheet(item: Binding(
             get: { detailDate.map { JournalDayAnchor(date: $0) } },
             set: { detailDate = $0?.date }
@@ -507,13 +505,13 @@ struct JournalGridView: View {
 
     // MARK: - Week row (horizontal paging by day)
     @ViewBuilder
-    private func weekRow(weekIdx: Int, pageSize: CGSize) -> some View {
+    private func weekRow(weekIdx: Int) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             LazyHStack(spacing: 0) {
                 ForEach(0..<7, id: \.self) { dayIdx in
                     let cellDate = date(weekIdx: weekIdx, dayIdx: dayIdx)
                     dayCardPage(for: cellDate)
-                        .frame(width: pageSize.width, height: pageSize.height)
+                        .containerRelativeFrame([.horizontal, .vertical])
                         .id(dayIdx)
                 }
             }
