@@ -543,7 +543,7 @@ struct JournalGridView: View {
                 }
             }
             .padding(.horizontal, FloSpacing.lg)
-            .padding(.top, FloSpacing.md)
+            .padding(.top, FloSpacing.sm)
             .padding(.bottom, 130)
             .frame(height: pageHeight)
     }
