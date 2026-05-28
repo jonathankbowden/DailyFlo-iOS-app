@@ -36,6 +36,10 @@ import SwiftUI
 }
 
 #Preview("9 - Journal") {
+    JournalBaseView()
+}
+
+#Preview("9b - Journal Search List") {
     EmotionJournalView()
 }
 

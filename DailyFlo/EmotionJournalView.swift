@@ -560,46 +560,54 @@ struct JournalGridView: View {
     }
 
     private func populatedCard(date: Date, entry: JournalEntry, total: Int) -> some View {
-        VStack(spacing: 0) {
-            // ~Square image on top — nature photo for the entry's emotion.
-            Image(entry.emotion.photoName)
-                .resizable()
-                .aspectRatio(1, contentMode: .fill)
-                .frame(maxWidth: .infinity)
-                .clipped()
+        GeometryReader { cardGeo in
+            // Image height is capped so the card never overflows its page:
+            // it'll be square when there's room, but shrinks to leave at least
+            // `minContentHeight` for the white text area below.
+            let minContentHeight: CGFloat = 220
+            let maxImageHeight = max(cardGeo.size.height - minContentHeight, 0)
+            let imageHeight = min(cardGeo.size.width, maxImageHeight)
 
-            // White content area below — prominent title, then date posted.
-            VStack(alignment: .leading, spacing: FloSpacing.lg) {
-                Text(entryTitle(entry))
-                    .font(.floSerif(size: 30))
-                    .foregroundColor(.floCharcoal)
-                    .lineLimit(3)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
+            VStack(spacing: 0) {
+                Image(entry.emotion.photoName)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: cardGeo.size.width, height: imageHeight)
+                    .clipped()
 
-                VStack(alignment: .leading, spacing: FloSpacing.xxs) {
-                    Text("DATE POSTED:")
-                        .font(.floLabel)
-                        .fontWeight(.semibold)
+                // White content area — prominent title, then date posted.
+                VStack(alignment: .leading, spacing: FloSpacing.lg) {
+                    Text(entryTitle(entry))
+                        .font(.floSerif(size: 30))
                         .foregroundColor(.floCharcoal)
-                        .tracking(1.5)
+                        .lineLimit(3)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
 
-                    Text("\(weekdayString(date)), \(dateString(date))")
-                        .font(.floBodyMedium)
-                        .foregroundColor(.floCharcoal)
+                    VStack(alignment: .leading, spacing: FloSpacing.xxs) {
+                        Text("DATE POSTED:")
+                            .font(.floLabel)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.floCharcoal)
+                            .tracking(1.5)
+
+                        Text("\(weekdayString(date)), \(dateString(date))")
+                            .font(.floBodyMedium)
+                            .foregroundColor(.floCharcoal)
+                    }
+
+                    if total > 1 {
+                        Text("+ \(total - 1) more this day")
+                            .font(.floCaption)
+                            .foregroundColor(.floGray)
+                    }
+
+                    Spacer(minLength: 0)
                 }
-
-                if total > 1 {
-                    Text("+ \(total - 1) more this day")
-                        .font(.floCaption)
-                        .foregroundColor(.floGray)
-                }
-
-                Spacer(minLength: 0)
+                .padding(FloSpacing.xl)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .background(Color.white)
             }
-            .padding(FloSpacing.xl)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(Color.white)
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(entryTitle(entry)). Posted \(weekdayString(date)), \(dateString(date)). \(total > 1 ? "\(total) entries this day. " : "")Tap to open.")
