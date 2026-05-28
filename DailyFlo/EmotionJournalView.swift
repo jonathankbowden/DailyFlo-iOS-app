@@ -943,22 +943,36 @@ struct JournalBaseView: View {
 
     // MARK: - Greeting + search
     private var header: some View {
-        VStack(alignment: .leading, spacing: FloSpacing.lg) {
-            VStack(alignment: .leading, spacing: FloSpacing.xs) {
-                Text("Hello, \(userName)!")
-                    .font(.floSerif(size: 36))
-                    .foregroundColor(.floCharcoal)
-                    .accessibilityAddTraits(.isHeader)
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Hello, \(userName)!")
+                .font(.floSerif(size: 36))
+                .foregroundColor(.floCharcoal)
+                .accessibilityAddTraits(.isHeader)
+                .padding(.top, FloSpacing.md)
+
+            // Bracketed subtitle — same divider styling as CalendarView's
+            // day-letter row (lighter line above, darker line below).
+            VStack(spacing: 0) {
+                Rectangle()
+                    .fill(Color(hex: "E5E5E5"))
+                    .frame(height: 1)
 
                 Text("WAY TO TAKE TIME TO WRITE IT DOWN.")
                     .font(.floLabel)
                     .fontWeight(.medium)
                     .foregroundColor(.floCharcoal)
                     .tracking(1)
+                    .padding(.vertical, FloSpacing.sm)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Rectangle()
+                    .fill(Color(hex: "707070"))
+                    .frame(height: 1)
             }
-            .padding(.top, FloSpacing.md)
+            .padding(.top, FloSpacing.sm)
 
             searchBar
+                .padding(.top, FloSpacing.lg)
         }
     }
 
