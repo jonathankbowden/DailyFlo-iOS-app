@@ -622,6 +622,8 @@ struct JournalGridView: View {
     // MARK: - Card sub-components
 
     /// Short 72pt nature image with the edit pencil in the top-right.
+    /// Pencil sits in a soft white circle so it stays legible over dark
+    /// banner imagery (parity with `largeImageBanner`).
     private func sliverImageBanner(imageName: String) -> some View {
         Image(imageName)
             .resizable()
@@ -630,9 +632,14 @@ struct JournalGridView: View {
             .frame(height: 72)
             .clipped()
             .overlay(alignment: .topTrailing) {
-                editPencilIcon()
-                    .padding(.top, FloSpacing.md)
-                    .padding(.trailing, FloSpacing.md)
+                ZStack {
+                    Circle()
+                        .fill(Color.white.opacity(0.85))
+                    editPencilIcon()
+                }
+                .frame(width: 36, height: 36)
+                .padding(.top, FloSpacing.md)
+                .padding(.trailing, FloSpacing.md)
             }
     }
 
