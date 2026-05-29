@@ -528,24 +528,28 @@ struct JournalGridView: View {
     private func dayCardPage(for cellDate: Date, pageHeight: CGFloat) -> some View {
         let hasEntries = !journalManager.entries(for: cellDate).isEmpty
 
-        return dayCard(for: cellDate)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.white)
-            .clipShape(RoundedRectangle(cornerRadius: FloRadius.xl, style: .continuous))
-            .shadow(color: Color.black.opacity(0.12), radius: 14, x: 0, y: 6)
-            .contentShape(RoundedRectangle(cornerRadius: FloRadius.xl, style: .continuous))
-            .onTapGesture {
-                FloHaptics.light()
-                if hasEntries {
-                    detailDate = cellDate
-                } else {
-                    showNewEntry = true
+        // Card hugs its content vertically; the page itself fills pageHeight
+        // and top-aligns the card so the cream margin sits below it.
+        return VStack(spacing: 0) {
+            dayCard(for: cellDate)
+                .background(Color.white)
+                .clipShape(RoundedRectangle(cornerRadius: FloRadius.xl, style: .continuous))
+                .shadow(color: Color.black.opacity(0.12), radius: 14, x: 0, y: 6)
+                .contentShape(RoundedRectangle(cornerRadius: FloRadius.xl, style: .continuous))
+                .onTapGesture {
+                    FloHaptics.light()
+                    if hasEntries {
+                        detailDate = cellDate
+                    } else {
+                        showNewEntry = true
+                    }
                 }
-            }
-            .padding(.horizontal, FloSpacing.lg)
-            .padding(.top, FloSpacing.sm)
-            .padding(.bottom, 130)
-            .frame(height: pageHeight)
+                .padding(.horizontal, FloSpacing.lg)
+                .padding(.top, FloSpacing.sm)
+
+            Spacer(minLength: 0)
+        }
+        .frame(height: pageHeight)
     }
 
     // MARK: - Day card
@@ -617,13 +621,13 @@ struct JournalGridView: View {
 
     // MARK: - Card sub-components
 
-    /// Short ~67pt nature image with the edit pencil in the top-right.
+    /// Short 72pt nature image with the edit pencil in the top-right.
     private func sliverImageBanner(imageName: String) -> some View {
         Image(imageName)
             .resizable()
             .aspectRatio(contentMode: .fill)
             .frame(maxWidth: .infinity)
-            .frame(height: 67)
+            .frame(height: 72)
             .clipped()
             .overlay(alignment: .topTrailing) {
                 editPencilIcon()
@@ -663,12 +667,12 @@ struct JournalGridView: View {
     }
 
     /// White content block: title → hairline → POSTED + date.
-    /// Title is truncated to one line at the tail.
+    /// Title is truncated to one line at the tail. The block hugs its
+    /// content vertically, ending 32pt below the date.
     private func cardContentArea(title: String, titleIsMuted: Bool, date: Date) -> some View {
         VStack(alignment: .leading, spacing: FloSpacing.md) {
             Text(title)
-                .font(.floButton)
-                .fontWeight(titleIsMuted ? .regular : .semibold)
+                .font(.system(size: 18, weight: .bold))
                 .foregroundColor(titleIsMuted ? .floGray : .floCharcoal)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -676,7 +680,7 @@ struct JournalGridView: View {
 
             FloDivider(color: Color.floLightGray, thickness: 0.5)
 
-            VStack(alignment: .leading, spacing: FloSpacing.xxs) {
+            VStack(alignment: .leading, spacing: FloSpacing.sm) {
                 Text("POSTED")
                     .font(.floLabel)
                     .fontWeight(.semibold)
@@ -687,11 +691,11 @@ struct JournalGridView: View {
                     .font(.floBodyLarge)
                     .foregroundColor(.floCharcoal)
             }
-
-            Spacer(minLength: 0)
         }
-        .padding(FloSpacing.lg)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(.horizontal, FloSpacing.lg)
+        .padding(.top, FloSpacing.lg)
+        .padding(.bottom, FloSpacing.xl)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(Color.white)
     }
 
