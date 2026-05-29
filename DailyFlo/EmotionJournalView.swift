@@ -638,7 +638,7 @@ struct JournalGridView: View {
                 ZStack {
                     Circle()
                         .fill(Color.white)
-                    badgeIcon(systemName: "photo.badge.plus")
+                    badgeIcon(systemName: "square.and.pencil")
                 }
                 .frame(width: 36, height: 36)
                 .padding(.trailing, FloSpacing.md)
