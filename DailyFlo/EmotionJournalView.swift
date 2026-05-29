@@ -581,6 +581,7 @@ struct JournalGridView: View {
     private func sliverEmptyCard(date: Date) -> some View {
         VStack(spacing: 0) {
             sliverImageBanner(imageName: "sunsetrocks")
+                .zIndex(1)
             cardContentArea(
                 title: "Add entry",
                 titleIsMuted: true,
@@ -595,6 +596,7 @@ struct JournalGridView: View {
     private func sliverEntryCard(date: Date, entry: JournalEntry) -> some View {
         VStack(spacing: 0) {
             sliverImageBanner(imageName: entry.emotion.photoName)
+                .zIndex(1)
             cardContentArea(
                 title: entryTitle(entry),
                 titleIsMuted: false,
@@ -609,6 +611,7 @@ struct JournalGridView: View {
     private func largePhotoCard(date: Date, entry: JournalEntry) -> some View {
         VStack(spacing: 0) {
             largeImageBanner(imageName: entry.userPhotoURL ?? entry.emotion.photoName)
+                .zIndex(1)
             cardContentArea(
                 title: entryTitle(entry),
                 titleIsMuted: false,
@@ -621,9 +624,9 @@ struct JournalGridView: View {
 
     // MARK: - Card sub-components
 
-    /// Short 72pt nature image with the edit pencil in the top-right.
-    /// Pencil sits in a soft white circle so it stays legible over dark
-    /// banner imagery (parity with `largeImageBanner`).
+    /// Short 72pt nature image. The white-circle pencil badge straddles
+    /// the seam between this banner and the content area below (centered
+    /// on the seam, half over the image, half over the white).
     private func sliverImageBanner(imageName: String) -> some View {
         Image(imageName)
             .resizable()
@@ -631,15 +634,15 @@ struct JournalGridView: View {
             .frame(maxWidth: .infinity)
             .frame(height: 72)
             .clipped()
-            .overlay(alignment: .topTrailing) {
+            .overlay(alignment: .bottomTrailing) {
                 ZStack {
                     Circle()
                         .fill(Color.white.opacity(0.85))
                     editPencilIcon()
                 }
                 .frame(width: 36, height: 36)
-                .padding(.top, FloSpacing.md)
                 .padding(.trailing, FloSpacing.md)
+                .offset(y: 18)
             }
     }
 
@@ -661,8 +664,8 @@ struct JournalGridView: View {
                     editPencilIcon()
                 }
                 .frame(width: 36, height: 36)
-                .padding(.bottom, FloSpacing.md)
                 .padding(.trailing, FloSpacing.md)
+                .offset(y: 18)
             }
     }
 
