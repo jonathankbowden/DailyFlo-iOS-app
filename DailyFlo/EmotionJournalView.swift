@@ -541,7 +541,7 @@ struct JournalGridView: View {
         }()
 
         return ScrollView {
-            LazyVStack(spacing: FloSpacing.sm) {
+            LazyVStack(spacing: FloSpacing.xl) {
                 feedCard(for: today)
                 ForEach(pastEntryDays, id: \.self) { day in
                     feedCard(for: day)
