@@ -541,7 +541,7 @@ struct JournalGridView: View {
         }()
 
         return ScrollView {
-            LazyVStack(spacing: FloSpacing.lg) {
+            LazyVStack(spacing: FloSpacing.sm) {
                 feedCard(for: today)
                 ForEach(pastEntryDays, id: \.self) { day in
                     feedCard(for: day)
@@ -757,8 +757,8 @@ struct JournalGridView: View {
     private func cardContentArea(title: String, titleIsMuted: Bool, date: Date) -> some View {
         VStack(alignment: .leading, spacing: FloSpacing.md) {
             Text(title)
-                .font(.system(size: 18, weight: .bold))
-                .foregroundColor(titleIsMuted ? .floGray : .floCharcoal)
+                .font(.system(size: 18, weight: titleIsMuted ? .regular : .bold))
+                .foregroundColor(titleIsMuted ? Color.floGray.opacity(0.5) : .floCharcoal)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
