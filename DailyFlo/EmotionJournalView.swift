@@ -638,7 +638,7 @@ struct JournalGridView: View {
                 ZStack {
                     Circle()
                         .fill(Color.white)
-                    editPencilIcon()
+                    badgeIcon(systemName: "photo.badge.plus")
                 }
                 .frame(width: 36, height: 36)
                 .padding(.trailing, FloSpacing.md)
@@ -661,7 +661,7 @@ struct JournalGridView: View {
                 ZStack {
                     Circle()
                         .fill(Color.white)
-                    editPencilIcon()
+                    badgeIcon(systemName: "square.and.pencil")
                 }
                 .frame(width: 36, height: 36)
                 .padding(.trailing, FloSpacing.md)
@@ -669,8 +669,8 @@ struct JournalGridView: View {
             }
     }
 
-    private func editPencilIcon() -> some View {
-        Image(systemName: "square.and.pencil")
+    private func badgeIcon(systemName: String) -> some View {
+        Image(systemName: systemName)
             .font(.system(size: 16, weight: .medium))
             .foregroundColor(.floCharcoal)
             .allowsHitTesting(false)
