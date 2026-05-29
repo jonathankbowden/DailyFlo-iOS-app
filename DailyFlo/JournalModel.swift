@@ -117,6 +117,12 @@ struct JournalEntry: Identifiable, Codable {
         formatter.dateFormat = "h:mm a"
         return formatter.string(from: date)
     }
+
+    // Optional user-uploaded photo for the entry. Always nil today —
+    // emotion_entries has no photo_url column. JournalGridView's day-card
+    // switches to its large-image state when this becomes non-nil; the
+    // layout is ready to flip the moment a real property/column lands.
+    var userPhotoURL: String? { nil }
 }
 
 // MARK: - Sample Data

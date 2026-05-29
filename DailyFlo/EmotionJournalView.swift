@@ -549,68 +549,150 @@ struct JournalGridView: View {
     }
 
     // MARK: - Day card
+    //
+    // Three visual states (Brittany's Figma — Summer-2026-Build node 2029:1156):
+    //   STATE 1 — no entry: short sliver banner, edit pencil top-right,
+    //             muted "Add entry" title, hairline, POSTED + date.
+    //   STATE 2 — entry, no user photo: short sliver banner with the entry's
+    //             emotion image, edit pencil top-right, bold one-line title.
+    //   STATE 3 — entry with user photo: large image (~339:213) on top,
+    //             edit pencil bottom-right with subtle light circle backing.
+    //             Gated by `entry.userPhotoURL` which is currently always
+    //             nil — layout is ready, but no real entry renders it yet.
     @ViewBuilder
     private func dayCard(for date: Date) -> some View {
         let entries = journalManager.entries(for: date).sorted { $0.date > $1.date }
         if let mostRecent = entries.first {
-            populatedCard(date: date, entry: mostRecent, total: entries.count)
+            if mostRecent.userPhotoURL != nil {
+                largePhotoCard(date: date, entry: mostRecent)
+            } else {
+                sliverEntryCard(date: date, entry: mostRecent)
+            }
         } else {
-            emptyCard(date: date)
+            sliverEmptyCard(date: date)
         }
     }
 
-    private func populatedCard(date: Date, entry: JournalEntry, total: Int) -> some View {
-        GeometryReader { cardGeo in
-            // Image height is capped so the card never overflows its page:
-            // it'll be square when there's room, but shrinks to leave at least
-            // `minContentHeight` for the white text area below.
-            let minContentHeight: CGFloat = 220
-            let maxImageHeight = max(cardGeo.size.height - minContentHeight, 0)
-            let imageHeight = min(cardGeo.size.width, maxImageHeight)
-
-            VStack(spacing: 0) {
-                Image(entry.emotion.photoName)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: cardGeo.size.width, height: imageHeight)
-                    .clipped()
-
-                // White content area — prominent title, then date posted.
-                VStack(alignment: .leading, spacing: FloSpacing.lg) {
-                    Text(entryTitle(entry))
-                        .font(.floSerif(size: 30))
-                        .foregroundColor(.floCharcoal)
-                        .lineLimit(3)
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    VStack(alignment: .leading, spacing: FloSpacing.xxs) {
-                        Text("DATE POSTED:")
-                            .font(.floLabel)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.floCharcoal)
-                            .tracking(1.5)
-
-                        Text("\(weekdayString(date)), \(dateString(date))")
-                            .font(.floBodyMedium)
-                            .foregroundColor(.floCharcoal)
-                    }
-
-                    if total > 1 {
-                        Text("+ \(total - 1) more this day")
-                            .font(.floCaption)
-                            .foregroundColor(.floGray)
-                    }
-
-                    Spacer(minLength: 0)
-                }
-                .padding(FloSpacing.xl)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .background(Color.white)
-            }
+    // MARK: STATE 1 — empty day
+    private func sliverEmptyCard(date: Date) -> some View {
+        VStack(spacing: 0) {
+            sliverImageBanner(imageName: "sunsetrocks")
+            cardContentArea(
+                title: "Add entry",
+                titleIsMuted: true,
+                date: date
+            )
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(entryTitle(entry)). Posted \(weekdayString(date)), \(dateString(date)). \(total > 1 ? "\(total) entries this day. " : "")Tap to open.")
+        .accessibilityLabel("No entries on \(longDateString(date)). Tap to add an entry.")
+    }
+
+    // MARK: STATE 2 — entry, no user photo
+    private func sliverEntryCard(date: Date, entry: JournalEntry) -> some View {
+        VStack(spacing: 0) {
+            sliverImageBanner(imageName: entry.emotion.photoName)
+            cardContentArea(
+                title: entryTitle(entry),
+                titleIsMuted: false,
+                date: date
+            )
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(entryTitle(entry)). Posted \(longDateString(date)). Tap to open.")
+    }
+
+    // MARK: STATE 3 — entry with user photo
+    private func largePhotoCard(date: Date, entry: JournalEntry) -> some View {
+        VStack(spacing: 0) {
+            largeImageBanner(imageName: entry.userPhotoURL ?? entry.emotion.photoName)
+            cardContentArea(
+                title: entryTitle(entry),
+                titleIsMuted: false,
+                date: date
+            )
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(entryTitle(entry)). Posted \(longDateString(date)). Tap to open.")
+    }
+
+    // MARK: - Card sub-components
+
+    /// Short ~67pt nature image with the edit pencil in the top-right.
+    private func sliverImageBanner(imageName: String) -> some View {
+        Image(imageName)
+            .resizable()
+            .aspectRatio(contentMode: .fill)
+            .frame(maxWidth: .infinity)
+            .frame(height: 67)
+            .clipped()
+            .overlay(alignment: .topTrailing) {
+                editPencilIcon()
+                    .padding(.top, FloSpacing.md)
+                    .padding(.trailing, FloSpacing.md)
+            }
+    }
+
+    /// Large image preserving the ~339:213 aspect, edit pencil bottom-right
+    /// with a soft light-circle backing so it stays legible over photo content.
+    private func largeImageBanner(imageName: String) -> some View {
+        Color.clear
+            .aspectRatio(339.0 / 213.0, contentMode: .fit)
+            .overlay(
+                Image(imageName)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            )
+            .clipped()
+            .overlay(alignment: .bottomTrailing) {
+                ZStack {
+                    Circle()
+                        .fill(Color.white.opacity(0.85))
+                    editPencilIcon()
+                }
+                .frame(width: 36, height: 36)
+                .padding(.bottom, FloSpacing.md)
+                .padding(.trailing, FloSpacing.md)
+            }
+    }
+
+    private func editPencilIcon() -> some View {
+        Image(systemName: "square.and.pencil")
+            .font(.system(size: 16, weight: .medium))
+            .foregroundColor(.floCharcoal)
+            .allowsHitTesting(false)
+    }
+
+    /// White content block: title → hairline → POSTED + date.
+    /// Title is truncated to one line at the tail.
+    private func cardContentArea(title: String, titleIsMuted: Bool, date: Date) -> some View {
+        VStack(alignment: .leading, spacing: FloSpacing.md) {
+            Text(title)
+                .font(.floButton)
+                .fontWeight(titleIsMuted ? .regular : .semibold)
+                .foregroundColor(titleIsMuted ? .floGray : .floCharcoal)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            FloDivider(color: Color.floLightGray, thickness: 0.5)
+
+            VStack(alignment: .leading, spacing: FloSpacing.xxs) {
+                Text("POSTED")
+                    .font(.floLabel)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.floCharcoal)
+                    .tracking(1.5)
+
+                Text(postedDateString(date))
+                    .font(.floBodyLarge)
+                    .foregroundColor(.floCharcoal)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(FloSpacing.lg)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color.white)
     }
 
     /// Pull a short title out of the entry. The composer joins title + body
@@ -624,54 +706,6 @@ struct JournalGridView: View {
             if !candidate.isEmpty { return candidate }
         }
         return trimmedWhole.isEmpty ? entry.emotion.rawValue : trimmedWhole
-    }
-
-    private func emptyCard(date: Date) -> some View {
-        let isFuture = date > calendar.startOfDay(for: Date())
-        return VStack(spacing: 0) {
-            // Placeholder sliver — a thin tinted band where the image would be.
-            Color.floMint.opacity(0.35)
-                .frame(height: 64)
-
-            // White prompt area below.
-            VStack(alignment: .leading, spacing: FloSpacing.xs) {
-                Text(weekdayString(date).uppercased())
-                    .font(.floLabel)
-                    .foregroundColor(.floGray)
-                    .tracking(2)
-
-                Text(dateString(date))
-                    .font(.custom("LUNARY free", size: 44))
-                    .foregroundColor(.floCharcoal)
-
-                Spacer(minLength: FloSpacing.xl)
-
-                VStack(alignment: .leading, spacing: FloSpacing.sm) {
-                    Image(systemName: isFuture ? "calendar" : "plus.circle")
-                        .font(.system(size: 28))
-                        .foregroundColor(isFuture ? .floGray.opacity(0.5) : .floSage)
-
-                    Text(isFuture ? "Not yet." : "Tap to add an entry.")
-                        .font(.floBodyLarge)
-                        .fontWeight(.medium)
-                        .foregroundColor(.floCharcoal)
-
-                    Text(isFuture
-                         ? "This day hasn't happened yet."
-                         : "Capture how you're feeling today.")
-                        .font(.floBodySmall)
-                        .foregroundColor(.floGray)
-                        .multilineTextAlignment(.leading)
-                }
-
-                Spacer(minLength: 0)
-            }
-            .padding(FloSpacing.lg)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(Color.white)
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(isFuture ? "Future day" : "No entries") on \(longDateString(date)). Tap to add an entry.")
     }
 
     // MARK: - Date formatting
@@ -691,6 +725,13 @@ struct JournalGridView: View {
     private func longDateString(_ date: Date) -> String {
         let f = DateFormatter()
         f.dateFormat = "EEEE, MMMM d, yyyy"
+        return f.string(from: date)
+    }
+
+    /// "May 28, 2026" — used under the POSTED label on day-cards.
+    private func postedDateString(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "MMMM d, yyyy"
         return f.string(from: date)
     }
 }
