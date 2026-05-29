@@ -446,6 +446,17 @@ struct JournalEntryDetailView: View {
 /// from a DragGesture that jumps the scroll position. One ScrollView keeps
 /// the initial position rock-steady and avoids nested-scroll layout races.
 struct JournalGridView: View {
+    /// Two container layouts that share the same day-card builders.
+    /// `.grid` keeps the parked Option A — horizontal-paging 2D nav.
+    /// `.feed` is Option B — a vertical scroll with today on top and
+    /// only past days that actually have entries below.
+    enum Layout {
+        case grid
+        case feed
+    }
+
+    let layout: Layout
+
     @State private var journalManager = JournalManager.shared
     @State private var currentDate: Date?
     @State private var detailDate: Date? = nil
@@ -462,25 +473,17 @@ struct JournalGridView: View {
         }
     }()
 
-    init() {
+    init(layout: Layout = .grid) {
+        self.layout = layout
         _currentDate = State(initialValue: Calendar.current.startOfDay(for: Date()))
     }
 
     var body: some View {
-        GeometryReader { reader in
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 0) {
-                    ForEach(dates, id: \.self) { date in
-                        dayCardPage(for: date, pageHeight: reader.size.height)
-                            .containerRelativeFrame(.horizontal)
-                            .id(date)
-                    }
-                }
-                .scrollTargetLayout()
+        Group {
+            switch layout {
+            case .grid: gridBody
+            case .feed: feedBody
             }
-            .scrollTargetBehavior(.paging)
-            .scrollPosition(id: $currentDate, anchor: .leading)
-            .simultaneousGesture(verticalSwipeGesture)
         }
         .sheet(item: Binding(
             get: { detailDate.map { JournalDayAnchor(date: $0) } },
@@ -496,6 +499,78 @@ struct JournalGridView: View {
                 onDismiss: { showNewEntry = false }
             )
         }
+    }
+
+    // MARK: - Grid (Option A — parked)
+    private var gridBody: some View {
+        GeometryReader { reader in
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 0) {
+                    ForEach(dates, id: \.self) { date in
+                        dayCardPage(for: date, pageHeight: reader.size.height)
+                            .containerRelativeFrame(.horizontal)
+                            .id(date)
+                    }
+                }
+                .scrollTargetLayout()
+            }
+            .scrollTargetBehavior(.paging)
+            .scrollPosition(id: $currentDate, anchor: .leading)
+            .simultaneousGesture(verticalSwipeGesture)
+        }
+    }
+
+    // MARK: - Feed (Option B — journal tab home)
+    /// Today's card on top (Add entry when empty), then past days-with-entries
+    /// newest-first. Empty/future days are intentionally omitted.
+    private var feedBody: some View {
+        let today = calendar.startOfDay(for: Date())
+        let pastEntryDays: [Date] = {
+            // Group entry dates to startOfDay, drop today + future, sort desc.
+            var seen = Set<Date>()
+            var result: [Date] = []
+            for day in journalManager.entries
+                .map({ calendar.startOfDay(for: $0.date) })
+                .sorted(by: >) {
+                guard day < today else { continue }
+                if seen.insert(day).inserted {
+                    result.append(day)
+                }
+            }
+            return result
+        }()
+
+        return ScrollView {
+            LazyVStack(spacing: FloSpacing.lg) {
+                feedCard(for: today)
+                ForEach(pastEntryDays, id: \.self) { day in
+                    feedCard(for: day)
+                }
+            }
+            .padding(.horizontal, FloSpacing.lg)
+            .padding(.top, FloSpacing.md)
+            .padding(.bottom, 140)
+        }
+    }
+
+    /// One feed row = the redesigned day-card with the same chrome
+    /// (white background, FloRadius.xl, soft shadow, tap-to-open) as the
+    /// grid mode's `dayCardPage`. Sizes to its own content.
+    private func feedCard(for date: Date) -> some View {
+        let hasEntries = !journalManager.entries(for: date).isEmpty
+        return dayCard(for: date)
+            .background(Color.white)
+            .clipShape(RoundedRectangle(cornerRadius: FloRadius.xl, style: .continuous))
+            .shadow(color: Color.black.opacity(0.12), radius: 14, x: 0, y: 6)
+            .contentShape(RoundedRectangle(cornerRadius: FloRadius.xl, style: .continuous))
+            .onTapGesture {
+                FloHaptics.light()
+                if hasEntries {
+                    detailDate = date
+                } else {
+                    showNewEntry = true
+                }
+            }
     }
 
     /// Vertical swipe → ±7 days (same weekday). Attached as a simultaneous
@@ -691,7 +766,7 @@ struct JournalGridView: View {
             FloDivider(color: Color.floLightGray, thickness: 0.5)
 
             VStack(alignment: .leading, spacing: FloSpacing.sm) {
-                Text("POSTED")
+                Text(Calendar.current.isDateInToday(date) ? "TODAY" : "POSTED")
                     .font(.floLabel)
                     .fontWeight(.semibold)
                     .foregroundColor(.floCharcoal)
@@ -939,6 +1014,10 @@ struct JournalBaseView: View {
     @State private var searchText: String = ""
     @State private var selectedEntry: JournalEntry? = nil
     @State private var hasAppeared = false
+    /// Default Journal-tab layout. Long-pressing the tab header bar flips
+    /// between .feed (Option B, the production layout) and .grid (Option A,
+    /// the parked 2D paging). In-memory only — resets to .feed on relaunch.
+    @State private var journalLayout: JournalGridView.Layout = .feed
     @FocusState private var isSearchFocused: Bool
 
     private var userName: String { CycleManager.shared.userName }
@@ -958,12 +1037,16 @@ struct JournalBaseView: View {
 
             VStack(spacing: 0) {
                 tabHeaderBar
+                    .onLongPressGesture {
+                        FloHaptics.medium()
+                        journalLayout = (journalLayout == .feed) ? .grid : .feed
+                    }
 
                 header
                     .padding(.bottom, FloSpacing.md)
 
                 if searchText.isEmpty {
-                    JournalGridView()
+                    JournalGridView(layout: journalLayout)
                 } else {
                     searchResultsList
                 }
