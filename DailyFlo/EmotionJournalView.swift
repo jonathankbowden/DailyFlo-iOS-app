@@ -637,7 +637,7 @@ struct JournalGridView: View {
             .overlay(alignment: .bottomTrailing) {
                 ZStack {
                     Circle()
-                        .fill(Color.white.opacity(0.85))
+                        .fill(Color.white)
                     editPencilIcon()
                 }
                 .frame(width: 36, height: 36)
@@ -660,7 +660,7 @@ struct JournalGridView: View {
             .overlay(alignment: .bottomTrailing) {
                 ZStack {
                     Circle()
-                        .fill(Color.white.opacity(0.85))
+                        .fill(Color.white)
                     editPencilIcon()
                 }
                 .frame(width: 36, height: 36)
@@ -703,7 +703,9 @@ struct JournalGridView: View {
             }
         }
         .padding(.horizontal, FloSpacing.lg)
-        .padding(.top, FloSpacing.lg)
+        // Extra 8pt nudge so the title clears the badge that straddles
+        // the image/content seam.
+        .padding(.top, FloSpacing.lg + FloSpacing.sm)
         .padding(.bottom, FloSpacing.xl)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(Color.white)

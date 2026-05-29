@@ -93,13 +93,32 @@ struct JournalEntry: Identifiable, Codable {
     let note: String
     let cyclePhase: Int // Raw value of CyclePhase
 
-    init(id: UUID = UUID(), date: Date = Date(), emotion: CoreEmotion, intensity: Int, note: String, cyclePhase: CyclePhase) {
+    // Optional user-uploaded photo for the entry. Runtime/preview only —
+    // emotion_entries has no photo_url column, and this property is excluded
+    // from `CodingKeys` so it's never round-tripped to the local cache or
+    // the Supabase row mapper. Production entries are always nil; previews
+    // can opt into State-3 by setting this directly.
+    var userPhotoURL: String? = nil
+
+    init(id: UUID = UUID(), date: Date = Date(), emotion: CoreEmotion, intensity: Int, note: String, cyclePhase: CyclePhase, userPhotoURL: String? = nil) {
         self.id = id
         self.date = date
         self.emotion = emotion
         self.intensity = intensity
         self.note = note
         self.cyclePhase = cyclePhase.rawValue
+        self.userPhotoURL = userPhotoURL
+    }
+
+    // Persisted fields only — userPhotoURL is intentionally absent so
+    // Codable round-trips ignore it.
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case date
+        case emotion
+        case intensity
+        case note
+        case cyclePhase
     }
 
     var phase: CyclePhase {
@@ -117,12 +136,6 @@ struct JournalEntry: Identifiable, Codable {
         formatter.dateFormat = "h:mm a"
         return formatter.string(from: date)
     }
-
-    // Optional user-uploaded photo for the entry. Always nil today —
-    // emotion_entries has no photo_url column. JournalGridView's day-card
-    // switches to its large-image state when this becomes non-nil; the
-    // layout is ready to flip the moment a real property/column lands.
-    var userPhotoURL: String? { nil }
 }
 
 // MARK: - Sample Data
