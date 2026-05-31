@@ -97,7 +97,7 @@ struct JournalEntryView: View {
 
     var body: some View {
         ZStack {
-            Color.floCream.ignoresSafeArea()
+            Color.white.ignoresSafeArea()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -280,7 +280,7 @@ struct JournalEntryView: View {
     private var feelingSection: some View {
         VStack(alignment: .leading, spacing: FloSpacing.md) {
             Text("Feeling:")
-                .font(.floSerif(size: 28))
+                .font(.floSerif(size: 32))
                 .foregroundColor(.floCharcoal)
                 .padding(.horizontal, FloSpacing.lg)
 
@@ -309,11 +309,17 @@ struct JournalEntryView: View {
                 .padding(.horizontal, FloSpacing.lg)
                 .padding(.vertical, FloSpacing.sm)
                 .background(
-                    Capsule()
-                        .fill(isSelected ? Color.floSage : Color.floCream)
+                    RoundedRectangle(cornerRadius: FloRadius.md, style: .continuous)
+                        .fill(isSelected ? Color.floSage : Color.white)
+                        .shadow(
+                            color: FloShadow.small.color,
+                            radius: FloShadow.small.radius,
+                            x: FloShadow.small.x,
+                            y: FloShadow.small.y
+                        )
                 )
                 .overlay(
-                    Capsule()
+                    RoundedRectangle(cornerRadius: FloRadius.md, style: .continuous)
                         .stroke(isSelected ? Color.clear : Color.floLightGray, lineWidth: 0.5)
                 )
         }
@@ -613,7 +619,7 @@ struct DatePickerSheet: View {
             .padding(.horizontal, FloSpacing.lg)
             .padding(.bottom, FloSpacing.lg)
         }
-        .background(Color.floCream)
+        .background(Color.white)
     }
 }
 
