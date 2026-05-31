@@ -65,7 +65,7 @@ struct EmotionJournalView: View {
             }
         }
         .sheet(item: $selectedEntry) { entry in
-            JournalEntryDetailView(entry: entry, journalManager: journalManager, onDismiss: {
+            JournalEntryView(entry: entry, journalManager: journalManager, onDismiss: {
                 selectedEntry = nil
             })
         }
@@ -303,134 +303,6 @@ struct JournalCardView: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(entry.emotion.rawValue) - \(entry.note), posted on \(entry.formattedDate)")
         .accessibilityHint("Double tap to view entry")
-    }
-}
-
-// MARK: - Journal Entry Detail View (read-only view of a past entry)
-struct JournalEntryDetailView: View {
-    let entry: JournalEntry
-    let journalManager: JournalManager
-    let onDismiss: () -> Void
-
-    @State private var showDeleteConfirm = false
-
-    var body: some View {
-        ZStack {
-            Color.floCream.ignoresSafeArea()
-
-            VStack(spacing: 0) {
-                // Header
-                HStack {
-                    Button(action: {
-                        FloHaptics.light()
-                        onDismiss()
-                    }) {
-                        HStack(spacing: FloSpacing.xs) {
-                            Image(systemName: "chevron.left")
-                                .font(.system(size: 16, weight: .medium))
-                            Text("Journal")
-                                .font(.floBodyMedium)
-                        }
-                        .foregroundColor(.floSage)
-                    }
-
-                    Spacer()
-
-                    Button(action: {
-                        showDeleteConfirm = true
-                    }) {
-                        Image(systemName: "trash")
-                            .font(.system(size: 18))
-                            .foregroundColor(.phaseMenstrual)
-                    }
-                }
-                .padding(.horizontal, FloSpacing.lg)
-                .padding(.vertical, FloSpacing.md)
-
-                ScrollView {
-                    VStack(alignment: .leading, spacing: FloSpacing.xl) {
-                        // Date & time
-                        VStack(alignment: .leading, spacing: FloSpacing.xs) {
-                            Text(entry.formattedDate)
-                                .font(.floDisplaySmall)
-                                .foregroundColor(.floCharcoal)
-
-                            Text(entry.formattedTime)
-                                .font(.floBodyMedium)
-                                .foregroundColor(.floGray)
-                        }
-
-                        // Emotion card
-                        HStack(spacing: FloSpacing.md) {
-                            ZStack {
-                                Circle()
-                                    .fill(entry.emotion.color.opacity(0.15))
-                                    .frame(width: 56, height: 56)
-
-                                Image(systemName: entry.emotion.icon)
-                                    .font(.system(size: 24))
-                                    .foregroundColor(entry.emotion.color)
-                            }
-
-                            VStack(alignment: .leading, spacing: FloSpacing.xs) {
-                                Text(entry.emotion.rawValue)
-                                    .font(.floBodyLarge)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.floCharcoal)
-
-                                HStack(spacing: 4) {
-                                    Text("Intensity:")
-                                        .font(.floBodySmall)
-                                        .foregroundColor(.floGray)
-
-                                    ForEach(1...5, id: \.self) { i in
-                                        Circle()
-                                            .fill(i <= entry.intensity ? entry.emotion.color : Color.floGray.opacity(0.2))
-                                            .frame(width: 10, height: 10)
-                                    }
-                                }
-                            }
-
-                            Spacer()
-                        }
-                        .padding(FloSpacing.lg)
-                        .background(Color.white)
-                        .cornerRadius(FloRadius.lg)
-
-                        // Phase info
-                        HStack(spacing: FloSpacing.sm) {
-                            Circle()
-                                .fill(entry.phase.color)
-                                .frame(width: 10, height: 10)
-
-                            Text(entry.phase.name)
-                                .font(.floBodySmall)
-                                .foregroundColor(.floGray)
-                        }
-
-                        // Journal text
-                        if !entry.note.isEmpty {
-                            Text(entry.note)
-                                .font(.floSerif(size: 18))
-                                .foregroundColor(.floCharcoal)
-                                .lineSpacing(8)
-                        }
-
-                        Spacer().frame(height: FloSpacing.xxl)
-                    }
-                    .padding(.horizontal, FloSpacing.lg)
-                }
-            }
-        }
-        .alert("Delete Entry?", isPresented: $showDeleteConfirm) {
-            Button("Delete", role: .destructive) {
-                journalManager.deleteEntry(entry)
-                onDismiss()
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This entry will be permanently removed.")
-        }
     }
 }
 
@@ -834,9 +706,9 @@ private struct JournalDayAnchor: Identifiable {
 }
 
 // MARK: - Journal Day Sheet
-/// Sheet presented when a day card is tapped. Hands off to JournalEntryDetailView
-/// for single entries, lists them for multi-entry days, and shows a calm
-/// empty state when nothing has been logged.
+/// Sheet presented when a day card is tapped. Hands off to JournalEntryView
+/// for single entries (editable), lists them for multi-entry days, and
+/// shows a calm empty state when nothing has been logged.
 struct JournalDaySheet: View {
     let date: Date
     let journalManager: JournalManager
@@ -850,8 +722,8 @@ struct JournalDaySheet: View {
 
     var body: some View {
         if entries.count == 1, let only = entries.first {
-            // Single entry — go straight to the detail view.
-            JournalEntryDetailView(entry: only, journalManager: journalManager, onDismiss: onDismiss)
+            // Single entry — go straight to the unified editor.
+            JournalEntryView(entry: only, journalManager: journalManager, onDismiss: onDismiss)
         } else {
             multiOrEmptyView
         }
@@ -908,7 +780,7 @@ struct JournalDaySheet: View {
             }
         }
         .sheet(item: $selectedEntry) { entry in
-            JournalEntryDetailView(entry: entry, journalManager: journalManager, onDismiss: {
+            JournalEntryView(entry: entry, journalManager: journalManager, onDismiss: {
                 selectedEntry = nil
             })
         }
@@ -1054,7 +926,7 @@ struct JournalBaseView: View {
         }
         .dismissKeyboardOnTap()
         .sheet(item: $selectedEntry) { entry in
-            JournalEntryDetailView(entry: entry, journalManager: journalManager, onDismiss: {
+            JournalEntryView(entry: entry, journalManager: journalManager, onDismiss: {
                 selectedEntry = nil
             })
         }

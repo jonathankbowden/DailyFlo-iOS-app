@@ -8,27 +8,33 @@
 import SwiftUI
 import PhotosUI
 
-/// New-entry composer presented as a swipe-dismissable `.large` sheet.
-/// Matches Brittany's "Journal — Entry Overlay" mockup: DATE row, feeling
-/// chip strip, one merged entry card (image + title + body + mic), and
-/// floating LOG CYCLE / CLOSE buttons.
+/// Unified new + edit composer presented as a swipe-dismissable `.large`
+/// sheet. Matches Brittany's "Journal — Entry Overlay" mockup: DATE row,
+/// feeling chip strip, one merged entry card (image + title + body + mic),
+/// and floating LOG CYCLE / CLOSE buttons.
+///
+/// `entry == nil` = new entry (creates via addEntry on CLOSE).
+/// `entry != nil` = edit that entry (state seeded from it; CLOSE writes
+/// back via updateEntry preserving the id; header shows a delete button).
 struct JournalEntryView: View {
-    var journalManager: JournalManager
-    var onDismiss: () -> Void
+    let entry: JournalEntry?
+    let journalManager: JournalManager
+    let onDismiss: () -> Void
 
-    @State private var selectedFeeling: String? = nil
-    @State private var entryDate: Date = Date()
-    @State private var dateChosen: Bool = false
-    @State private var entryTitle: String = ""
-    @State private var entryBody: String = ""
+    @State private var selectedFeeling: String?
+    @State private var entryDate: Date
+    @State private var dateChosen: Bool
+    @State private var entryTitle: String
+    @State private var entryBody: String
     @State private var showLogCycleModal: Bool = false
     @State private var showDatePicker: Bool = false
-    @State private var selectedIntensity: Int = 3
+    @State private var selectedIntensity: Int
     @State private var isSaving: Bool = false
     @State private var hasAppeared: Bool = false
     @State private var showVoiceEntry: Bool = false
     @State private var selectedPhoto: PhotosPickerItem? = nil
     @State private var photoImage: UIImage? = nil
+    @State private var showDeleteConfirm: Bool = false
 
     // Chip Dodd's eight core feelings.
     private let feelings = ["Sad", "Anger", "Fear", "Hurt", "Lonely", "Shame", "Guilt", "Glad"]
@@ -40,13 +46,62 @@ struct JournalEntryView: View {
         "Guilt": .guilty, "Glad": .glad
     ]
 
+    // Reverse mapping for seeding `selectedFeeling` when editing an entry.
+    private static let emotionToFeeling: [CoreEmotion: String] = [
+        .sad: "Sad", .angry: "Anger", .afraid: "Fear",
+        .hurt: "Hurt", .lonely: "Lonely", .ashamed: "Shame",
+        .guilty: "Guilt", .glad: "Glad"
+    ]
+
+    init(
+        entry: JournalEntry? = nil,
+        journalManager: JournalManager,
+        onDismiss: @escaping () -> Void
+    ) {
+        self.entry = entry
+        self.journalManager = journalManager
+        self.onDismiss = onDismiss
+
+        if let entry {
+            let parts = Self.splitNote(entry.note)
+            _selectedFeeling = State(initialValue: Self.emotionToFeeling[entry.emotion])
+            _entryDate = State(initialValue: entry.date)
+            _dateChosen = State(initialValue: true)
+            _entryTitle = State(initialValue: parts.title)
+            _entryBody = State(initialValue: parts.body)
+            _selectedIntensity = State(initialValue: entry.intensity)
+        } else {
+            _selectedFeeling = State(initialValue: nil)
+            _entryDate = State(initialValue: Date())
+            _dateChosen = State(initialValue: false)
+            _entryTitle = State(initialValue: "")
+            _entryBody = State(initialValue: "")
+            _selectedIntensity = State(initialValue: 3)
+        }
+    }
+
+    /// Inverse of saveEntry's `"\(title)\n\(body)"` join. If the stored
+    /// note has a newline, split on the first one; otherwise treat the
+    /// whole thing as the title and leave the body empty.
+    private static func splitNote(_ note: String) -> (title: String, body: String) {
+        let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let firstNewline = trimmed.firstIndex(of: "\n") {
+            let title = String(trimmed[..<firstNewline])
+                .trimmingCharacters(in: .whitespaces)
+            let body = String(trimmed[trimmed.index(after: firstNewline)...])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return (title, body)
+        }
+        return (trimmed, "")
+    }
+
     var body: some View {
         ZStack {
             Color.floCream.ignoresSafeArea()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    dragIndicator
+                    editorHeader
                         .padding(.top, FloSpacing.sm)
                         .padding(.bottom, FloSpacing.md)
 
@@ -85,7 +140,20 @@ struct JournalEntryView: View {
             }
         }
         .presentationDetents([.large])
+        .presentationDragIndicator(.hidden)
         .animation(FloAnimation.easeOutMedium, value: showLogCycleModal)
+        .alert("Delete Entry?", isPresented: $showDeleteConfirm) {
+            Button("Delete", role: .destructive) {
+                if let entry {
+                    FloHaptics.success()
+                    journalManager.deleteEntry(entry)
+                    onDismiss()
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This entry will be permanently removed.")
+        }
         .sheet(isPresented: $showVoiceEntry) {
             VoiceEntryView(
                 onComplete: { title, body in
@@ -127,15 +195,33 @@ struct JournalEntryView: View {
         }
     }
 
-    // MARK: - Drag indicator
-    private var dragIndicator: some View {
-        HStack {
-            Spacer()
+    // MARK: - Editor header (drag handle + edit-mode trash)
+    private var editorHeader: some View {
+        ZStack {
+            // Centered drag indicator
             Capsule()
                 .fill(Color.floGray.opacity(0.3))
                 .frame(width: 36, height: 5)
-            Spacer()
+
+            // Trash is only present in edit mode.
+            if entry != nil {
+                HStack {
+                    Spacer()
+                    Button {
+                        FloHaptics.light()
+                        showDeleteConfirm = true
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.floGray)
+                            .frame(width: 32, height: 32)
+                    }
+                    .accessibilityLabel("Delete entry")
+                    .padding(.trailing, FloSpacing.lg)
+                }
+            }
         }
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Date row
@@ -296,10 +382,22 @@ struct JournalEntryView: View {
     private var imageBanner: some View {
         Group {
             if let photoImage {
+                // New photo picked in this session — large state.
                 Color.clear
                     .aspectRatio(339.0 / 213.0, contentMode: .fit)
                     .overlay(
                         Image(uiImage: photoImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    )
+                    .clipped()
+            } else if let assetName = entry?.userPhotoURL {
+                // Editing an existing entry that already has a user photo
+                // (currently stored as an asset name; same large state).
+                Color.clear
+                    .aspectRatio(339.0 / 213.0, contentMode: .fit)
+                    .overlay(
+                        Image(assetName)
                             .resizable()
                             .aspectRatio(contentMode: .fill)
                     )
@@ -421,10 +519,10 @@ struct JournalEntryView: View {
     // MARK: - Actions
     private func saveEntry() {
         guard canSave else {
-            // Even an empty CLOSE should dismiss — but only swallow the tap
-            // if there's literally nothing to save. Per spec, CLOSE runs the
-            // existing save path and dismisses, so for an empty form just
-            // dismiss without writing.
+            // Empty form on CLOSE: dismiss without writing. (For a new
+            // entry this drops the empty draft; in edit mode `canSave`
+            // stays true as long as anything is present, so an existing
+            // entry can't be silently emptied this way.)
             FloHaptics.light()
             onDismiss()
             return
@@ -433,20 +531,35 @@ struct JournalEntryView: View {
         FloHaptics.light()
         isSaving = true
 
-        let emotion = selectedFeeling.flatMap { feelingToEmotion[$0] } ?? .glad
+        let emotion = selectedFeeling.flatMap { feelingToEmotion[$0] }
+            ?? entry?.emotion
+            ?? .glad
         let fullNote = entryTitle.isEmpty
             ? entryBody
             : (entryBody.isEmpty ? entryTitle : "\(entryTitle)\n\(entryBody)")
+        let phase = CycleManager.shared.phase(for: entryDate)
 
-        let entry = JournalEntry(
-            date: entryDate,
-            emotion: emotion,
-            intensity: selectedIntensity,
-            note: fullNote,
-            cyclePhase: CycleManager.shared.phase(for: entryDate)
-        )
-
-        journalManager.addEntry(entry)
+        if let existing = entry {
+            let updated = JournalEntry(
+                id: existing.id,
+                date: entryDate,
+                emotion: emotion,
+                intensity: selectedIntensity,
+                note: fullNote,
+                cyclePhase: phase,
+                userPhotoURL: existing.userPhotoURL
+            )
+            journalManager.updateEntry(updated)
+        } else {
+            let new = JournalEntry(
+                date: entryDate,
+                emotion: emotion,
+                intensity: selectedIntensity,
+                note: fullNote,
+                cyclePhase: phase
+            )
+            journalManager.addEntry(new)
+        }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
             isSaving = false
