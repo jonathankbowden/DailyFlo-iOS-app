@@ -327,7 +327,7 @@ struct HomeView: View {
                             title: "Add a Feeling",
                             subtitle: "How are you?",
                             color: Color.phaseMenstrual,
-                            bgColor: Color(hex: "F5E6E6"),
+                            bgColor: Color(hex: "E2EEE8"),
                             isHalf: true
                         )
                     }
@@ -363,7 +363,7 @@ struct HomeView: View {
                             title: "Meditate",
                             subtitle: "Find your calm",
                             color: Color.phaseOvulation,
-                            bgColor: Color(hex: "FDF4E7"),
+                            bgColor: Color(hex: "EFEEEB"),
                             isHalf: true
                         )
                     }
