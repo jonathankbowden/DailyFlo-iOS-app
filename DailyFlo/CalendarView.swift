@@ -169,10 +169,10 @@ struct CalendarView: View {
                         cycleData: cycleData,
                         monthLabel: day == 1 ? monthAbbrev : nil,
                         columnIndex: index % 7,
-                        onTap: {
+                        onTapDay: {
                             selectDay(day, in: monthDate, cycleData: cycleData)
                         },
-                        onPhaseTap: {
+                        onTapPhase: {
                             showPhaseForDay(day, cycleData: cycleData)
                         }
                     )
@@ -288,13 +288,7 @@ struct CalendarView: View {
         withAnimation(FloAnimation.springSnappy) {
             selectedDate = date
         }
-
-        // Show single day view for past/today, phase detail for future
-        if !isFuture(day, in: monthDate) {
-            showSingleDay = true
-        } else {
-            showPhaseForDay(day, cycleData: cycleData)
-        }
+        showSingleDay = true
     }
 
     private func showPhaseForDay(_ day: Int, cycleData: CycleData) {
@@ -368,8 +362,8 @@ struct DayCellWithPhase: View {
     let cycleData: CycleData
     let monthLabel: String? // Shows month abbreviation on day 1
     let columnIndex: Int // 0-6, which column this day is in
-    let onTap: () -> Void
-    let onPhaseTap: () -> Void
+    let onTapDay: () -> Void
+    let onTapPhase: () -> Void
 
     private var phase: CyclePhase { cycleData.phase(for: day) }
     private var isOvulation: Bool { day == cycleData.ovulationDay }
@@ -422,6 +416,8 @@ struct DayCellWithPhase: View {
                         .foregroundColor(isSelected && !isToday ? .white : .floCharcoal)
                 }
                 .frame(width: 32, height: 32)
+                .contentShape(Circle())
+                .onTapGesture { onTapDay() }
                 .scaleEffect(isSelected ? 1.05 : 1.0)
                 .animation(FloAnimation.springSnappy, value: isSelected)
 
@@ -442,7 +438,7 @@ struct DayCellWithPhase: View {
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
         .onTapGesture {
-            onTap()
+            onTapPhase()
         }
     }
 
