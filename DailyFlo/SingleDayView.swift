@@ -112,7 +112,9 @@ struct SingleDayView: View {
         .sheet(isPresented: $showLogCycle) {
             LogCycleView(
                 selectedDate: currentDate,
-                onSave: {},
+                onSave: { startDate in
+                    Task { await CycleManager.shared.logCycle(startDate: startDate) }
+                },
                 onDismiss: { showLogCycle = false }
             )
         }

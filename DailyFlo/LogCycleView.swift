@@ -8,161 +8,99 @@
 import SwiftUI
 
 // MARK: - Log Cycle View
-/// Daily cycle logging. Per the locked product rule in CLAUDE.md, this view
-/// never asks for symptoms or flow/heaviness — only a period-day marker and
-/// optional notes.
+/// Compact "log a new period start" modal. Per the locked product rule
+/// in CLAUDE.md this view never asks for symptoms, flow/heaviness, or
+/// notes — just a start date. The owning caller is responsible for the
+/// actual cycle write (typically `CycleManager.shared.logCycle(startDate:)`).
 struct LogCycleView: View {
     let selectedDate: Date
-    let onSave: () -> Void
+    let onSave: (Date) -> Void
     let onDismiss: () -> Void
 
-    @State private var isPeriodDay = false
-    @State private var notes = ""
+    @State private var startDate: Date
 
-    private var dateFormatter: DateFormatter {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEEE, MMMM d"
-        return formatter
+    init(
+        selectedDate: Date,
+        onSave: @escaping (Date) -> Void,
+        onDismiss: @escaping () -> Void
+    ) {
+        self.selectedDate = selectedDate
+        self.onSave = onSave
+        self.onDismiss = onDismiss
+        _startDate = State(initialValue: selectedDate)
     }
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                Color.floCream.ignoresSafeArea()
+        ZStack(alignment: .topTrailing) {
+            Color.floCream.ignoresSafeArea()
 
-                ScrollView {
-                    VStack(spacing: FloSpacing.xl) {
-                        dateHeader
-                        periodToggle
-                        notesSection
+            VStack(spacing: FloSpacing.lg) {
+                Text("SELECT A START DATE:")
+                    .font(.floLabel)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.floCharcoal)
+                    .tracking(1.5)
+                    .padding(.top, FloSpacing.xl)
 
-                        Spacer()
-                            .frame(height: FloSpacing.xxl)
-                    }
+                FloDivider(color: Color.floLightGray, thickness: 0.5)
                     .padding(.horizontal, FloSpacing.lg)
-                    .padding(.top, FloSpacing.md)
-                }
-            }
-            .navigationTitle("Log Day")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
-                        FloHaptics.light()
-                        onDismiss()
-                    }
-                    .foregroundColor(.floGray)
-                }
 
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Save") {
-                        FloHaptics.success()
-                        saveLog()
+                DatePicker(
+                    "",
+                    selection: $startDate,
+                    displayedComponents: .date
+                )
+                .datePickerStyle(.wheel)
+                .labelsHidden()
+                .padding(.horizontal, FloSpacing.lg)
+
+                Button {
+                    FloHaptics.success()
+                    onSave(startDate)
+                    onDismiss()
+                } label: {
+                    HStack(spacing: FloSpacing.sm) {
+                        Image(systemName: "checkmark.circle")
+                            .font(.system(size: 18, weight: .medium))
+                        Text("LOG CYCLE")
+                            .tracking(1.5)
                     }
-                    .font(.floButton)
-                    .foregroundColor(.floSage)
                 }
+                .buttonStyle(FloSecondaryButtonStyle())
+                .padding(.horizontal, FloSpacing.lg)
+                .padding(.bottom, FloSpacing.xl)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+
+            closeButton
+                .padding(.top, FloSpacing.lg)
+                .padding(.trailing, FloSpacing.lg)
         }
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.hidden)
     }
 
-    // MARK: - Date Header
-    private var dateHeader: some View {
-        let currentPhase = CycleManager.shared.phase(for: selectedDate)
-        return VStack(spacing: FloSpacing.xs) {
-            Text(dateFormatter.string(from: selectedDate))
-                .font(.floDisplaySmall)
+    private var closeButton: some View {
+        Button {
+            FloHaptics.light()
+            onDismiss()
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 14, weight: .semibold))
                 .foregroundColor(.floCharcoal)
-
-            HStack(spacing: FloSpacing.xs) {
-                Circle()
-                    .fill(currentPhase.color)
-                    .frame(width: 8, height: 8)
-
-                Text(currentPhase.name)
-                    .font(.floBodySmall)
-                    .foregroundColor(.floGray)
-            }
+                .frame(width: 32, height: 32)
+                .background(Color.white)
+                .clipShape(Circle())
+                .shadow(color: Color.black.opacity(0.06), radius: 4, x: 0, y: 2)
         }
-    }
-
-    // MARK: - Period Toggle
-    private var periodToggle: some View {
-        VStack(spacing: FloSpacing.md) {
-            HStack {
-                VStack(alignment: .leading, spacing: FloSpacing.xs) {
-                    Text("Period Day?")
-                        .font(.floBodyLarge)
-                        .fontWeight(.medium)
-                        .foregroundColor(.floCharcoal)
-
-                    Text("Log if you're on your period")
-                        .font(.floBodySmall)
-                        .foregroundColor(.floGray)
-                }
-
-                Spacer()
-
-                Toggle("", isOn: $isPeriodDay)
-                    .toggleStyle(SwitchToggleStyle(tint: .phaseMenstrual))
-            }
-            .padding(FloSpacing.md)
-            .background(Color.white)
-            .cornerRadius(FloRadius.lg)
-            .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2)
-        }
-    }
-
-    // MARK: - Notes Section
-    private var notesSection: some View {
-        VStack(alignment: .leading, spacing: FloSpacing.md) {
-            Text("NOTES")
-                .font(.floLabel)
-                .fontWeight(.medium)
-                .foregroundColor(.floGray)
-                .tracking(1)
-
-            ZStack(alignment: .topLeading) {
-                TextEditor(text: $notes)
-                    .font(.floBodyMedium)
-                    .frame(minHeight: 100)
-                    .padding(FloSpacing.sm)
-                    .background(Color.floCream)
-                    .cornerRadius(FloRadius.md)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: FloRadius.md)
-                            .stroke(Color.floGray.opacity(0.2), lineWidth: 1)
-                    )
-
-                if notes.isEmpty {
-                    Text("How are you feeling today?")
-                        .font(.floBodySmall)
-                        .foregroundColor(.floGray)
-                        .padding(.horizontal, FloSpacing.md)
-                        .padding(.top, FloSpacing.md + 4)
-                        .allowsHitTesting(false)
-                }
-            }
-        }
-        .padding(FloSpacing.md)
-        .background(Color.white)
-        .cornerRadius(FloRadius.lg)
-        .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2)
-    }
-
-    // MARK: - Save Action
-    private func saveLog() {
-        // Persistence is handled by the caller; this view just collects input
-        // and delegates the actual write upstream.
-        onSave()
-        onDismiss()
+        .accessibilityLabel("Close")
     }
 }
 
 #Preview {
     LogCycleView(
         selectedDate: Date(),
-        onSave: {},
+        onSave: { _ in },
         onDismiss: {}
     )
 }

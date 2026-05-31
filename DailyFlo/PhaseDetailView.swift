@@ -65,7 +65,10 @@ struct PhaseDetailView: View {
         .sheet(isPresented: $showLogCycle) {
             LogCycleView(
                 selectedDate: Date(),
-                onSave: { showLogCycle = false },
+                onSave: { startDate in
+                    Task { await CycleManager.shared.logCycle(startDate: startDate) }
+                    showLogCycle = false
+                },
                 onDismiss: { showLogCycle = false }
             )
         }

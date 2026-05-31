@@ -28,7 +28,7 @@ import SwiftUI
 }
 
 #Preview("7 - Log Cycle") {
-    LogCycleView(selectedDate: Date(), onSave: {}, onDismiss: {})
+    LogCycleView(selectedDate: Date(), onSave: { _ in }, onDismiss: {})
 }
 
 #Preview("8 - Phase Detail") {
