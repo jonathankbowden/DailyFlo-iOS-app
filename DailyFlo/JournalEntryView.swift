@@ -133,15 +133,20 @@ struct JournalEntryView: View {
                 floatingBottomButtons
             }
             .ignoresSafeArea(.container, edges: .bottom)
-
-            if showLogCycleModal {
-                LogCycleModal(isPresented: $showLogCycleModal)
-                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
-            }
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.hidden)
-        .animation(FloAnimation.easeOutMedium, value: showLogCycleModal)
+        .sheet(isPresented: $showLogCycleModal) {
+            LogCycleView(
+                selectedDate: entryDate,
+                onSave: { date in
+                    Task { @MainActor in
+                        await CycleManager.shared.logCycle(startDate: date)
+                    }
+                },
+                onDismiss: { showLogCycleModal = false }
+            )
+        }
         .alert("Delete Entry?", isPresented: $showDeleteConfirm) {
             Button("Delete", role: .destructive) {
                 if let entry {
@@ -464,9 +469,7 @@ struct JournalEntryView: View {
         HStack(spacing: FloSpacing.md) {
             Button {
                 FloHaptics.medium()
-                withAnimation(FloAnimation.easeOutMedium) {
-                    showLogCycleModal = true
-                }
+                showLogCycleModal = true
             } label: {
                 HStack(spacing: FloSpacing.sm) {
                     Image(systemName: "checkmark.circle")
@@ -611,112 +614,6 @@ struct DatePickerSheet: View {
             .padding(.bottom, FloSpacing.lg)
         }
         .background(Color.floCream)
-    }
-}
-
-// MARK: - Log Cycle Modal (inline overlay invoked by LOG CYCLE button)
-struct LogCycleModal: View {
-    @Binding var isPresented: Bool
-    @State private var selectedDate: Date = Date()
-
-    var body: some View {
-        ZStack {
-            Color.black.opacity(0.4)
-                .ignoresSafeArea()
-                .onTapGesture {
-                    FloHaptics.light()
-                    isPresented = false
-                }
-
-            VStack(spacing: 0) {
-                ZStack {
-                    Color(hex: "F5F5F5")
-                        .frame(height: 60)
-
-                    HStack {
-                        Text("Log Cycle")
-                            .font(.floBodyLarge)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.floCharcoal)
-                            .padding(.leading, FloSpacing.lg)
-
-                        Spacer()
-
-                        Button {
-                            FloHaptics.light()
-                            isPresented = false
-                        } label: {
-                            Circle()
-                                .stroke(Color.floCharcoal, lineWidth: 1.5)
-                                .frame(width: 32, height: 32)
-                                .overlay(
-                                    Image(systemName: "xmark")
-                                        .font(.system(size: 12, weight: .semibold))
-                                        .foregroundColor(.floCharcoal)
-                                )
-                        }
-                        .buttonStyle(.floPressed)
-                        .padding(.trailing, FloSpacing.lg)
-                        .accessibilityLabel("Close")
-                    }
-                }
-
-                VStack(spacing: FloSpacing.lg) {
-                    Text("SELECT A START DATE:")
-                        .font(.floLabel)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.floCharcoal)
-                        .tracking(1.5)
-
-                    FloDivider()
-                        .padding(.horizontal, FloSpacing.xl)
-
-                    DatePicker(
-                        "",
-                        selection: $selectedDate,
-                        in: ...Date(),
-                        displayedComponents: .date
-                    )
-                    .datePickerStyle(.wheel)
-                    .labelsHidden()
-                    .frame(height: 150)
-
-                    Button {
-                        FloHaptics.success()
-                        // CycleManager handles the local UserDefaults write
-                        // and the Supabase insert; the Task is fire-and-forget
-                        // so dismissing the modal doesn't block on the network.
-                        Task { @MainActor in
-                            await CycleManager.shared.logCycle(startDate: selectedDate)
-                        }
-                        isPresented = false
-                    } label: {
-                        HStack(spacing: FloSpacing.sm) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 16))
-                            Text("LOG CYCLE")
-                                .font(.floLabel)
-                                .fontWeight(.semibold)
-                                .tracking(1)
-                        }
-                        .foregroundColor(.white)
-                        .padding(.horizontal, FloSpacing.xl)
-                        .padding(.vertical, FloSpacing.md)
-                        .background(Color.floSage)
-                        .cornerRadius(FloRadius.full)
-                        .shadow(color: Color.floSage.opacity(0.3), radius: 6, x: 0, y: 3)
-                    }
-                    .buttonStyle(.floPressed)
-                    .padding(.bottom, FloSpacing.xl)
-                }
-                .padding(.top, FloSpacing.xl)
-                .background(Color.white)
-            }
-            .background(Color.white)
-            .cornerRadius(FloRadius.xl)
-            .padding(.horizontal, FloSpacing.lg)
-            .shadow(color: .black.opacity(0.15), radius: 20, x: 0, y: 10)
-        }
     }
 }
 
