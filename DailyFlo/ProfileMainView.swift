@@ -31,6 +31,8 @@ struct ProfileMainView: View {
     @State private var isLoadingProfile = false
     @State private var profileLoadFailed = false
 
+    @Environment(\.dismiss) private var dismiss
+
     private let cycleManager = CycleManager.shared
 
     private var displayName: String {
@@ -259,14 +261,30 @@ struct ProfileMainView: View {
     // MARK: - Header
     private var headerView: some View {
         HStack {
-            // Profile/partner icon
-            Image("partner")
-                .renderingMode(.template)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 24, height: 24)
-                .foregroundColor(.floCharcoal)
-                .accessibilityLabel("Profile")
+            if isEmbedded {
+                // Profile/partner icon — branding when embedded in the Profile tab.
+                Image("partner")
+                    .renderingMode(.template)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 24, height: 24)
+                    .foregroundColor(.floCharcoal)
+                    .accessibilityLabel("Profile")
+            } else {
+                // Back affordance when presented as its own page.
+                Button {
+                    FloHaptics.light()
+                    dismiss()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(.floCharcoal)
+                        .frame(width: 32, height: 32)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("Back")
+                .accessibilityHint("Returns to the dashboard")
+            }
 
             Spacer()
 

@@ -234,22 +234,21 @@ struct JournalView: View {
     }
 }
 
-/// Profile tab: dashboard on top, account/stats/sign-out below — one scroll.
-/// Composes HomeView and ProfileMainView in embedded mode so both views'
-/// content flows inside a single outer ScrollView.
+/// Profile tab: dashboard only. Account/stats/sign-out live on their own
+/// page behind the top-trailing gear button (presented as a fullScreenCover).
 struct ProfileTabView: View {
     let greeting: SplashGreeting
     let animateFromSplash: Bool
 
+    @State private var showSettings = false
+
     var body: some View {
-        ZStack {
+        ZStack(alignment: .topTrailing) {
             Color.floCream.ignoresSafeArea()
 
             ScrollView {
                 VStack(spacing: 0) {
                     HomeView(greeting: greeting, animateFromSplash: animateFromSplash, isEmbedded: true)
-
-                    ProfileMainView(isEmbedded: true)
 
                     // Space for the tab bar
                     Spacer(minLength: 140)
@@ -257,7 +256,32 @@ struct ProfileTabView: View {
             }
             .scrollIndicators(.hidden)
             .ignoresSafeArea(edges: .top)
+
+            settingsButton
+                .padding(.top, FloSpacing.sm)
+                .padding(.trailing, FloSpacing.lg)
         }
+        .fullScreenCover(isPresented: $showSettings) {
+            ProfileMainView()
+        }
+    }
+
+    private var settingsButton: some View {
+        Button {
+            FloHaptics.light()
+            showSettings = true
+        } label: {
+            Image(systemName: "gearshape.fill")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(.floCharcoal)
+                .frame(width: 36, height: 36)
+                .background(Color.white.opacity(0.92))
+                .clipShape(Circle())
+                .shadow(color: Color.black.opacity(0.12), radius: 4, x: 0, y: 2)
+        }
+        .buttonStyle(.floPressed)
+        .accessibilityLabel("Account and settings")
+        .accessibilityHint("Opens account settings, stats, and sign-out")
     }
 }
 
