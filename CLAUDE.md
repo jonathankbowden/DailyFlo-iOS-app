@@ -138,6 +138,13 @@ Build Apple Sign In + email first (highest priority), stub Google and Meta butto
 - **Soft delete in DB:** When migrating to Supabase, use `deleted_at` patterns, not hard deletes. Schema is set up for it.
 - **Don't commingle with Kreathaus.** Any code or content for DailyFLO is owned by DailyFLO LLC (per the Operating Agreement). If you find yourself writing something that could belong to either business, flag it for Jonathan.
 
+## Working principles (locked May 27, 2026)
+
+- **"Functional" is NOT the quality bar.** Finished work must look right and feel right, not just compile. "Works with a misalignment that snaps on scroll," "works with a flicker," "works but…" — that's a bug to fix, not a stopping point.
+- **When a bug points at a structural cause, fix it structurally on the FIRST attempt.** Nested ScrollViews, gesture conflicts, LazyVStack + scrollPosition layout races, or any known-unreliable SwiftUI combo: do the architecturally-correct rewrite from the start. Do NOT iterate one-line patches hoping they land.
+- **One failed patch = stop and reassess.** After the first patch attempt that doesn't fully fix the issue, STOP. Name the structural root cause. Propose the rewrite. Then execute. Do not try another speculative patch.
+- **Respect Jonathan's tokens and time.** He can see the trail of attempts and the token spend. Past the first failed patch, the only acceptable next message is "here is the root cause and the correct fix" — not "let me try X."
+
 ## Where to find more
 
 For anything not covered here, these planning docs in the workspace folder have the full context:
