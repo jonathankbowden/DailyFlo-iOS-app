@@ -80,7 +80,7 @@ struct ContentView: View {
                             .frame(width: 80)
 
                         // Journal
-                        tabBarItemSF(icon: "square.and.pencil", tag: 2, size: 22)
+                        tabBarItemCustom(icon: "journal", tag: 2, size: 24)
 
                         // Pause (Meditation)
                         tabBarItemCustom(icon: "pause", tag: 3, size: 24)
