@@ -115,13 +115,21 @@ struct JournalEntryView: View {
                             .fadeIn(delay: hasAppeared ? 0 : 0.15)
                         photoCard
                             .fadeIn(delay: hasAppeared ? 0 : 0.18)
-                        voiceCard
-                            .fadeIn(delay: hasAppeared ? 0 : 0.2)
                         textCard
+                            .fadeIn(delay: hasAppeared ? 0 : 0.2)
+                        voiceCard
                             .fadeIn(delay: hasAppeared ? 0 : 0.22)
                     }
                     .padding(.horizontal, FloSpacing.lg)
                     .padding(.top, FloSpacing.lg)
+
+                    if entry != nil {
+                        deleteEntryButton
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, FloSpacing.xl)
+                            .padding(.bottom, FloSpacing.lg)
+                            .fadeIn(delay: hasAppeared ? 0 : 0.25)
+                    }
                 }
                 .padding(.bottom, 140)
             }
@@ -207,31 +215,29 @@ struct JournalEntryView: View {
         }
     }
 
-    // MARK: - Editor header (drag handle + edit-mode trash)
+    // MARK: - Editor header (drag handle)
     private var editorHeader: some View {
-        ZStack {
-            Capsule()
-                .fill(Color.floGray.opacity(0.3))
-                .frame(width: 36, height: 5)
+        Capsule()
+            .fill(Color.floGray.opacity(0.3))
+            .frame(width: 36, height: 5)
+            .frame(maxWidth: .infinity)
+    }
 
-            if entry != nil {
-                HStack {
-                    Spacer()
-                    Button {
-                        FloHaptics.light()
-                        showDeleteConfirm = true
-                    } label: {
-                        Image(systemName: "trash")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(.floGray)
-                            .frame(width: 32, height: 32)
-                    }
-                    .accessibilityLabel("Delete entry")
-                    .padding(.trailing, FloSpacing.lg)
-                }
-            }
+    // MARK: - Bottom destructive action (edit mode only)
+    private var deleteEntryButton: some View {
+        Button {
+            FloHaptics.light()
+            showDeleteConfirm = true
+        } label: {
+            Text("DELETE ENTRY")
+                .font(.floLabel)
+                .fontWeight(.bold)
+                .tracking(2)
+                .foregroundColor(.floError)
         }
-        .frame(maxWidth: .infinity)
+        .buttonStyle(.floPressed)
+        .accessibilityLabel("Delete entry")
+        .accessibilityHint("Permanently removes this entry")
     }
 
     // MARK: - Date section
