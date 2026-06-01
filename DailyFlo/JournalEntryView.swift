@@ -233,7 +233,7 @@ struct JournalEntryView: View {
                 .font(.floLabel)
                 .fontWeight(.bold)
                 .tracking(2)
-                .foregroundColor(.floError)
+                .foregroundColor(.floCharcoal)
         }
         .buttonStyle(.floPressed)
         .accessibilityLabel("Delete entry")
@@ -672,6 +672,7 @@ struct TextEntryView: View {
     @State private var title: String = ""
     @State private var bodyText: String = ""
     @State private var hasAppeared: Bool = false
+    @State private var showVoice: Bool = false
     @FocusState private var focused: Field?
 
     enum Field {
@@ -693,13 +694,34 @@ struct TextEntryView: View {
                 .padding(.top, FloSpacing.sm)
                 .padding(.bottom, FloSpacing.md)
 
-                Text("Write it down")
-                    .font(.floSerif(size: 28))
-                    .foregroundColor(.floCharcoal)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, FloSpacing.lg)
-                    .padding(.bottom, FloSpacing.lg)
-                    .accessibilityAddTraits(.isHeader)
+                HStack(alignment: .center) {
+                    Text("Write it down")
+                        .font(.floSerif(size: 28))
+                        .foregroundColor(.floCharcoal)
+                        .accessibilityAddTraits(.isHeader)
+
+                    Spacer()
+
+                    Button {
+                        FloHaptics.medium()
+                        focused = nil
+                        showVoice = true
+                    } label: {
+                        ZStack {
+                            Circle()
+                                .fill(Color.floSage.opacity(0.12))
+                                .frame(width: 40, height: 40)
+                            Image(systemName: "mic.fill")
+                                .font(.system(size: 18, weight: .medium))
+                                .foregroundColor(.floSage)
+                        }
+                    }
+                    .buttonStyle(.floPressed)
+                    .accessibilityLabel("Dictate")
+                    .accessibilityHint("Opens voice recording to fill title and body")
+                }
+                .padding(.horizontal, FloSpacing.lg)
+                .padding(.bottom, FloSpacing.lg)
 
                 TextField("Title", text: $title)
                     .font(.floLabel)
@@ -803,6 +825,18 @@ struct TextEntryView: View {
                 focused = .title
                 hasAppeared = true
             }
+        }
+        .sheet(isPresented: $showVoice) {
+            VoiceEntryView(
+                onComplete: { voicedTitle, voicedBody in
+                    title = voicedTitle
+                    bodyText = voicedBody
+                    showVoice = false
+                },
+                onDismiss: { showVoice = false }
+            )
+            .presentationDetents([.large])
+            .presentationDragIndicator(.hidden)
         }
     }
 }
