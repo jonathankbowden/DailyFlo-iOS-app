@@ -18,6 +18,7 @@ struct DistilledEntry {
 /// into a polished journal entry with both a title and body text.
 struct TitleGenerator {
 
+    @available(iOS 26.0, *)
     @Generable(description: "A distilled journal entry from a voice transcript")
     struct JournalEntry {
         @Guide(description: "A concise, reflective title for the journal entry, 2 to 6 words")
@@ -28,18 +29,28 @@ struct TitleGenerator {
     }
 
     /// Returns `true` when the on-device model is ready for use.
+    @available(iOS 26.0, *)
     static var isAvailable: Bool {
         SystemLanguageModel.default.availability == .available
     }
 
     /// Distills a raw voice transcript into a polished journal entry with title and body.
-    /// Falls back to simple extraction if the model is unavailable.
+    /// Falls back to simple extraction on pre-iOS-26 devices or when the model is unavailable.
     static func distill(from transcript: String) async -> DistilledEntry {
         let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             return DistilledEntry(title: "", body: "")
         }
 
+        if #available(iOS 26.0, *) {
+            return await distillWithModel(trimmed)
+        } else {
+            return fallback(from: trimmed)
+        }
+    }
+
+    @available(iOS 26.0, *)
+    private static func distillWithModel(_ trimmed: String) async -> DistilledEntry {
         guard isAvailable else {
             return fallback(from: trimmed)
         }
@@ -58,7 +69,7 @@ struct TitleGenerator {
             )
 
             let response = try await session.respond(
-                to: transcript,
+                to: trimmed,
                 generating: JournalEntry.self
             )
 
