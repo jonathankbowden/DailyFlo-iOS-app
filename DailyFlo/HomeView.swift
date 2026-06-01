@@ -306,7 +306,6 @@ struct HomeView: View {
                             title: "Add a Photo",
                             subtitle: "Capture your day",
                             color: Color.phaseLuteal,
-                            bgColor: Color(hex: "E8EAF0"),
                             isHalf: true
                         )
                     }
@@ -327,7 +326,6 @@ struct HomeView: View {
                             title: "Add a Feeling",
                             subtitle: "How are you?",
                             color: Color.phaseMenstrual,
-                            bgColor: Color(hex: "E2EEE8"),
                             isHalf: true
                         )
                     }
@@ -344,8 +342,7 @@ struct HomeView: View {
                         icon: "book.fill",
                         title: "Record a Journal Entry",
                         subtitle: "Write, speak, or reflect on your day",
-                        color: Color.phaseLuteal,
-                        bgColor: Color(hex: "E8EEF2")
+                        color: Color.phaseLuteal
                     )
                 }
                 .buttonStyle(.floPressed)
@@ -363,7 +360,6 @@ struct HomeView: View {
                             title: "Meditate",
                             subtitle: "Find your calm",
                             color: Color.phaseOvulation,
-                            bgColor: Color(hex: "EFEEEB"),
                             isHalf: true
                         )
                     }
@@ -379,7 +375,6 @@ struct HomeView: View {
                             title: "Your Phase",
                             subtitle: "Mind, body, soul",
                             color: Color.floSage,
-                            bgColor: Color(hex: "EAF3EC"),
                             isHalf: true
                         )
                     }
@@ -418,7 +413,6 @@ struct ActionCard: View {
     let title: String
     let subtitle: String
     let color: Color
-    let bgColor: Color
     let isHalf: Bool
 
     var body: some View {
@@ -452,8 +446,18 @@ struct ActionCard: View {
         .padding(FloSpacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: 140)
-        .background(bgColor)
+        .background(Color.white)
         .cornerRadius(FloRadius.lg)
+        .overlay(
+            RoundedRectangle(cornerRadius: FloRadius.lg)
+                .stroke(Color.floSage.opacity(0.3), lineWidth: 1.5)
+        )
+        .shadow(
+            color: FloShadow.small.color,
+            radius: FloShadow.small.radius,
+            x: 0,
+            y: FloShadow.small.y
+        )
     }
 }
 
@@ -463,7 +467,6 @@ struct ActionCardWide: View {
     let title: String
     let subtitle: String
     let color: Color
-    let bgColor: Color
 
     var body: some View {
         HStack(spacing: FloSpacing.md) {
@@ -497,8 +500,18 @@ struct ActionCardWide: View {
                 .foregroundColor(.floGray.opacity(0.5))
         }
         .padding(FloSpacing.lg)
-        .background(bgColor)
+        .background(Color.white)
         .cornerRadius(FloRadius.lg)
+        .overlay(
+            RoundedRectangle(cornerRadius: FloRadius.lg)
+                .stroke(Color.floSage.opacity(0.3), lineWidth: 1.5)
+        )
+        .shadow(
+            color: FloShadow.small.color,
+            radius: FloShadow.small.radius,
+            x: 0,
+            y: FloShadow.small.y
+        )
     }
 }
 
