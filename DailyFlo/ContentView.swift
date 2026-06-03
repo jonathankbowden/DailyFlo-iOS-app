@@ -317,8 +317,10 @@ struct MeditationView: View {
         .onChange(of: subs.isPro) { _, isPro in
             if isPro { showPaywall = false }
         }
-        .fullScreenCover(isPresented: $showPaywall) {
+        .sheet(isPresented: $showPaywall) {
             PaywallView()
+                .presentationDetents([.large])
+                .presentationDragIndicator(.hidden)
         }
     }
 }

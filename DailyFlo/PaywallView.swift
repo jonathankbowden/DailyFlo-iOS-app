@@ -36,8 +36,8 @@ struct PaywallView: View {
     /// so the footer can be rendered in both "eligible" and "ineligible"
     /// configurations without depending on a live RC offering.
     struct PreviewTrialDemo {
-        var price: String
-        var period: String        // e.g. "per year"
+        var price: String          // e.g. "$59.99"
+        var periodSuffix: String   // e.g. "/year"
         var eligible: Bool
     }
 
@@ -55,7 +55,7 @@ struct PaywallView: View {
             VStack(spacing: FloSpacing.xl) {
                 header
                 valueProps
-                plansAndDisclaimer
+                planSection
             }
             .padding(.horizontal, FloSpacing.lg)
             .padding(.top, FloSpacing.md)
@@ -77,23 +77,36 @@ struct PaywallView: View {
     // MARK: - Top bar
 
     private var topBar: some View {
-        HStack {
-            Spacer()
-            Button {
-                FloHaptics.light()
-                dismiss()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(.floCharcoal.opacity(0.6))
-                    .frame(width: 32, height: 32)
-                    .background(Color.white.opacity(0.7))
-                    .clipShape(Circle())
+        VStack(spacing: 0) {
+            // In-content drag grabber, matching PhaseDetailView. We render
+            // our own rather than using `.presentationDragIndicator(.visible)`
+            // so the affordance sits visually inside the sheet's cream
+            // surface instead of floating above it on the dim backdrop.
+            Capsule()
+                .fill(Color.floGray.opacity(0.3))
+                .frame(width: 36, height: 5)
+                .padding(.top, FloSpacing.sm)
+                .padding(.bottom, FloSpacing.xs)
+                .accessibilityHidden(true)
+
+            HStack {
+                Spacer()
+                Button {
+                    FloHaptics.light()
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(.floCharcoal.opacity(0.6))
+                        .frame(width: 32, height: 32)
+                        .background(Color.white.opacity(0.7))
+                        .clipShape(Circle())
+                }
+                .accessibilityLabel("Close")
             }
-            .accessibilityLabel("Close")
+            .padding(.horizontal, FloSpacing.md)
+            .padding(.bottom, FloSpacing.xs)
         }
-        .padding(.horizontal, FloSpacing.md)
-        .padding(.vertical, FloSpacing.sm)
         .background(Color.floCream)
     }
 
@@ -167,24 +180,6 @@ struct PaywallView: View {
     }
 
     // MARK: - Plan section
-
-    /// Wraps the plan picker with the pricing/trial disclaimer directly
-    /// underneath. Keeps the disclaimer visually grouped with the plans it
-    /// describes (rather than living in the pinned footer next to the CTA).
-    private var plansAndDisclaimer: some View {
-        VStack(spacing: FloSpacing.md) {
-            planSection
-            if let copy = trialCopy {
-                Text(copy)
-                    .font(.floBodySmall)
-                    .foregroundColor(.floGray)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, FloSpacing.xs)
-            }
-        }
-    }
 
     @ViewBuilder
     private var planSection: some View {
@@ -366,6 +361,20 @@ struct PaywallView: View {
         VStack(spacing: FloSpacing.md) {
             primaryCTA
                 .padding(.top, 40)  // requested drop for CTA + restore + legal
+
+            // Trial disclosure (App Store compliance). Rendered ONLY when the
+            // user is eligible for the free month — in the ineligible state
+            // the CTA reads "Continue" and no trial line is needed.
+            if let disclosure = trialDisclosureCopy {
+                Text(disclosure)
+                    .font(.floBodySmall)
+                    .foregroundColor(.floGray)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, FloSpacing.xs)
+            }
+
             restoreButton
             legalLinks
         }
@@ -431,34 +440,25 @@ struct PaywallView: View {
         return "Continue"
     }
 
-    private var trialCopy: String? {
+    /// Compliance disclosure rendered directly under the CTA in the
+    /// trial-eligible state. Nil when the user isn't trial-eligible (the
+    /// "Continue" CTA stands alone — no disclosure required).
+    private var trialDisclosureCopy: String? {
         #if DEBUG
         if let demo = previewTrialDemo {
-            if demo.eligible {
-                return "1 month free, then \(demo.price) \(demo.period). Cancel anytime."
-            }
-            return "\(demo.price) \(demo.period). Cancel anytime."
+            guard demo.eligible else { return nil }
+            return "1 month free, then \(demo.price)\(demo.periodSuffix). Cancel anytime."
         }
         #endif
-        guard let selectedPackage else { return nil }
+        guard let selectedPackage, hasFreeTrial(selectedPackage) else { return nil }
         let price = selectedPackage.storeProduct.localizedPriceString
-        if hasFreeTrial(selectedPackage) {
-            switch selectedPackage.packageType {
-            case .annual:
-                return "1 month free, then \(price) per year. Cancel anytime."
-            case .monthly:
-                return "1 month free, then \(price) per month. Cancel anytime."
-            default:
-                return "1 month free, then \(price). Cancel anytime."
-            }
-        }
         switch selectedPackage.packageType {
         case .annual:
-            return "\(price) per year. Cancel anytime."
+            return "1 month free, then \(price)/year. Cancel anytime."
         case .monthly:
-            return "\(price) per month. Cancel anytime."
+            return "1 month free, then \(price)/month. Cancel anytime."
         default:
-            return "\(price). Cancel anytime."
+            return "1 month free, then \(price). Cancel anytime."
         }
     }
 
@@ -570,7 +570,7 @@ struct PaywallView: View {
 #Preview("Trial eligible") {
     PaywallView(previewTrialDemo: .init(
         price: "$59.99",
-        period: "per year",
+        periodSuffix: "/year",
         eligible: true
     ))
 }
@@ -578,7 +578,7 @@ struct PaywallView: View {
 #Preview("Trial ineligible") {
     PaywallView(previewTrialDemo: .init(
         price: "$59.99",
-        period: "per year",
+        periodSuffix: "/year",
         eligible: false
     ))
 }
