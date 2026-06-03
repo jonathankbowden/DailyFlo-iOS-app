@@ -235,7 +235,8 @@ struct JournalView: View {
 }
 
 /// Profile tab: dashboard only. Account/stats/sign-out live on their own
-/// page behind the top-trailing gear button (presented as a fullScreenCover).
+/// page behind the "My Settings" row at the bottom of the dashboard scroll
+/// (presented as a fullScreenCover).
 struct ProfileTabView: View {
     let greeting: SplashGreeting
     let animateFromSplash: Bool
@@ -243,12 +244,16 @@ struct ProfileTabView: View {
     @State private var showSettings = false
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
+        ZStack {
             Color.floCream.ignoresSafeArea()
 
             ScrollView {
                 VStack(spacing: 0) {
                     HomeView(greeting: greeting, animateFromSplash: animateFromSplash, isEmbedded: true)
+
+                    mySettingsButton
+                        .padding(.horizontal, FloSpacing.lg)
+                        .padding(.top, FloSpacing.xl)
 
                     // Space for the tab bar
                     Spacer(minLength: 140)
@@ -256,31 +261,50 @@ struct ProfileTabView: View {
             }
             .scrollIndicators(.hidden)
             .ignoresSafeArea(edges: .top)
-
-            settingsButton
-                .padding(.top, FloSpacing.sm)
-                .padding(.trailing, FloSpacing.lg)
         }
         .fullScreenCover(isPresented: $showSettings) {
             ProfileMainView()
         }
     }
 
-    private var settingsButton: some View {
+    /// Quiet utility entry to the settings page. Styled as a settings-list
+    /// row (white card + gear + chevron) rather than the loud sage primary
+    /// CTA — this is an "account & settings" affordance, not a primary
+    /// action. Mirrors the row treatment used inside `ProfileMainView`.
+    private var mySettingsButton: some View {
         Button {
             FloHaptics.light()
             showSettings = true
         } label: {
-            Image(systemName: "gearshape.fill")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundColor(.floCharcoal)
-                .frame(width: 36, height: 36)
-                .background(Color.white.opacity(0.92))
-                .clipShape(Circle())
-                .shadow(color: Color.black.opacity(0.12), radius: 4, x: 0, y: 2)
+            HStack(spacing: FloSpacing.md) {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundColor(.floCharcoal)
+
+                Text("My Settings")
+                    .font(.floBodyLarge.weight(.medium))
+                    .foregroundColor(.floCharcoal)
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.floGray)
+            }
+            .padding(.horizontal, FloSpacing.lg)
+            .padding(.vertical, FloSpacing.md)
+            .frame(maxWidth: .infinity)
+            .background(Color.white)
+            .cornerRadius(FloRadius.lg)
+            .shadow(
+                color: FloShadow.small.color,
+                radius: FloShadow.small.radius,
+                x: FloShadow.small.x,
+                y: FloShadow.small.y
+            )
         }
         .buttonStyle(.floPressed)
-        .accessibilityLabel("Account and settings")
+        .accessibilityLabel("My Settings")
         .accessibilityHint("Opens account settings, stats, and sign-out")
     }
 }
