@@ -21,6 +21,7 @@
 		E80A61A32F3124AF0046C0E9 /* Exceptions for "DailyFlo" folder in "DailyFlo" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				Configuration.storekit,
 				Info.plist,
 			);
 			target = E80A618E2F311F9A0046C0E9 /* DailyFlo */;

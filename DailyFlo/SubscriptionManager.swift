@@ -94,4 +94,31 @@ final class SubscriptionManager {
             updateIsPro(from: info)
         }
     }
+
+    // MARK: - Purchase
+
+    enum PurchaseResult: Equatable {
+        case success
+        case userCancelled
+    }
+
+    enum PurchaseError: LocalizedError {
+        case notImplemented
+        case underlying(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .notImplemented:
+                return "Purchases aren't wired up yet — the full flow lands in the next build step."
+            case .underlying(let message):
+                return message
+            }
+        }
+    }
+
+    /// Stub. The real implementation will call `Purchases.shared.purchase(package:)`,
+    /// map the result, and refresh `isPro` via the customerInfoStream.
+    func purchase(package: Package) async throws -> PurchaseResult {
+        throw PurchaseError.notImplemented
+    }
 }

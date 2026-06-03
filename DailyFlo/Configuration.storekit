@@ -1,0 +1,119 @@
+{
+  "identifier" : "C7F4E7E6-DAFL-4F10-90BB-DAILYFLOPAY1",
+  "nonRenewingSubscriptions" : [],
+  "products" : [],
+  "settings" : {
+    "_applicationInternalID" : "",
+    "_developerTeamID" : "",
+    "_failTransactionsEnabled" : false,
+    "_lastSynchronizedDate" : 0,
+    "_locale" : "en_US",
+    "_storefront" : "USA",
+    "_storeKitErrors" : [
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Load Products"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Purchase"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Verification"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "App Store Sync"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Subscription Status"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "App Transaction"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Manage Subscriptions Sheet"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Refund Request Sheet"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Offer Code Redeem Sheet"
+      }
+    ]
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "9B1F7D2C-DAFL-4G10-90BB-DFPROGROUP01",
+      "localizations" : [],
+      "name" : "DailyFLO Pro",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [],
+          "codeOffers" : [],
+          "displayPrice" : "5.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "11A2B3C4-DAFL-4M10-90BB-DFMONTHLY001",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Full access to DailyFLO, billed monthly.",
+              "displayName" : "DailyFLO Pro Monthly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.dailyflo.sub.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "DailyFLO Pro Monthly",
+          "subscriptionGroupID" : "9B1F7D2C-DAFL-4G10-90BB-DFPROGROUP01",
+          "type" : "RecurringSubscription"
+        },
+        {
+          "adHocOffers" : [],
+          "codeOffers" : [],
+          "displayPrice" : "47.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "22A3B4C5-DAFL-4Y10-90BB-DFANNUAL0001",
+          "introductoryOffer" : {
+            "internalID" : "33A4B5C6-DAFL-4I10-90BB-DFINTROOFFR1",
+            "paymentMode" : "free",
+            "subscriptionPeriod" : "P1M"
+          },
+          "localizations" : [
+            {
+              "description" : "Full access to DailyFLO, billed yearly. Best value.",
+              "displayName" : "DailyFLO Pro Annual",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.dailyflo.sub.annual",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "DailyFLO Pro Annual",
+          "subscriptionGroupID" : "9B1F7D2C-DAFL-4G10-90BB-DFPROGROUP01",
+          "type" : "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 4,
+    "minor" : 0
+  }
+}
