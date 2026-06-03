@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		E83FA7812FBE25A100FC41E9 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = E83FA7802FBE25A100FC41E9 /* Supabase */; };
 		E83FA7852FC653AA00FC41E9 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = E83FA7842FC653AA00FC41E9 /* GoogleSignIn */; };
+		E83FA78E2FD0713200FC41E9 /* RevenueCat in Frameworks */ = {isa = PBXBuildFile; productRef = E83FA78D2FD0713200FC41E9 /* RevenueCat */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -44,6 +45,7 @@
 			files = (
 				E83FA7812FBE25A100FC41E9 /* Supabase in Frameworks */,
 				E83FA7852FC653AA00FC41E9 /* GoogleSignIn in Frameworks */,
+				E83FA78E2FD0713200FC41E9 /* RevenueCat in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -89,6 +91,7 @@
 			packageProductDependencies = (
 				E83FA7802FBE25A100FC41E9 /* Supabase */,
 				E83FA7842FC653AA00FC41E9 /* GoogleSignIn */,
+				E83FA78D2FD0713200FC41E9 /* RevenueCat */,
 			);
 			productName = DailyFlo;
 			productReference = E80A618F2F311F9A0046C0E9 /* DailyFlo.app */;
@@ -121,6 +124,7 @@
 			packageReferences = (
 				E83FA77F2FBE25A100FC41E9 /* XCRemoteSwiftPackageReference "supabase-swift" */,
 				E83FA7832FC653AA00FC41E9 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
+				E83FA78C2FD0713200FC41E9 /* XCRemoteSwiftPackageReference "purchases-ios-spm" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = E80A61902F311F9A0046C0E9 /* Products */;
@@ -398,6 +402,14 @@
 				minimumVersion = 7.1.0;
 			};
 		};
+		E83FA78C2FD0713200FC41E9 /* XCRemoteSwiftPackageReference "purchases-ios-spm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/RevenueCat/purchases-ios-spm.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 5.75.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -410,6 +422,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = E83FA7832FC653AA00FC41E9 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
 			productName = GoogleSignIn;
+		};
+		E83FA78D2FD0713200FC41E9 /* RevenueCat */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E83FA78C2FD0713200FC41E9 /* XCRemoteSwiftPackageReference "purchases-ios-spm" */;
+			productName = RevenueCat;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

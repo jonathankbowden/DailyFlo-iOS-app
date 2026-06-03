@@ -6,6 +6,7 @@
 //
 
 import GoogleSignIn
+import RevenueCat
 import Supabase
 import SwiftUI
 
@@ -21,7 +22,18 @@ enum AppState: Equatable {
 struct DailyFloApp: App {
     @State private var appState: AppState = .splash
     @State private var hasAdvancedFromSplash = false
+    @Environment(\.scenePhase) private var scenePhase
     private let greeting = SplashGreeting.random
+
+    init() {
+        // Configure RevenueCat before any caller touches Purchases.shared
+        // or SubscriptionManager.shared. Must happen on the first launch
+        // tick — the SDK refuses to serve requests until this runs.
+        Purchases.configure(withAPIKey: RevenueCatConfig.apiKey)
+        // Touch the singleton so its fetch tasks kick off immediately
+        // rather than waiting for the first UI consumer.
+        _ = SubscriptionManager.shared
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -83,6 +95,14 @@ struct DailyFloApp: App {
                 // Delivers the OAuth redirect callback from Google Sign-In
                 // back into the SDK so it can complete the flow.
                 GIDSignIn.sharedInstance.handle(url)
+            }
+            .onChange(of: scenePhase) { _, newPhase in
+                // Re-pull CustomerInfo whenever the user returns to the app
+                // so subscription state reflects external changes (renewals,
+                // refunds, family-sharing edits) without a relaunch.
+                if newPhase == .active {
+                    Task { await SubscriptionManager.shared.refreshCustomerInfo() }
+                }
             }
         }
     }
