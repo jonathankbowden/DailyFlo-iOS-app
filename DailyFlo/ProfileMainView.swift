@@ -22,6 +22,9 @@ struct ProfileMainView: View {
     @State private var showSignOutConfirm = false
     @State private var showResetConfirm = false
     @State private var showComingSoon = false
+    #if DEBUG
+    @State private var showSubscriptionDebug = false
+    #endif
     @State private var isSigningOut = false
     @State private var isResetting = false
     @State private var signOutErrorMessage: String?
@@ -127,6 +130,11 @@ struct ProfileMainView: View {
                     .animation(FloAnimation.springGentle, value: signOutErrorMessage)
             }
         }
+        #if DEBUG
+        .sheet(isPresented: $showSubscriptionDebug) {
+            SubscriptionDebugView(onClose: { showSubscriptionDebug = false })
+        }
+        #endif
     }
 
     // MARK: - Embedded content (no inner ScrollView, no full-bleed background)
@@ -543,6 +551,11 @@ struct ProfileMainView: View {
                     .fadeIn(delay: hasAppeared ? 0 : 0.3 + Double(index) * 0.05)
             }
 
+            #if DEBUG
+            developerRow
+                .fadeIn(delay: hasAppeared ? 0 : 0.3 + Double(settingsItems.count) * 0.05)
+            #endif
+
             // Sign out
             Button(action: {
                 FloHaptics.light()
@@ -653,6 +666,46 @@ struct ProfileMainView: View {
         .buttonStyle(.floPressed)
         .accessibilityLabel(title)
     }
+
+    #if DEBUG
+    private var developerRow: some View {
+        Button(action: {
+            FloHaptics.light()
+            showSubscriptionDebug = true
+        }) {
+            HStack {
+                Image(systemName: "hammer.circle")
+                    .font(.system(size: 20))
+                    .foregroundColor(.floCharcoal)
+
+                Text("Developer")
+                    .font(.floBodyMedium)
+                    .foregroundColor(.floCharcoal)
+
+                Spacer()
+
+                Text("DEBUG")
+                    .font(.floCaption)
+                    .foregroundColor(.floGray.opacity(0.7))
+                    .padding(.horizontal, FloSpacing.sm)
+                    .padding(.vertical, FloSpacing.xxs)
+                    .background(Color.floGray.opacity(0.1))
+                    .cornerRadius(FloRadius.full)
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14))
+                    .foregroundColor(.floGray)
+            }
+            .padding(.horizontal, FloSpacing.lg)
+            .padding(.vertical, FloSpacing.md)
+            .background(Color.white)
+            .cornerRadius(FloRadius.lg)
+        }
+        .buttonStyle(.floPressed)
+        .accessibilityLabel("Developer")
+        .accessibilityHint("Opens the subscription debug inspector")
+    }
+    #endif
 }
 
 // MARK: - Profile row (maps the columns this view reads from `profiles`)

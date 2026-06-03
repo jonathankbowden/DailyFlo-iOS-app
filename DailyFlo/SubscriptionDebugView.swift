@@ -2,56 +2,163 @@
 //  SubscriptionDebugView.swift
 //  DailyFlo
 //
-//  DEBUG-only inspector for the RevenueCat integration. Drop into any
-//  screen during testing to verify isPro state, the resolved offering,
-//  the monthly/annual package metadata, and to force isPro on/off without
-//  routing through the App Store. Not shipped in release.
+//  DEBUG-only inspector for the RevenueCat integration. Surfaces the
+//  current isPro state, the resolved offering, the monthly/annual package
+//  metadata, and a three-way override (From RC / Force ON / Force OFF)
+//  so the entitlement gate can be flipped on-device. Not shipped in release.
 //
 
 #if DEBUG
 
-import SwiftUI
 import RevenueCat
+import SwiftUI
 
 struct SubscriptionDebugView: View {
-    @Bindable private var manager = SubscriptionManager.shared
+    private let manager = SubscriptionManager.shared
 
-    /// Mirrors `manager.debugProOverride`: nil → .fromRC, true → .forceOn, false → .forceOff.
-    /// Bound through a Picker so flips propagate immediately to anything reading `isPro`.
-    private enum ProSource: String, CaseIterable, Identifiable {
-        case fromRC = "From RC"
-        case forceOn = "Force ON"
-        case forceOff = "Force OFF"
-        var id: String { rawValue }
+    /// When presented as a sheet/full-screen, the host passes its dismiss
+    /// callback through. Embedded uses (e.g. dropped into another screen
+    /// for inline inspection) leave it nil so no Done bar renders.
+    var onClose: (() -> Void)?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: FloSpacing.lg) {
+                if onClose != nil {
+                    titleBar
+                }
+                gateOverrideCard
+                liveGatePreview
+                inspectorCard
+            }
+            .padding(.horizontal, FloSpacing.lg)
+            .padding(.top, FloSpacing.md)
+            .padding(.bottom, FloSpacing.xxl)
+        }
+        .background(Color.floCream.ignoresSafeArea())
     }
 
-    private var proSourceBinding: Binding<ProSource> {
+    // MARK: - Title bar (sheet mode only)
+
+    private var titleBar: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Developer")
+                    .font(.floDisplaySmall)
+                    .foregroundColor(.floCharcoal)
+                Text("RevenueCat & subscription gate")
+                    .font(.floBodySmall)
+                    .foregroundColor(.floGray)
+            }
+            Spacer()
+            Button {
+                FloHaptics.light()
+                onClose?()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.floCharcoal.opacity(0.7))
+                    .frame(width: 32, height: 32)
+                    .background(Color.white)
+                    .clipShape(Circle())
+            }
+            .accessibilityLabel("Close")
+        }
+        .padding(.top, FloSpacing.sm)
+    }
+
+    // MARK: - Gate override
+
+    private var gateOverrideCard: some View {
+        VStack(alignment: .leading, spacing: FloSpacing.md) {
+            sectionLabel("Pro gate override")
+
+            Picker("Override", selection: overrideBinding) {
+                Text("From RC").tag(Optional<Bool>.none)
+                Text("Force ON").tag(Optional<Bool>(true))
+                Text("Force OFF").tag(Optional<Bool>(false))
+            }
+            .pickerStyle(.segmented)
+
+            Text(overrideExplainer)
+                .font(.floBodySmall)
+                .foregroundColor(.floGray)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(FloSpacing.lg)
+        .background(Color.white)
+        .cornerRadius(FloRadius.lg)
+        .overlay(
+            RoundedRectangle(cornerRadius: FloRadius.lg)
+                .stroke(Color.floLightGray, lineWidth: 1)
+        )
+    }
+
+    private var overrideBinding: Binding<Bool?> {
         Binding(
-            get: {
-                switch manager.debugProOverride {
-                case .none: return .fromRC
-                case .some(true): return .forceOn
-                case .some(false): return .forceOff
-                }
-            },
+            get: { manager.debugProOverride },
             set: { newValue in
-                switch newValue {
-                case .fromRC: manager.debugProOverride = nil
-                case .forceOn: manager.debugProOverride = true
-                case .forceOff: manager.debugProOverride = false
-                }
+                FloHaptics.selection()
+                manager.debugProOverride = newValue
             }
         )
     }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("RevenueCat Debug")
-                .font(.system(size: 13, weight: .bold))
-                .tracking(1.2)
-                .foregroundColor(.secondary)
+    private var overrideExplainer: String {
+        switch manager.debugProOverride {
+        case .none:
+            return "Following RevenueCat. The gate reflects the user's real entitlement."
+        case .some(true):
+            return "Pinned ON. Every Pro-gated surface should treat the user as a subscriber."
+        case .some(false):
+            return "Pinned OFF. Every Pro-gated surface should treat the user as free."
+        }
+    }
 
-            row(label: "isPro", value: manager.isPro ? "true" : "false")
+    // MARK: - Live gate preview
+
+    private var liveGatePreview: some View {
+        let isPro = manager.isPro
+
+        return HStack(spacing: FloSpacing.md) {
+            ZStack {
+                Circle()
+                    .fill(isPro ? Color.floSage.opacity(0.2) : Color.floGray.opacity(0.15))
+                    .frame(width: 44, height: 44)
+                Image(systemName: isPro ? "checkmark.seal.fill" : "lock.fill")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(isPro ? .floSage : .floGray)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(isPro ? "Pro features unlocked" : "Pro features locked")
+                    .font(.floBodyLarge.weight(.semibold))
+                    .foregroundColor(.floCharcoal)
+                Text(isPro ? "manager.isPro == true" : "manager.isPro == false")
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundColor(.floGray)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(FloSpacing.lg)
+        .background(Color.white)
+        .cornerRadius(FloRadius.lg)
+        .overlay(
+            RoundedRectangle(cornerRadius: FloRadius.lg)
+                .stroke(isPro ? Color.floSage : Color.floLightGray, lineWidth: isPro ? 2 : 1)
+        )
+        .animation(FloAnimation.springGentle, value: isPro)
+    }
+
+    // MARK: - Inspector
+
+    private var inspectorCard: some View {
+        VStack(alignment: .leading, spacing: FloSpacing.sm) {
+            sectionLabel("RevenueCat snapshot")
+
+            row(label: "isPro (effective)", value: manager.isPro ? "true" : "false")
+            row(label: "RC truth (realIsPro)", value: manager.rcIsProDebugDescription)
             row(label: "State", value: stateString)
             row(label: "Offering", value: manager.offering?.identifier ?? "—")
 
@@ -67,35 +174,30 @@ struct SubscriptionDebugView: View {
                 row(label: "$rc_annual", value: "—")
             }
 
-            Divider()
-                .padding(.vertical, 2)
-
-            HStack(alignment: .firstTextBaseline) {
-                Text("Pro source")
-                    .foregroundColor(.secondary)
-                    .frame(width: 110, alignment: .leading)
-                Picker("", selection: proSourceBinding) {
-                    ForEach(ProSource.allCases) { source in
-                        Text(source.rawValue).tag(source)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-            }
-
             Button("Refresh") {
                 Task {
                     await manager.refreshCustomerInfo()
                     await manager.fetchOffering()
                 }
             }
-            .font(.system(size: 12, weight: .medium))
-            .padding(.top, 4)
+            .buttonStyle(.floTertiary)
+            .padding(.top, FloSpacing.xs)
         }
         .font(.system(size: 12, design: .monospaced))
-        .padding(12)
-        .background(Color.black.opacity(0.04))
-        .cornerRadius(8)
+        .padding(FloSpacing.lg)
+        .background(Color.white)
+        .cornerRadius(FloRadius.lg)
+        .overlay(
+            RoundedRectangle(cornerRadius: FloRadius.lg)
+                .stroke(Color.floLightGray, lineWidth: 1)
+        )
+    }
+
+    private func sectionLabel(_ text: String) -> some View {
+        Text(text.uppercased())
+            .font(.system(size: 11, weight: .bold))
+            .tracking(1.2)
+            .foregroundColor(.floGray)
     }
 
     private var stateString: String {
@@ -111,10 +213,11 @@ struct SubscriptionDebugView: View {
     private func row(label: String, value: String) -> some View {
         HStack(alignment: .firstTextBaseline) {
             Text(label)
-                .foregroundColor(.secondary)
-                .frame(width: 110, alignment: .leading)
+                .foregroundColor(.floGray)
+                .frame(width: 140, alignment: .leading)
             Text(value)
-                .foregroundColor(.primary)
+                .foregroundColor(.floCharcoal)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -127,9 +230,28 @@ struct SubscriptionDebugView: View {
     }
 }
 
+// Bridge so the inspector can show whatever the manager privately knows
+// about the underlying RC truth without exposing the raw stored property.
+private extension SubscriptionManager {
+    var rcIsProDebugDescription: String {
+        // The override-aware `isPro` plus the override state are enough to
+        // reconstruct realIsPro: when override is nil, isPro == realIsPro;
+        // otherwise the override is what the app sees and the RC truth is
+        // whatever the last refresh produced. We can't read the private
+        // field directly, so derive it by reading `isPro` under a "follow
+        // RC" lens.
+        if debugProOverride == nil {
+            return isPro ? "true" : "false"
+        }
+        // When pinned, we don't currently expose realIsPro. Reflect that
+        // honestly — the value lives in CustomerInfo and the inspector's
+        // Refresh button is the way to surface it.
+        return "(hidden — flip to From RC to see)"
+    }
+}
+
 #Preview {
-    SubscriptionDebugView()
-        .padding()
+    SubscriptionDebugView(onClose: {})
 }
 
 #endif
