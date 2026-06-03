@@ -55,10 +55,11 @@ struct PaywallView: View {
             VStack(spacing: FloSpacing.xl) {
                 header
                 valueProps
-                planSection
+                plansAndDisclaimer
             }
             .padding(.horizontal, FloSpacing.lg)
-            .padding(.vertical, FloSpacing.lg)
+            .padding(.top, FloSpacing.md)
+            .padding(.bottom, FloSpacing.lg)
             .frame(maxWidth: .infinity, alignment: .top)
         }
         .background(Color.floCream.ignoresSafeArea())
@@ -109,7 +110,6 @@ struct PaywallView: View {
                 .foregroundColor(.floGray)
                 .multilineTextAlignment(.center)
         }
-        .padding(.top, FloSpacing.xl)
         .frame(maxWidth: .infinity)
     }
 
@@ -120,29 +120,29 @@ struct PaywallView: View {
             valueRow(
                 icon: "moon.stars",
                 title: "Your cycle, gently understood",
-                subtitle: "Phase-aware insights and predictions, no clinical noise."
+                subtitle: "Phase-aware insights, no clinical noise."
             )
             valueRow(
                 icon: "heart.text.square",
                 title: "Emotion journaling that listens",
-                subtitle: "Voice or text, with a framework rooted in self-awareness."
+                subtitle: "Voice or text, rooted in self-awareness."
             )
             valueRow(
                 icon: "waveform",
                 title: "Meditations with original music",
-                subtitle: "A growing library to settle, restore, and reconnect."
+                subtitle: "A growing library to settle and restore."
             )
             valueRow(
                 icon: "person.2",
                 title: "Share with someone who matters",
-                subtitle: "Invite a partner or parent on the terms you choose."
+                subtitle: "Invite a partner on your own terms."
             )
         }
         .padding(.horizontal, FloSpacing.xs)
     }
 
     private func valueRow(icon: String, title: String, subtitle: String) -> some View {
-        HStack(alignment: .top, spacing: FloSpacing.md) {
+        HStack(alignment: .center, spacing: FloSpacing.md) {
             ZStack {
                 Circle()
                     .fill(Color.floMint.opacity(0.5))
@@ -155,16 +155,36 @@ struct PaywallView: View {
                 Text(title)
                     .font(.floBodyLarge.weight(.semibold))
                     .foregroundColor(.floCharcoal)
+                    .lineLimit(1)
                 Text(subtitle)
                     .font(.floBodyMedium)
                     .foregroundColor(.floGray)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
             }
             Spacer(minLength: 0)
         }
     }
 
     // MARK: - Plan section
+
+    /// Wraps the plan picker with the pricing/trial disclaimer directly
+    /// underneath. Keeps the disclaimer visually grouped with the plans it
+    /// describes (rather than living in the pinned footer next to the CTA).
+    private var plansAndDisclaimer: some View {
+        VStack(spacing: FloSpacing.md) {
+            planSection
+            if let copy = trialCopy {
+                Text(copy)
+                    .font(.floBodySmall)
+                    .foregroundColor(.floGray)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, FloSpacing.xs)
+            }
+        }
+    }
 
     @ViewBuilder
     private var planSection: some View {
@@ -339,36 +359,19 @@ struct PaywallView: View {
     //
     // Pinned via `.safeAreaInset(edge: .bottom)` on the ScrollView, so the
     // scroll content's safe area automatically excludes the footer's height
-    // and the disclaimer can't overlap any plan card. The conditional trial
-    // Text is inlined directly into the VStack (rather than wrapped in a
-    // Group) so that when `trialCopy == nil` the VStack truly omits the
-    // slot — no dead gap above the CTA in the trial-ineligible state.
+    // by construction. The pricing disclaimer lives with the plan cards in
+    // the scroll content, not here — the footer is just the action surface.
 
     private var footer: some View {
         VStack(spacing: FloSpacing.md) {
-            if let copy = trialCopy {
-                Text(copy)
-                    .font(.floBodySmall)
-                    .foregroundColor(.floGray)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
             primaryCTA
+                .padding(.top, 40)  // requested drop for CTA + restore + legal
             restoreButton
             legalLinks
         }
         .padding(.horizontal, FloSpacing.lg)
-        .padding(.top, FloSpacing.md)
         .padding(.bottom, FloSpacing.md)
-        .background(
-            Color.floCream
-                .overlay(alignment: .top) {
-                    Rectangle()
-                        .fill(Color.floLightGray.opacity(0.6))
-                        .frame(height: 0.5)
-                }
-        )
+        .background(Color.floCream)
     }
 
     private var primaryCTA: some View {
