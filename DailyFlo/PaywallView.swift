@@ -31,28 +31,39 @@ struct PaywallView: View {
     private static let termsURL = URL(string: "https://dailyflo.app/terms")!
     private static let privacyURL = URL(string: "https://dailyflo.app/privacy")!
 
+    #if DEBUG
+    /// Forces the trial copy/CTA into a deterministic state for previews,
+    /// so the footer can be rendered in both "eligible" and "ineligible"
+    /// configurations without depending on a live RC offering.
+    struct PreviewTrialDemo {
+        var price: String
+        var period: String        // e.g. "per year"
+        var eligible: Bool
+    }
+
+    private let previewTrialDemo: PreviewTrialDemo?
+
+    init(previewTrialDemo: PreviewTrialDemo? = nil) {
+        self.previewTrialDemo = previewTrialDemo
+    }
+    #else
+    init() {}
+    #endif
+
     var body: some View {
-        ZStack {
-            Color.floCream.ignoresSafeArea()
-
-            ScrollView {
-                VStack(spacing: FloSpacing.xl) {
-                    header
-                    valueProps
-                    planSection
-                    Spacer(minLength: FloSpacing.sm)
-                }
-                .padding(.horizontal, FloSpacing.lg)
-                .padding(.top, FloSpacing.lg)
-                .padding(.bottom, FloSpacing.xxxl)
+        ScrollView {
+            VStack(spacing: FloSpacing.xl) {
+                header
+                valueProps
+                planSection
             }
-
-            VStack {
-                topBar
-                Spacer()
-                footer
-            }
+            .padding(.horizontal, FloSpacing.lg)
+            .padding(.vertical, FloSpacing.lg)
+            .frame(maxWidth: .infinity, alignment: .top)
         }
+        .background(Color.floCream.ignoresSafeArea())
+        .safeAreaInset(edge: .top, spacing: 0) { topBar }
+        .safeAreaInset(edge: .bottom, spacing: 0) { footer }
         .onAppear { syncDefaultSelection() }
         .onChange(of: manager.loadState) { _, _ in syncDefaultSelection() }
         .alert("Something went wrong", isPresented: $showError, presenting: errorMessage) { _ in
@@ -81,7 +92,8 @@ struct PaywallView: View {
             .accessibilityLabel("Close")
         }
         .padding(.horizontal, FloSpacing.md)
-        .padding(.top, FloSpacing.sm)
+        .padding(.vertical, FloSpacing.sm)
+        .background(Color.floCream)
     }
 
     // MARK: - Header
@@ -324,36 +336,39 @@ struct PaywallView: View {
     }
 
     // MARK: - Footer (CTA + restore + legal)
+    //
+    // Pinned via `.safeAreaInset(edge: .bottom)` on the ScrollView, so the
+    // scroll content's safe area automatically excludes the footer's height
+    // and the disclaimer can't overlap any plan card. The conditional trial
+    // Text is inlined directly into the VStack (rather than wrapped in a
+    // Group) so that when `trialCopy == nil` the VStack truly omits the
+    // slot — no dead gap above the CTA in the trial-ineligible state.
 
     private var footer: some View {
         VStack(spacing: FloSpacing.md) {
-            trialLine
-            primaryCTA
-            restoreButton
-            legalLinks
-        }
-        .padding(.horizontal, FloSpacing.lg)
-        .padding(.bottom, FloSpacing.lg)
-        .padding(.top, FloSpacing.md)
-        .background(
-            LinearGradient(
-                colors: [Color.floCream.opacity(0), Color.floCream],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .allowsHitTesting(false)
-        )
-    }
-
-    private var trialLine: some View {
-        Group {
             if let copy = trialCopy {
                 Text(copy)
                     .font(.floBodySmall)
                     .foregroundColor(.floGray)
                     .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+            primaryCTA
+            restoreButton
+            legalLinks
         }
+        .padding(.horizontal, FloSpacing.lg)
+        .padding(.top, FloSpacing.md)
+        .padding(.bottom, FloSpacing.md)
+        .background(
+            Color.floCream
+                .overlay(alignment: .top) {
+                    Rectangle()
+                        .fill(Color.floLightGray.opacity(0.6))
+                        .frame(height: 0.5)
+                }
+        )
     }
 
     private var primaryCTA: some View {
@@ -402,6 +417,11 @@ struct PaywallView: View {
 
     private var ctaTitle: String {
         if purchaseState == .purchasing { return "Working…" }
+        #if DEBUG
+        if let demo = previewTrialDemo {
+            return demo.eligible ? "Start free month" : "Continue"
+        }
+        #endif
         if let selectedPackage, hasFreeTrial(selectedPackage) {
             return "Start free month"
         }
@@ -409,6 +429,14 @@ struct PaywallView: View {
     }
 
     private var trialCopy: String? {
+        #if DEBUG
+        if let demo = previewTrialDemo {
+            if demo.eligible {
+                return "1 month free, then \(demo.price) \(demo.period). Cancel anytime."
+            }
+            return "\(demo.price) \(demo.period). Cancel anytime."
+        }
+        #endif
         guard let selectedPackage else { return nil }
         let price = selectedPackage.storeProduct.localizedPriceString
         if hasFreeTrial(selectedPackage) {
@@ -432,7 +460,10 @@ struct PaywallView: View {
     }
 
     private var canPurchase: Bool {
-        selectedPackage != nil && purchaseState == .idle
+        #if DEBUG
+        if previewTrialDemo != nil { return purchaseState == .idle }
+        #endif
+        return selectedPackage != nil && purchaseState == .idle
     }
 
     /// True only when the product offers a free trial AND the current Apple ID
@@ -529,7 +560,23 @@ struct PaywallView: View {
 }
 
 #if DEBUG
-#Preview {
+#Preview("Live") {
     PaywallView()
+}
+
+#Preview("Trial eligible") {
+    PaywallView(previewTrialDemo: .init(
+        price: "$59.99",
+        period: "per year",
+        eligible: true
+    ))
+}
+
+#Preview("Trial ineligible") {
+    PaywallView(previewTrialDemo: .init(
+        price: "$59.99",
+        period: "per year",
+        eligible: false
+    ))
 }
 #endif
