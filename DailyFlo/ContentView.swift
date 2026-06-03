@@ -285,9 +285,94 @@ struct ProfileTabView: View {
     }
 }
 
+/// Pause tab entry. Free users see `LockedMeditationView` and get a
+/// `PaywallView` auto-presented the first time they land on this tab during
+/// a session. After dismissing the paywall they stay on the locked preview
+/// with a manual "Unlock DailyFLO Pro" CTA. When `isPro` flips on (real
+/// purchase, restore, or the DEBUG override) the gate falls away and
+/// `MeditationMainView` takes over.
 struct MeditationView: View {
+    private let subs = SubscriptionManager.shared
+    @State private var showPaywall = false
+    @State private var hasAutoPresentedThisVisit = false
+
     var body: some View {
-        MeditationMainView()
+        Group {
+            if subs.isPro {
+                MeditationMainView()
+            } else {
+                LockedMeditationView { showPaywall = true }
+            }
+        }
+        .onAppear {
+            if !subs.isPro && !hasAutoPresentedThisVisit {
+                hasAutoPresentedThisVisit = true
+                showPaywall = true
+            }
+        }
+        .onDisappear {
+            // Reset the one-shot so re-entering the tab auto-presents again.
+            hasAutoPresentedThisVisit = false
+        }
+        .onChange(of: subs.isPro) { _, isPro in
+            if isPro { showPaywall = false }
+        }
+        .fullScreenCover(isPresented: $showPaywall) {
+            PaywallView()
+        }
+    }
+}
+
+/// Calm gated preview shown to free users on the Pause tab. Mirrors the
+/// meditation surface's palette without disclosing the actual library.
+struct LockedMeditationView: View {
+    let onUnlock: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.floCream.ignoresSafeArea()
+
+            VStack(spacing: FloSpacing.xl) {
+                Spacer()
+
+                ZStack {
+                    Circle()
+                        .fill(Color.floMint.opacity(0.45))
+                        .frame(width: 128, height: 128)
+                    Image("pause")
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 52, height: 52)
+                        .foregroundColor(.floSage)
+                }
+
+                VStack(spacing: FloSpacing.sm) {
+                    Text("Pause is part of Pro")
+                        .font(.floDisplayMedium)
+                        .foregroundColor(.floCharcoal)
+                        .multilineTextAlignment(.center)
+                    Text("Meditations with original music — a growing library to settle, restore, and reconnect.")
+                        .font(.floBodyMedium)
+                        .foregroundColor(.floGray)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, FloSpacing.xl)
+                }
+
+                Button {
+                    FloHaptics.medium()
+                    onUnlock()
+                } label: {
+                    Text("Unlock DailyFLO Pro")
+                }
+                .buttonStyle(.floPrimary(disabled: false))
+                .padding(.horizontal, FloSpacing.lg)
+
+                Spacer()
+                Spacer().frame(height: 100) // sit above the tab bar
+            }
+        }
+        .accessibilityElement(children: .contain)
     }
 }
 

@@ -435,9 +435,18 @@ struct PaywallView: View {
         selectedPackage != nil && purchaseState == .idle
     }
 
+    /// True only when the product offers a free trial AND the current Apple ID
+    /// is still eligible for it. Treats `.unknown` (eligibility check in
+    /// flight) as eligible so the CTA doesn't briefly lie before settling —
+    /// the CTA copy is best-effort and corrects itself when the check returns.
     private func hasFreeTrial(_ package: Package) -> Bool {
-        guard let intro = package.storeProduct.introductoryDiscount else { return false }
-        return intro.paymentMode == .freeTrial
+        guard let intro = package.storeProduct.introductoryDiscount,
+              intro.paymentMode == .freeTrial else { return false }
+        switch manager.introEligibility(for: package) {
+        case .ineligible, .noIntroOfferExists: return false
+        case .eligible, .unknown: return true
+        @unknown default: return true
+        }
     }
 
     private func annualPriceLine(_ annual: Package) -> String {
@@ -483,6 +492,12 @@ struct PaywallView: View {
                 dismiss()
             case .userCancelled:
                 break
+            case .pending:
+                // Ask-to-Buy / SCA — Apple hasn't approved the purchase yet.
+                // CustomerInfo will flip when it does (handled by the
+                // SDK's customerInfoStream); for now, just let the user know.
+                errorMessage = "Your purchase is awaiting approval. We'll unlock Pro automatically once it goes through."
+                showError = true
             }
         } catch {
             FloHaptics.error()
@@ -495,12 +510,19 @@ struct PaywallView: View {
         guard purchaseState == .idle else { return }
         purchaseState = .restoring
         defer { purchaseState = .idle }
-        await manager.refreshCustomerInfo()
-        if manager.isPro {
-            FloHaptics.success()
-            dismiss()
-        } else {
-            errorMessage = "We didn't find an active subscription on this Apple ID."
+
+        do {
+            switch try await manager.restorePurchases() {
+            case .restored:
+                FloHaptics.success()
+                dismiss()
+            case .nothingToRestore:
+                errorMessage = "We didn't find an active DailyFLO Pro subscription on this Apple ID."
+                showError = true
+            }
+        } catch {
+            FloHaptics.error()
+            errorMessage = error.localizedDescription
             showError = true
         }
     }
