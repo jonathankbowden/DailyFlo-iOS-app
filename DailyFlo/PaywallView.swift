@@ -52,19 +52,30 @@ struct PaywallView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: FloSpacing.xl) {
+            VStack(spacing: FloSpacing.lg) {
                 header
                 valueProps
                 planSection
+                primaryCTA
+                if let disclosure = trialDisclosureCopy {
+                    Text(disclosure)
+                        .font(.floBodySmall)
+                        .foregroundColor(.floGray)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, FloSpacing.xs)
+                }
+                restoreButton
+                legalLinks
             }
             .padding(.horizontal, FloSpacing.lg)
             .padding(.top, FloSpacing.md)
-            .padding(.bottom, FloSpacing.lg)
+            .padding(.bottom, FloSpacing.xl)
             .frame(maxWidth: .infinity, alignment: .top)
         }
         .background(Color.floCream.ignoresSafeArea())
         .safeAreaInset(edge: .top, spacing: 0) { topBar }
-        .safeAreaInset(edge: .bottom, spacing: 0) { footer }
         .onAppear { syncDefaultSelection() }
         .onChange(of: manager.loadState) { _, _ in syncDefaultSelection() }
         .alert("Something went wrong", isPresented: $showError, presenting: errorMessage) { _ in
@@ -169,6 +180,7 @@ struct PaywallView: View {
                     .font(.floBodyLarge.weight(.semibold))
                     .foregroundColor(.floCharcoal)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.9)
                 Text(subtitle)
                     .font(.floBodyMedium)
                     .foregroundColor(.floGray)
@@ -180,46 +192,18 @@ struct PaywallView: View {
     }
 
     // MARK: - Plan section
+    //
+    // Emits Annual + Monthly (or their loading/empty/failed equivalents) as
+    // DIRECT siblings of the outer VStack so each card participates in the
+    // outer even spacing — no nested sub-VStack with its own spacing rules.
 
     @ViewBuilder
     private var planSection: some View {
         switch manager.loadState {
         case .idle, .loading:
-            loadingPlans
+            loadingCard
+            loadingCard
         case .loaded:
-            loadedPlans
-        case .empty:
-            planMessage(
-                title: "Plans are loading",
-                body: "Your subscription options are still propagating from the App Store. Give it a moment and try again.",
-                showRetry: true
-            )
-        case .failed(let message):
-            planMessage(
-                title: "Couldn't load plans",
-                body: message,
-                showRetry: true
-            )
-        }
-    }
-
-    private var loadingPlans: some View {
-        VStack(spacing: FloSpacing.md) {
-            ForEach(0..<2, id: \.self) { _ in
-                RoundedRectangle(cornerRadius: FloRadius.lg)
-                    .fill(Color.white)
-                    .frame(height: 96)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: FloRadius.lg)
-                            .stroke(Color.floLightGray, lineWidth: 1)
-                    )
-                    .shimmer()
-            }
-        }
-    }
-
-    private var loadedPlans: some View {
-        VStack(spacing: FloSpacing.md) {
             if let annual = manager.annualPackage {
                 planCard(
                     package: annual,
@@ -238,7 +222,6 @@ struct PaywallView: View {
                     badge: nil
                 )
             }
-
             if manager.annualPackage == nil && manager.monthlyPackage == nil {
                 planMessage(
                     title: "Plans unavailable",
@@ -246,7 +229,30 @@ struct PaywallView: View {
                     showRetry: true
                 )
             }
+        case .empty:
+            planMessage(
+                title: "Plans are loading",
+                body: "Your subscription options are still propagating from the App Store. Give it a moment and try again.",
+                showRetry: true
+            )
+        case .failed(let message):
+            planMessage(
+                title: "Couldn't load plans",
+                body: message,
+                showRetry: true
+            )
         }
+    }
+
+    private var loadingCard: some View {
+        RoundedRectangle(cornerRadius: FloRadius.lg)
+            .fill(Color.white)
+            .frame(height: 96)
+            .overlay(
+                RoundedRectangle(cornerRadius: FloRadius.lg)
+                    .stroke(Color.floLightGray, lineWidth: 1)
+            )
+            .shimmer()
     }
 
     private func planCard(
@@ -350,38 +356,7 @@ struct PaywallView: View {
         .cornerRadius(FloRadius.lg)
     }
 
-    // MARK: - Footer (CTA + restore + legal)
-    //
-    // Pinned via `.safeAreaInset(edge: .bottom)` on the ScrollView, so the
-    // scroll content's safe area automatically excludes the footer's height
-    // by construction. The pricing disclaimer lives with the plan cards in
-    // the scroll content, not here — the footer is just the action surface.
-
-    private var footer: some View {
-        VStack(spacing: FloSpacing.md) {
-            primaryCTA
-                .padding(.top, 40)  // requested drop for CTA + restore + legal
-
-            // Trial disclosure (App Store compliance). Rendered ONLY when the
-            // user is eligible for the free month — in the ineligible state
-            // the CTA reads "Continue" and no trial line is needed.
-            if let disclosure = trialDisclosureCopy {
-                Text(disclosure)
-                    .font(.floBodySmall)
-                    .foregroundColor(.floGray)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, FloSpacing.xs)
-            }
-
-            restoreButton
-            legalLinks
-        }
-        .padding(.horizontal, FloSpacing.lg)
-        .padding(.bottom, FloSpacing.md)
-        .background(Color.floCream)
-    }
+    // MARK: - CTA + ancillary actions
 
     private var primaryCTA: some View {
         Button {
@@ -580,6 +555,14 @@ struct PaywallView: View {
         price: "$59.99",
         periodSuffix: "/year",
         eligible: false
+    ))
+}
+
+#Preview("iPhone SE — eligible", traits: .fixedLayout(width: 375, height: 667)) {
+    PaywallView(previewTrialDemo: .init(
+        price: "$59.99",
+        periodSuffix: "/year",
+        eligible: true
     ))
 }
 #endif
