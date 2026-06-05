@@ -28,10 +28,19 @@ enum MeditationDuration: Int, CaseIterable, Identifiable {
 struct MeditationSession: Identifiable {
     let id = UUID()
     let title: String
+    let phase: CyclePhase
     let duration: MeditationDuration
-    let imageName: String  // Asset image name
-    var isFavorite: Bool = false
+    /// Displayed background. By convention the `_a` variant of the theme.
+    let imageName: String
+    /// All three theme variants (`_a`/`_b`/`_c`), wired for the future
+    /// collectible gallery. The active surface uses `imageName` (== `_a`).
+    let collectibleImages: [String]
+    /// Bundled MP3 to loop during the session. `nil` falls back to the
+    /// `AmbientAudioEngine` synth for `ambientSound`.
+    let audioFileName: String?
+    /// Synth fallback used when `audioFileName` is `nil`.
     var ambientSound: AmbientSoundType = .warmDrone
+    var isFavorite: Bool = false
 }
 
 // MARK: - Main Meditation View
@@ -42,45 +51,105 @@ struct MeditationMainView: View {
 
     private var userName: String { CycleManager.shared.userName }
 
-    // Sample meditation sessions with actual images
+    /// The full 10-theme library. Each theme has an `_a`/`_b`/`_c`
+    /// background set; the active surface uses `_a` and the rest are
+    /// wired through `collectibleImages` for the future gallery. The
+    /// five themes that ship with bundled MP3s loop the real file;
+    /// the other five drop to the `AmbientAudioEngine` synth.
     @State private var sessions: [MeditationSession] = [
+        // Menstrual
         MeditationSession(
-            title: "A NEW DAY",
+            title: "MIST",
+            phase: .menstrual,
             duration: .five,
-            imageName: "sunsetrocks",
-            ambientSound: .warmDrone
-        ),
-        MeditationSession(
-            title: "KEEP MOVING",
-            duration: .five,
-            imageName: "starynight",
-            ambientSound: .nightAmbience
-        ),
-        MeditationSession(
-            title: "OCEAN CALM",
-            duration: .sixty,
-            imageName: "surfer",
-            isFavorite: true,
-            ambientSound: .oceanWaves
-        ),
-        MeditationSession(
-            title: "FOREST WALK",
-            duration: .fifteen,
-            imageName: "fisherman",
-            ambientSound: .forestBreeze
+            imageName: "medbg_mist_a",
+            collectibleImages: ["medbg_mist_a", "medbg_mist_b", "medbg_mist_c"],
+            audioFileName: "mist_05min",
+            ambientSound: .gentleRain
         ),
         MeditationSession(
             title: "NIGHT SKY",
-            duration: .fifteen,
-            imageName: "nightsky",
+            phase: .menstrual,
+            duration: .five,
+            imageName: "medbg_nightsky_a",
+            collectibleImages: ["medbg_nightsky_a", "medbg_nightsky_b", "medbg_nightsky_c"],
+            audioFileName: "nightsky_05min",
+            ambientSound: .nightAmbience
+        ),
+        MeditationSession(
+            title: "STILLWATER",
+            phase: .menstrual,
+            duration: .five,
+            imageName: "medbg_stillwater_a",
+            collectibleImages: ["medbg_stillwater_a", "medbg_stillwater_b", "medbg_stillwater_c"],
+            audioFileName: nil,
+            ambientSound: .warmDrone
+        ),
+        // Follicular
+        MeditationSession(
+            title: "CANOPY",
+            phase: .follicular,
+            duration: .five,
+            imageName: "medbg_canopy_a",
+            collectibleImages: ["medbg_canopy_a", "medbg_canopy_b", "medbg_canopy_c"],
+            audioFileName: "canopy_05min",
+            ambientSound: .forestBreeze
+        ),
+        MeditationSession(
+            title: "OPEN HILLS",
+            phase: .follicular,
+            duration: .five,
+            imageName: "medbg_openhills_a",
+            collectibleImages: ["medbg_openhills_a", "medbg_openhills_b", "medbg_openhills_c"],
+            audioFileName: nil,
+            ambientSound: .forestBreeze
+        ),
+        // Ovulation
+        MeditationSession(
+            title: "GOLDEN HOUR",
+            phase: .ovulation,
+            duration: .five,
+            imageName: "medbg_goldenhour_a",
+            collectibleImages: ["medbg_goldenhour_a", "medbg_goldenhour_b", "medbg_goldenhour_c"],
+            audioFileName: nil,
             ambientSound: .softChimes
         ),
         MeditationSession(
-            title: "WAVE CRASH",
-            duration: .sixty,
-            imageName: "wavecrash",
-            isFavorite: true,
+            title: "OCEAN",
+            phase: .ovulation,
+            duration: .five,
+            imageName: "medbg_ocean_a",
+            collectibleImages: ["medbg_ocean_a", "medbg_ocean_b", "medbg_ocean_c"],
+            audioFileName: "ocean_05min",
+            ambientSound: .oceanWaves
+        ),
+        // Luteal
+        MeditationSession(
+            title: "STORM",
+            phase: .luteal,
+            duration: .five,
+            imageName: "medbg_storm_a",
+            collectibleImages: ["medbg_storm_a", "medbg_storm_b", "medbg_storm_c"],
+            audioFileName: "storm_05min",
             ambientSound: .gentleRain
+        ),
+        MeditationSession(
+            title: "FOREST",
+            phase: .luteal,
+            duration: .five,
+            imageName: "medbg_forest_a",
+            collectibleImages: ["medbg_forest_a", "medbg_forest_b", "medbg_forest_c"],
+            audioFileName: nil,
+            ambientSound: .forestBreeze
+        ),
+        MeditationSession(
+            title: "SOLITUDE",
+            phase: .luteal,
+            duration: .five,
+            imageName: "medbg_solitude_a",
+            collectibleImages: ["medbg_solitude_a", "medbg_solitude_b", "medbg_solitude_c"],
+            audioFileName: nil,
+            ambientSound: .warmDrone
         )
     ]
 
@@ -378,8 +447,9 @@ struct MeditationPlayerView: View {
     @State private var pulseScale: CGFloat = 1.0
     @State private var pulseOpacity: Double = 0.6
     @State private var showControls = true
-    @State private var audioEngine = AmbientAudioEngine()
+    @State private var audio = MeditationAudioController()
     @State private var hasStarted = false
+    @State private var hasStartedAudio = false
 
     init(session: MeditationSession, onDismiss: @escaping () -> Void, onFavorite: @escaping () -> Void) {
         self.session = session
@@ -404,12 +474,16 @@ struct MeditationPlayerView: View {
             }
             .ignoresSafeArea()
 
-            // Subtle vignette (ignores safe area)
-            RadialGradient(
-                colors: [Color.clear, Color.black.opacity(0.3)],
-                center: .center,
-                startRadius: 200,
-                endRadius: 500
+            // Subtle top-and-bottom dark gradient so title/timer stay
+            // legible regardless of which background image is loaded.
+            LinearGradient(
+                colors: [
+                    Color.black.opacity(0.45),
+                    Color.black.opacity(0.0),
+                    Color.black.opacity(0.55)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
             )
             .ignoresSafeArea()
 
@@ -446,7 +520,7 @@ struct MeditationPlayerView: View {
         }
         .onDisappear {
             stopTimer()
-            audioEngine.stop()
+            audio.stop()
         }
     }
 
@@ -462,7 +536,7 @@ struct MeditationPlayerView: View {
             Button(action: {
                 FloHaptics.light()
                 stopTimer()
-                audioEngine.stop()
+                audio.stop()
                 onDismiss()
             }) {
                 Image(systemName: "xmark")
@@ -552,16 +626,18 @@ struct MeditationPlayerView: View {
         if isPlaying {
             startTimer()
             startPulseAnimation()
-            // Start or resume ambient audio
-            if audioEngine.currentSound == nil {
-                audioEngine.play(sound: session.ambientSound)
+            // First press kicks off real-file or synth playback via the
+            // unified controller; subsequent presses resume after pause.
+            if !hasStartedAudio {
+                hasStartedAudio = true
+                audio.play(session: session)
             } else {
-                audioEngine.resume()
+                audio.resume()
             }
         } else {
             stopTimer()
             stopPulseAnimation()
-            audioEngine.pause()
+            audio.pause()
         }
     }
 
@@ -590,7 +666,7 @@ struct MeditationPlayerView: View {
                 stopTimer()
                 isPlaying = false
                 stopPulseAnimation()
-                audioEngine.stop()
+                audio.stop()
             }
         }
     }
@@ -608,9 +684,12 @@ struct MeditationPlayerView: View {
 #Preview("Meditation Player") {
     MeditationPlayerView(
         session: MeditationSession(
-            title: "A NEW DAY",
+            title: "MIST",
+            phase: .menstrual,
             duration: .five,
-            imageName: "sunsetrocks"
+            imageName: "medbg_mist_a",
+            collectibleImages: ["medbg_mist_a", "medbg_mist_b", "medbg_mist_c"],
+            audioFileName: "mist_05min"
         ),
         onDismiss: {},
         onFavorite: {}
