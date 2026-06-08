@@ -101,7 +101,7 @@ struct MeditationMainView: View {
             phase: .menstrual,
             imageName: "medbg_stillwater_a",
             collectibleImages: ["medbg_stillwater_a", "medbg_stillwater_b", "medbg_stillwater_c"],
-            audioFileName: nil,
+            audioFileName: "stillwater_05min",
             ambientSound: .warmDrone
         ),
         // Follicular
@@ -118,7 +118,7 @@ struct MeditationMainView: View {
             phase: .follicular,
             imageName: "medbg_openhills_a",
             collectibleImages: ["medbg_openhills_a", "medbg_openhills_b", "medbg_openhills_c"],
-            audioFileName: nil,
+            audioFileName: "openhills_05min",
             ambientSound: .forestBreeze
         ),
         // Ovulation
@@ -160,7 +160,7 @@ struct MeditationMainView: View {
             phase: .luteal,
             imageName: "medbg_solitude_a",
             collectibleImages: ["medbg_solitude_a", "medbg_solitude_b", "medbg_solitude_c"],
-            audioFileName: nil,
+            audioFileName: "solitude_05min",
             ambientSound: .warmDrone
         )
     ]
