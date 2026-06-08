@@ -345,12 +345,23 @@ struct MeditationCard: View {
         ZStack(alignment: .topTrailing) {
             // BASE LAYER — single Button covering the whole card. Label
             // contains only non-interactive views.
+            //
+            // Image MUST constrain maxWidth: .infinity. .aspectRatio(.fill)
+            // with only a height constraint sizes the image to whatever
+            // width preserves the source ratio at that height — for a tall
+            // photo that's ~150pt wide, so the card and its Button hit area
+            // collapse to that strip. maxWidth forces full card width
+            // regardless of which a/b/c image loads.
+            //
+            // The outer ZStack adds an explicit .frame + .contentShape so
+            // the ENTIRE 320pt-tall, full-width rectangle is hit-tested,
+            // never just the image's visible content area.
             Button(action: onPlay) {
                 ZStack {
                     Image(displayedImageName)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
-                        .frame(height: 320)
+                        .frame(maxWidth: .infinity, maxHeight: 320)
                         .clipped()
 
                     LinearGradient(
@@ -422,7 +433,9 @@ struct MeditationCard: View {
                         Spacer()
                     }
                 }
+                .frame(maxWidth: .infinity)
                 .frame(height: 320)
+                .contentShape(Rectangle())
                 .cornerRadius(FloRadius.lg)
                 .shadow(color: FloShadow.large.color, radius: FloShadow.large.radius, x: 0, y: FloShadow.large.y)
             }

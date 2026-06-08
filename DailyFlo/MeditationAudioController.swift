@@ -29,9 +29,20 @@ final class MeditationAudioController {
             engine.play(resource: filename)
             fileEngine = engine
         } else {
+            print("MeditationAudioController: synth start '\(session.title)' (sound: \(session.ambientSound.rawValue))")
             let engine = AmbientAudioEngine()
-            engine.play(sound: session.ambientSound)
-            synthEngine = engine
+            do {
+                try engine.play(sound: session.ambientSound)
+                synthEngine = engine
+            } catch {
+                print("""
+                MeditationAudioController: synth start FAILED for '\(session.title)'
+                  sound:                  \(session.ambientSound.rawValue)
+                  error:                  \(error)
+                  audio session category: \(AVAudioSession.sharedInstance().category.rawValue)
+                  audio session active:   \(AVAudioSession.sharedInstance().isOtherAudioPlaying)
+                """)
+            }
         }
         isPlaying = true
     }

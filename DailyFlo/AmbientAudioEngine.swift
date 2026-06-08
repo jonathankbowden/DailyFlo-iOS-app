@@ -48,9 +48,12 @@ class AmbientAudioEngine {
 
     // MARK: - Public API
 
-    func play(sound: AmbientSoundType) {
+    /// Throws on failed AVAudioEngine startup or audio-session setup so the
+    /// caller (MeditationAudioController) can surface a precise miss-report
+    /// to the console instead of swallowing the error.
+    func play(sound: AmbientSoundType) throws {
         stop()
-        configureAudioSession()
+        try configureAudioSession()
         currentSound = sound
 
         let engine = AVAudioEngine()
@@ -78,17 +81,13 @@ class AmbientAudioEngine {
         engine.connect(mixer, to: engine.mainMixerNode, format: format)
         engine.mainMixerNode.outputVolume = 0.0
 
-        do {
-            try engine.start()
-            self.audioEngine = engine
-            self.mixerNode = mixer
-            self.isPlaying = true
+        try engine.start()
+        self.audioEngine = engine
+        self.mixerNode = mixer
+        self.isPlaying = true
 
-            // Fade in over 2 seconds
-            fadeVolume(to: 0.7, duration: 2.0)
-        } catch {
-            print("AmbientAudioEngine: Failed to start engine: \(error)")
-        }
+        // Fade in over 2 seconds
+        fadeVolume(to: 0.7, duration: 2.0)
     }
 
     func pause() {
@@ -129,14 +128,10 @@ class AmbientAudioEngine {
 
     // MARK: - Audio Session
 
-    private func configureAudioSession() {
+    private func configureAudioSession() throws {
         let session = AVAudioSession.sharedInstance()
-        do {
-            try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
-            try session.setActive(true)
-        } catch {
-            print("AmbientAudioEngine: Audio session error: \(error)")
-        }
+        try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+        try session.setActive(true)
     }
 
     // MARK: - Volume Fade
