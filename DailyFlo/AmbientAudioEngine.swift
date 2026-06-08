@@ -82,6 +82,14 @@ class AmbientAudioEngine {
         engine.mainMixerNode.outputVolume = 0.0
 
         try engine.start()
+
+        // Engine is running — NOW it's safe to start each player node.
+        // Calling node.play() before engine.start() silently fails with
+        // "Engine is not running ... Cannot play yet!" in the console
+        // and produces no audio.
+        noiseNode?.play()
+        toneNodes.forEach { $0.play() }
+
         self.audioEngine = engine
         self.mixerNode = mixer
         self.isPlaying = true
@@ -368,7 +376,12 @@ class AmbientAudioEngine {
         return buffer
     }
 
-    /// Attaches a player node, schedules a buffer to loop, and starts playing
+    /// Attaches a player node, connects it to the mixer, and schedules a
+    /// looping buffer. Does NOT call `player.play()` — per AVFoundation,
+    /// calling play() before `engine.start()` triggers the runtime warning
+    /// "AVAudioPlayerNode ... Engine is not running ... Cannot play yet!"
+    /// and the node never actually produces sound. The caller starts all
+    /// nodes after `engine.start()` returns.
     @discardableResult
     private func scheduleLoopingBuffer(_ buffer: AVAudioPCMBuffer, on engine: AVAudioEngine, mixer: AVAudioMixerNode, format: AVAudioFormat, volume: Float) -> AVAudioPlayerNode {
         let player = AVAudioPlayerNode()
@@ -376,7 +389,6 @@ class AmbientAudioEngine {
         engine.connect(player, to: mixer, format: format)
         player.volume = volume
         player.scheduleBuffer(buffer, at: nil, options: .loops)
-        player.play()
         return player
     }
 }
