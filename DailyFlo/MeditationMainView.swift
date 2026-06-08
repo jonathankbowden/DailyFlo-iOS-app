@@ -47,14 +47,28 @@ struct MeditationSession: Identifiable {
     var isFavorite: Bool = false
 }
 
+// MARK: - Player Request
+//
+// Atomic carrier for the data the player needs. Bundling session + duration
+// into a single Identifiable item used by `.fullScreenCover(item:)` keeps
+// them in lock-step at present time — previously two separate @State
+// properties (selectedSession + activeDuration) were read inside the
+// cover's content closure, and SwiftUI's update batching let the cover
+// present with last frame's `activeDuration` (always .five), so tapping
+// a card on the 15 or 60 tab still opened the 5-min variant.
+struct PlayerRequest: Identifiable {
+    let id = UUID()
+    let session: MeditationSession
+    let duration: MeditationDuration
+}
+
 // MARK: - Main Meditation View
 struct MeditationMainView: View {
     @State private var selectedDuration: MeditationDuration = .five
-    @State private var selectedSession: MeditationSession?
-    /// Duration captured at the moment the user taps a card, so changing
-    /// the tab while the player is up wouldn't shorten or lengthen an
-    /// in-flight session.
-    @State private var activeDuration: MeditationDuration = .five
+    /// Atomic carrier for the player presentation. Setting this triggers
+    /// the cover; the cover reads session + duration from the same struct
+    /// instance so they can't drift.
+    @State private var playerRequest: PlayerRequest?
     @State private var hasAppeared = false
 
     private var userName: String { CycleManager.shared.userName }
@@ -189,8 +203,10 @@ struct MeditationMainView: View {
                                 displayDuration: selectedDuration,
                                 onPlay: {
                                     FloHaptics.medium()
-                                    activeDuration = selectedDuration
-                                    selectedSession = session
+                                    playerRequest = PlayerRequest(
+                                        session: session,
+                                        duration: selectedDuration
+                                    )
                                 },
                                 onFavorite: {
                                     FloHaptics.selection()
@@ -206,12 +222,12 @@ struct MeditationMainView: View {
                 }
             }
         }
-        .fullScreenCover(item: $selectedSession) { session in
+        .fullScreenCover(item: $playerRequest) { req in
             MeditationPlayerView(
-                session: session,
-                duration: activeDuration,
-                onDismiss: { selectedSession = nil },
-                onFavorite: { toggleFavorite(session) }
+                session: req.session,
+                duration: req.duration,
+                onDismiss: { playerRequest = nil },
+                onFavorite: { toggleFavorite(req.session) }
             )
         }
         .onAppear {
