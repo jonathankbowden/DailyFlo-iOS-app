@@ -80,13 +80,22 @@ final class FileAudioEngine {
             ? String(resource.dropLast(4))
             : resource
 
-        let url = Bundle.main.url(forResource: base, withExtension: "mp3", subdirectory: "Meditations")
-            ?? Bundle.main.url(forResource: base, withExtension: "mp3")
+        let subdirURL = Bundle.main.url(forResource: base, withExtension: "mp3", subdirectory: "Meditations")
+        let flatURL = Bundle.main.url(forResource: base, withExtension: "mp3")
+        let url = subdirURL ?? flatURL
 
         guard let url else {
-            print("FileAudioEngine: missing audio resource \(resource)")
+            print("""
+            FileAudioEngine: missing audio resource '\(resource)'
+              base name:        \(base)
+              bundle path:      \(Bundle.main.bundlePath)
+              tried Meditations/\(base).mp3: nil
+              tried flat \(base).mp3:        nil
+            """)
             return
         }
+
+        print("FileAudioEngine: resolved '\(resource)' -> \(url.path)")
 
         configureAudioSession()
 
@@ -99,7 +108,7 @@ final class FileAudioEngine {
             self.player = player
             fade(to: targetVolume, duration: 2.0)
         } catch {
-            print("FileAudioEngine: failed to start \(resource): \(error)")
+            print("FileAudioEngine: failed to start \(resource) at \(url.path): \(error)")
         }
     }
 

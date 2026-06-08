@@ -319,116 +319,149 @@ struct MeditationMainView: View {
 
 // MARK: - Meditation Card
 //
-// The ENTIRE card is a single Button(action: onPlay). The old design wrapped
-// an inner play button inside an .onLongPressGesture-driven press effect,
-// which swallowed taps before they reached the inner button — meaning
-// tapping a card never opened the player. With the whole card as the play
-// button, the press feedback comes from .floPressed and the play-circle
-// glyph is now a non-interactive visual cue. The favorite heart stays as a
-// nested Button so its tap target trumps the parent's play action without
-// closing over it.
+// Architectural rule: the play Button and the favorite Button are SIBLINGS,
+// not nested. A Button placed inside another Button's label breaks the
+// outer button's tap on iOS — taps land on neither button reliably — so
+// the play action never fires. Here, the card-as-Button sits at the base
+// of an outer ZStack and the heart sits as a sibling .overlay(alignment:
+// .topTrailing). The play Button's label contains zero interactive
+// descendants; the visual play glyph is a non-interactive ZStack of
+// shapes. One tap anywhere on the card = onPlay; one tap on the heart =
+// onFavorite, never the other way around.
 struct MeditationCard: View {
     let session: MeditationSession
     let displayDuration: MeditationDuration
     let onPlay: () -> Void
     let onFavorite: () -> Void
 
+    /// Picks the variant photo for the active duration tab. 5 min uses
+    /// `_a`, 15 min uses `_b`, 60 min uses `_c`. Falls back to the
+    /// session's default `imageName` if the array is short.
+    private var displayedImageName: String {
+        imageVariant(for: displayDuration, in: session)
+    }
+
     var body: some View {
-        Button(action: onPlay) {
-            ZStack {
-                Image(session.imageName)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(height: 320)
-                    .clipped()
+        ZStack(alignment: .topTrailing) {
+            // BASE LAYER — single Button covering the whole card. Label
+            // contains only non-interactive views.
+            Button(action: onPlay) {
+                ZStack {
+                    Image(displayedImageName)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(height: 320)
+                        .clipped()
 
-                LinearGradient(
-                    colors: [
-                        Color.black.opacity(0.35),
-                        Color.black.opacity(0.15),
-                        Color.black.opacity(0.25)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
+                    LinearGradient(
+                        colors: [
+                            Color.black.opacity(0.35),
+                            Color.black.opacity(0.15),
+                            Color.black.opacity(0.25)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
 
-                VStack {
-                    HStack(alignment: .top) {
-                        VStack(alignment: .leading, spacing: FloSpacing.sm) {
-                            Text(session.title)
-                                .font(.floLabel)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.white)
-                                .tracking(1)
-                                .padding(.bottom, FloSpacing.xs)
-
-                            Rectangle()
-                                .fill(Color.white.opacity(0.6))
-                                .frame(width: 40, height: 1)
-                                .padding(.bottom, FloSpacing.xxs)
-
-                            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                                Text("\(displayDuration.rawValue)")
-                                    .font(.floSerif(size: 32))
+                    VStack {
+                        HStack(alignment: .top) {
+                            VStack(alignment: .leading, spacing: FloSpacing.sm) {
+                                Text(session.title)
+                                    .font(.floLabel)
+                                    .fontWeight(.semibold)
                                     .foregroundColor(.white)
+                                    .tracking(1)
+                                    .padding(.bottom, FloSpacing.xs)
 
-                                Text("mins")
-                                    .font(.floSerif(size: 14))
-                                    .foregroundColor(.white.opacity(0.85))
+                                Rectangle()
+                                    .fill(Color.white.opacity(0.6))
+                                    .frame(width: 40, height: 1)
+                                    .padding(.bottom, FloSpacing.xxs)
+
+                                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                                    Text("\(displayDuration.rawValue)")
+                                        .font(.floSerif(size: 32))
+                                        .foregroundColor(.white)
+
+                                    Text("mins")
+                                        .font(.floSerif(size: 14))
+                                        .foregroundColor(.white.opacity(0.85))
+                                }
                             }
+
+                            // Flexible spacer pushes the title block to
+                            // the leading edge; the heart overlay sits in
+                            // the sibling layer above, not in this HStack.
+                            Spacer(minLength: 56)
                         }
+                        .padding(FloSpacing.lg)
 
                         Spacer()
+                            .frame(maxHeight: 16)
 
-                        // Heart is its own Button — its tap target overrides
-                        // the parent Button so favoriting does NOT open the
-                        // player.
-                        Button(action: onFavorite) {
-                            Image(systemName: session.isFavorite ? "heart.fill" : "heart")
-                                .font(.system(size: 22))
-                                .foregroundColor(session.isFavorite ? .phaseMenstrual : .white)
-                                .scaleEffect(session.isFavorite ? 1.1 : 1.0)
-                                .contentShape(Rectangle())
-                                .padding(FloSpacing.sm)
+                        // Visual-only play glyph; the card itself handles
+                        // the tap.
+                        ZStack {
+                            Circle()
+                                .fill(Color.floSage.opacity(0.3))
+                                .frame(width: 80, height: 80)
+                                .blur(radius: 10)
+
+                            Circle()
+                                .fill(Color.floSage)
+                                .frame(width: 64, height: 64)
+                                .shadow(color: Color.floSage.opacity(0.5), radius: 10, x: 0, y: 4)
+
+                            Image(systemName: "play.fill")
+                                .font(.system(size: 24))
+                                .foregroundColor(.white)
+                                .offset(x: 2)
                         }
-                        .buttonStyle(.floPressed)
-                        .animation(FloAnimation.springBouncy, value: session.isFavorite)
-                        .accessibilityLabel(session.isFavorite ? "Remove from favorites" : "Add to favorites")
+                        .accessibilityHidden(true)
+
+                        Spacer()
                     }
-                    .padding(FloSpacing.lg)
-
-                    Spacer()
-                        .frame(maxHeight: 16)
-
-                    // Visual-only play glyph — the whole card handles the tap.
-                    ZStack {
-                        Circle()
-                            .fill(Color.floSage.opacity(0.3))
-                            .frame(width: 80, height: 80)
-                            .blur(radius: 10)
-
-                        Circle()
-                            .fill(Color.floSage)
-                            .frame(width: 64, height: 64)
-                            .shadow(color: Color.floSage.opacity(0.5), radius: 10, x: 0, y: 4)
-
-                        Image(systemName: "play.fill")
-                            .font(.system(size: 24))
-                            .foregroundColor(.white)
-                            .offset(x: 2)
-                    }
-                    .accessibilityHidden(true)
-
-                    Spacer()
                 }
+                .frame(height: 320)
+                .cornerRadius(FloRadius.lg)
+                .shadow(color: FloShadow.large.color, radius: FloShadow.large.radius, x: 0, y: FloShadow.large.y)
             }
-            .frame(height: 320)
-            .cornerRadius(FloRadius.lg)
-            .shadow(color: FloShadow.large.color, radius: FloShadow.large.radius, x: 0, y: FloShadow.large.y)
+            .buttonStyle(.floPressed)
+            .accessibilityLabel("Play \(session.title) meditation, \(displayDuration.rawValue) minutes")
+
+            // SIBLING LAYER — heart sits on top, NOT inside the play Button.
+            // Its tap is captured by SwiftUI's hit-testing before falling
+            // through to the card button below.
+            Button(action: onFavorite) {
+                Image(systemName: session.isFavorite ? "heart.fill" : "heart")
+                    .font(.system(size: 22))
+                    .foregroundColor(session.isFavorite ? .phaseMenstrual : .white)
+                    .scaleEffect(session.isFavorite ? 1.1 : 1.0)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.floPressed)
+            .padding(FloSpacing.md)
+            .animation(FloAnimation.springBouncy, value: session.isFavorite)
+            .accessibilityLabel(session.isFavorite ? "Remove from favorites" : "Add to favorites")
         }
-        .buttonStyle(.floPressed)
-        .accessibilityLabel("Play \(session.title) meditation, \(displayDuration.rawValue) minutes")
     }
+}
+
+/// Picks the duration-mapped photo variant from a session's collectible set.
+/// Used by both the card list and the player so the surface stays
+/// consistent with what the user tapped.
+private func imageVariant(for duration: MeditationDuration, in session: MeditationSession) -> String {
+    let index: Int
+    switch duration {
+    case .five: index = 0
+    case .fifteen: index = 1
+    case .sixty: index = 2
+    }
+    if session.collectibleImages.indices.contains(index) {
+        return session.collectibleImages[index]
+    }
+    return session.imageName
 }
 
 // MARK: - Meditation Player View
@@ -470,11 +503,17 @@ struct MeditationPlayerView: View {
     private let ringSize: CGFloat = 140
     private let buttonSize: CGFloat = 72
 
+    /// Use the same `_a`/`_b`/`_c` variant the tapped card showed, so the
+    /// player surface visually matches the card the user selected.
+    private var displayedImageName: String {
+        imageVariant(for: duration, in: session)
+    }
+
     var body: some View {
         ZStack {
             // Full-bleed background image (ignores safe area)
             GeometryReader { geo in
-                Image(session.imageName)
+                Image(displayedImageName)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
                     .scaleEffect(imageScale)
