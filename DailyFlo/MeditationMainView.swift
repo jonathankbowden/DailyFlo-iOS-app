@@ -25,17 +25,21 @@ enum MeditationDuration: Int, CaseIterable, Identifiable {
 }
 
 // MARK: - Meditation Session
+//
+// A theme. Each session ships ONE looping audio track (its `_05min` MP3 or
+// a synth fallback). Duration is no longer a per-session property — the
+// user picks the session length at runtime via the 5/15/60 tab on the
+// main view, and the player times out and fades the loop at that mark.
 struct MeditationSession: Identifiable {
     let id = UUID()
     let title: String
     let phase: CyclePhase
-    let duration: MeditationDuration
     /// Displayed background. By convention the `_a` variant of the theme.
     let imageName: String
     /// All three theme variants (`_a`/`_b`/`_c`), wired for the future
     /// collectible gallery. The active surface uses `imageName` (== `_a`).
     let collectibleImages: [String]
-    /// Bundled MP3 to loop during the session. `nil` falls back to the
+    /// Bundled MP3 looped during the session. `nil` falls back to the
     /// `AmbientAudioEngine` synth for `ambientSound`.
     let audioFileName: String?
     /// Synth fallback used when `audioFileName` is `nil`.
@@ -47,6 +51,10 @@ struct MeditationSession: Identifiable {
 struct MeditationMainView: View {
     @State private var selectedDuration: MeditationDuration = .five
     @State private var selectedSession: MeditationSession?
+    /// Duration captured at the moment the user taps a card, so changing
+    /// the tab while the player is up wouldn't shorten or lengthen an
+    /// in-flight session.
+    @State private var activeDuration: MeditationDuration = .five
     @State private var hasAppeared = false
 
     private var userName: String { CycleManager.shared.userName }
@@ -61,7 +69,6 @@ struct MeditationMainView: View {
         MeditationSession(
             title: "MIST",
             phase: .menstrual,
-            duration: .five,
             imageName: "medbg_mist_a",
             collectibleImages: ["medbg_mist_a", "medbg_mist_b", "medbg_mist_c"],
             audioFileName: "mist_05min",
@@ -70,7 +77,6 @@ struct MeditationMainView: View {
         MeditationSession(
             title: "NIGHT SKY",
             phase: .menstrual,
-            duration: .five,
             imageName: "medbg_nightsky_a",
             collectibleImages: ["medbg_nightsky_a", "medbg_nightsky_b", "medbg_nightsky_c"],
             audioFileName: "nightsky_05min",
@@ -79,7 +85,6 @@ struct MeditationMainView: View {
         MeditationSession(
             title: "STILLWATER",
             phase: .menstrual,
-            duration: .five,
             imageName: "medbg_stillwater_a",
             collectibleImages: ["medbg_stillwater_a", "medbg_stillwater_b", "medbg_stillwater_c"],
             audioFileName: nil,
@@ -89,7 +94,6 @@ struct MeditationMainView: View {
         MeditationSession(
             title: "CANOPY",
             phase: .follicular,
-            duration: .five,
             imageName: "medbg_canopy_a",
             collectibleImages: ["medbg_canopy_a", "medbg_canopy_b", "medbg_canopy_c"],
             audioFileName: "canopy_05min",
@@ -98,7 +102,6 @@ struct MeditationMainView: View {
         MeditationSession(
             title: "OPEN HILLS",
             phase: .follicular,
-            duration: .five,
             imageName: "medbg_openhills_a",
             collectibleImages: ["medbg_openhills_a", "medbg_openhills_b", "medbg_openhills_c"],
             audioFileName: nil,
@@ -108,7 +111,6 @@ struct MeditationMainView: View {
         MeditationSession(
             title: "GOLDEN HOUR",
             phase: .ovulation,
-            duration: .five,
             imageName: "medbg_goldenhour_a",
             collectibleImages: ["medbg_goldenhour_a", "medbg_goldenhour_b", "medbg_goldenhour_c"],
             audioFileName: nil,
@@ -117,7 +119,6 @@ struct MeditationMainView: View {
         MeditationSession(
             title: "OCEAN",
             phase: .ovulation,
-            duration: .five,
             imageName: "medbg_ocean_a",
             collectibleImages: ["medbg_ocean_a", "medbg_ocean_b", "medbg_ocean_c"],
             audioFileName: "ocean_05min",
@@ -127,7 +128,6 @@ struct MeditationMainView: View {
         MeditationSession(
             title: "STORM",
             phase: .luteal,
-            duration: .five,
             imageName: "medbg_storm_a",
             collectibleImages: ["medbg_storm_a", "medbg_storm_b", "medbg_storm_c"],
             audioFileName: "storm_05min",
@@ -136,7 +136,6 @@ struct MeditationMainView: View {
         MeditationSession(
             title: "FOREST",
             phase: .luteal,
-            duration: .five,
             imageName: "medbg_forest_a",
             collectibleImages: ["medbg_forest_a", "medbg_forest_b", "medbg_forest_c"],
             audioFileName: nil,
@@ -145,17 +144,12 @@ struct MeditationMainView: View {
         MeditationSession(
             title: "SOLITUDE",
             phase: .luteal,
-            duration: .five,
             imageName: "medbg_solitude_a",
             collectibleImages: ["medbg_solitude_a", "medbg_solitude_b", "medbg_solitude_c"],
             audioFileName: nil,
             ambientSound: .warmDrone
         )
     ]
-
-    var filteredSessions: [MeditationSession] {
-        sessions.filter { $0.duration == selectedDuration }
-    }
 
     var body: some View {
         ZStack {
@@ -185,14 +179,17 @@ struct MeditationMainView: View {
                     .fill(Color(hex: "707070"))
                     .frame(height: 1)
 
-                // Meditation cards
+                // Meditation cards — full 10-theme library regardless of
+                // duration tab. Duration drives the timer, not the list.
                 ScrollView {
                     LazyVStack(spacing: FloSpacing.lg) {
-                        ForEach(Array(filteredSessions.enumerated()), id: \.element.id) { index, session in
+                        ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
                             MeditationCard(
                                 session: session,
+                                displayDuration: selectedDuration,
                                 onPlay: {
                                     FloHaptics.medium()
+                                    activeDuration = selectedDuration
                                     selectedSession = session
                                 },
                                 onFavorite: {
@@ -212,6 +209,7 @@ struct MeditationMainView: View {
         .fullScreenCover(item: $selectedSession) { session in
             MeditationPlayerView(
                 session: session,
+                duration: activeDuration,
                 onDismiss: { selectedSession = nil },
                 onFavorite: { toggleFavorite(session) }
             )
@@ -320,85 +318,90 @@ struct MeditationMainView: View {
 }
 
 // MARK: - Meditation Card
+//
+// The ENTIRE card is a single Button(action: onPlay). The old design wrapped
+// an inner play button inside an .onLongPressGesture-driven press effect,
+// which swallowed taps before they reached the inner button — meaning
+// tapping a card never opened the player. With the whole card as the play
+// button, the press feedback comes from .floPressed and the play-circle
+// glyph is now a non-interactive visual cue. The favorite heart stays as a
+// nested Button so its tap target trumps the parent's play action without
+// closing over it.
 struct MeditationCard: View {
     let session: MeditationSession
+    let displayDuration: MeditationDuration
     let onPlay: () -> Void
     let onFavorite: () -> Void
-    @State private var isPressed = false
 
     var body: some View {
-        ZStack {
-            // Background image
-            Image(session.imageName)
-                .resizable()
-                .aspectRatio(contentMode: .fill)
-                .frame(height: 320)
-                .clipped()
+        Button(action: onPlay) {
+            ZStack {
+                Image(session.imageName)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(height: 320)
+                    .clipped()
 
-            // Dark overlay for better text visibility
-            LinearGradient(
-                colors: [
-                    Color.black.opacity(0.35),
-                    Color.black.opacity(0.15),
-                    Color.black.opacity(0.25)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
+                LinearGradient(
+                    colors: [
+                        Color.black.opacity(0.35),
+                        Color.black.opacity(0.15),
+                        Color.black.opacity(0.25)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
 
-            // Content overlay
-            VStack {
-                // Top row - title and favorite
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: FloSpacing.sm) {
-                        // Title
-                        Text(session.title)
-                            .font(.floLabel)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.white)
-                            .tracking(1)
-                            .padding(.bottom, FloSpacing.xs)
-
-                        // Divider line
-                        Rectangle()
-                            .fill(Color.white.opacity(0.6))
-                            .frame(width: 40, height: 1)
-                            .padding(.bottom, FloSpacing.xxs)
-
-                        // Duration
-                        HStack(alignment: .firstTextBaseline, spacing: 4) {
-                            Text("\(session.duration.rawValue)")
-                                .font(.floSerif(size: 32))
+                VStack {
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: FloSpacing.sm) {
+                            Text(session.title)
+                                .font(.floLabel)
+                                .fontWeight(.semibold)
                                 .foregroundColor(.white)
+                                .tracking(1)
+                                .padding(.bottom, FloSpacing.xs)
 
-                            Text("mins")
-                                .font(.floSerif(size: 14))
-                                .foregroundColor(.white.opacity(0.85))
+                            Rectangle()
+                                .fill(Color.white.opacity(0.6))
+                                .frame(width: 40, height: 1)
+                                .padding(.bottom, FloSpacing.xxs)
+
+                            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                                Text("\(displayDuration.rawValue)")
+                                    .font(.floSerif(size: 32))
+                                    .foregroundColor(.white)
+
+                                Text("mins")
+                                    .font(.floSerif(size: 14))
+                                    .foregroundColor(.white.opacity(0.85))
+                            }
                         }
+
+                        Spacer()
+
+                        // Heart is its own Button — its tap target overrides
+                        // the parent Button so favoriting does NOT open the
+                        // player.
+                        Button(action: onFavorite) {
+                            Image(systemName: session.isFavorite ? "heart.fill" : "heart")
+                                .font(.system(size: 22))
+                                .foregroundColor(session.isFavorite ? .phaseMenstrual : .white)
+                                .scaleEffect(session.isFavorite ? 1.1 : 1.0)
+                                .contentShape(Rectangle())
+                                .padding(FloSpacing.sm)
+                        }
+                        .buttonStyle(.floPressed)
+                        .animation(FloAnimation.springBouncy, value: session.isFavorite)
+                        .accessibilityLabel(session.isFavorite ? "Remove from favorites" : "Add to favorites")
                     }
+                    .padding(FloSpacing.lg)
 
                     Spacer()
+                        .frame(maxHeight: 16)
 
-                    // Favorite button
-                    Button(action: onFavorite) {
-                        Image(systemName: session.isFavorite ? "heart.fill" : "heart")
-                            .font(.system(size: 22))
-                            .foregroundColor(session.isFavorite ? .phaseMenstrual : .white)
-                            .scaleEffect(session.isFavorite ? 1.1 : 1.0)
-                    }
-                    .buttonStyle(.floPressed)
-                    .animation(FloAnimation.springBouncy, value: session.isFavorite)
-                    .accessibilityLabel(session.isFavorite ? "Remove from favorites" : "Add to favorites")
-                }
-                .padding(FloSpacing.lg)
-
-                Spacer()
-                    .frame(maxHeight: 16)
-
-                // Play button centered
-                Button(action: onPlay) {
+                    // Visual-only play glyph — the whole card handles the tap.
                     ZStack {
-                        // Outer glow
                         Circle()
                             .fill(Color.floSage.opacity(0.3))
                             .frame(width: 80, height: 80)
@@ -414,28 +417,29 @@ struct MeditationCard: View {
                             .foregroundColor(.white)
                             .offset(x: 2)
                     }
-                }
-                .buttonStyle(.floPressed)
-                .accessibilityLabel("Play \(session.title) meditation")
+                    .accessibilityHidden(true)
 
-                Spacer()
+                    Spacer()
+                }
             }
+            .frame(height: 320)
+            .cornerRadius(FloRadius.lg)
+            .shadow(color: FloShadow.large.color, radius: FloShadow.large.radius, x: 0, y: FloShadow.large.y)
         }
-        .frame(height: 320)
-        .cornerRadius(FloRadius.lg)
-        .shadow(color: FloShadow.large.color, radius: FloShadow.large.radius, x: 0, y: FloShadow.large.y)
-        .scaleEffect(isPressed ? 0.98 : 1.0)
-        .animation(FloAnimation.buttonPress, value: isPressed)
-        .onLongPressGesture(minimumDuration: .infinity, maximumDistance: .infinity, pressing: { pressing in
-            isPressed = pressing
-        }, perform: {})
-        .accessibilityElement(children: .contain)
+        .buttonStyle(.floPressed)
+        .accessibilityLabel("Play \(session.title) meditation, \(displayDuration.rawValue) minutes")
     }
 }
 
 // MARK: - Meditation Player View
+//
+// The session supplies the theme (background + audio source). `duration`
+// drives the countdown ring, the timer label, and the natural end-of-
+// session fade — the audio track itself loops indefinitely, so picking
+// 60 min just keeps the same loop running for 60 min before bleeding out.
 struct MeditationPlayerView: View {
     let session: MeditationSession
+    let duration: MeditationDuration
     let onDismiss: () -> Void
     let onFavorite: () -> Void
 
@@ -451,11 +455,16 @@ struct MeditationPlayerView: View {
     @State private var hasStarted = false
     @State private var hasStartedAudio = false
 
-    init(session: MeditationSession, onDismiss: @escaping () -> Void, onFavorite: @escaping () -> Void) {
+    /// Fade duration applied when the session timer runs out — long enough
+    /// that the loop tapers gently rather than cutting off.
+    private let naturalEndFade: Double = 4.0
+
+    init(session: MeditationSession, duration: MeditationDuration, onDismiss: @escaping () -> Void, onFavorite: @escaping () -> Void) {
         self.session = session
+        self.duration = duration
         self.onDismiss = onDismiss
         self.onFavorite = onFavorite
-        self._timeRemaining = State(initialValue: session.duration.seconds)
+        self._timeRemaining = State(initialValue: duration.seconds)
     }
 
     private let ringSize: CGFloat = 140
@@ -656,17 +665,21 @@ struct MeditationPlayerView: View {
     }
 
     private func startTimer() {
-        let totalSeconds = session.duration.seconds
+        let totalSeconds = duration.seconds
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
-            if timeRemaining > 0 {
-                timeRemaining -= 1
-                progress = CGFloat(totalSeconds - timeRemaining) / CGFloat(totalSeconds)
-            } else {
-                FloHaptics.success()
-                stopTimer()
-                isPlaying = false
-                stopPulseAnimation()
-                audio.stop()
+            Task { @MainActor in
+                if timeRemaining > 0 {
+                    timeRemaining -= 1
+                    progress = CGFloat(totalSeconds - timeRemaining) / CGFloat(totalSeconds)
+                } else {
+                    FloHaptics.success()
+                    stopTimer()
+                    isPlaying = false
+                    stopPulseAnimation()
+                    // Gentle fade at natural session end (vs. the snappier
+                    // 1s fade when the user dismisses).
+                    audio.stop(fade: naturalEndFade)
+                }
             }
         }
     }
@@ -686,11 +699,11 @@ struct MeditationPlayerView: View {
         session: MeditationSession(
             title: "MIST",
             phase: .menstrual,
-            duration: .five,
             imageName: "medbg_mist_a",
             collectibleImages: ["medbg_mist_a", "medbg_mist_b", "medbg_mist_c"],
             audioFileName: "mist_05min"
         ),
+        duration: .fifteen,
         onDismiss: {},
         onFavorite: {}
     )

@@ -48,8 +48,12 @@ final class MeditationAudioController {
         isPlaying = true
     }
 
-    func stop() {
-        fileEngine?.stop()
+    /// Stops playback with an optional custom fade. Default is the snappy
+    /// 1-second fade used when the user explicitly stops (X / dismiss).
+    /// A longer fade (3–5s) is appropriate at natural session-end so the
+    /// loop bleeds out gently instead of cutting off.
+    func stop(fade: Double = 1.0) {
+        fileEngine?.stop(fade: fade)
         synthEngine?.stop()
         fileEngine = nil
         synthEngine = nil
@@ -112,9 +116,9 @@ final class FileAudioEngine {
         fade(to: targetVolume, duration: 1.0)
     }
 
-    func stop() {
+    func stop(fade duration: Double = 1.0) {
         guard player != nil else { return }
-        fade(to: 0, duration: 1.0) { [weak self] in
+        fade(to: 0, duration: duration) { [weak self] in
             self?.player?.stop()
             self?.player = nil
         }
