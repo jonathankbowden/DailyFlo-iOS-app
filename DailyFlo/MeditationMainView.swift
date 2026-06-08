@@ -127,7 +127,7 @@ struct MeditationMainView: View {
             phase: .ovulation,
             imageName: "medbg_goldenhour_a",
             collectibleImages: ["medbg_goldenhour_a", "medbg_goldenhour_b", "medbg_goldenhour_c"],
-            audioFileName: nil,
+            audioFileName: "goldenhour_05min",
             ambientSound: .softChimes
         ),
         MeditationSession(
@@ -152,7 +152,7 @@ struct MeditationMainView: View {
             phase: .luteal,
             imageName: "medbg_forest_a",
             collectibleImages: ["medbg_forest_a", "medbg_forest_b", "medbg_forest_c"],
-            audioFileName: nil,
+            audioFileName: "forest_05min",
             ambientSound: .forestBreeze
         ),
         MeditationSession(
