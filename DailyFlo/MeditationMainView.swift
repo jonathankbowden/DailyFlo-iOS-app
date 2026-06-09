@@ -413,91 +413,70 @@ struct MeditationCard: View {
             // .overlay sized to that base. Image uses .scaledToFill with
             // NO maxHeight: .infinity — it fills the overlay frame and is
             // clipped by the outer .clipShape.
+            // FOUR direct siblings of a plain ZStack. The previous
+            // Color.clear + .overlay wrapper was a leftover from the
+            // aspect-ratio approach; .overlay's child wasn't getting the
+            // measurement it expected with a fixed-height base, which is
+            // why the scrim and title silently dropped out of layout. A
+            // plain ZStack sized by .frame(height: cardHeight) gives each
+            // sibling the same frame to measure against.
             Button(action: onPlay) {
-                Color.clear
-                    .frame(maxWidth: .infinity)
-                    .frame(height: Self.cardHeight)
-                    .overlay(
-                        // FOUR SIBLINGS — DO NOT nest the play glyph inside
-                        // the title VStack. With them coupled in one VStack
-                        // the play glyph rode the title's layout flow (not
-                        // the card's center) and the title kept getting
-                        // pushed out of the visible area. As siblings:
-                        //   - Image and scrim fill the card.
-                        //   - Play glyph is a direct ZStack child → center.
-                        //   - Title block uses .frame(.topLeading) → corner.
-                        ZStack {
-                            // 1. Background photo
-                            Image(displayedImageName)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                .clipped()
-
-                            // 2. Top-weighted scrim so white text reads on
-                            //    light photos. Heavier black at the very top
-                            //    where the title sits, fully clear through
-                            //    the middle so the photo carries, slightly
-                            //    dark at the bottom to anchor.
-                            LinearGradient(
-                                stops: [
-                                    .init(color: .black.opacity(0.55), location: 0.0),
-                                    .init(color: .clear,               location: 0.35),
-                                    .init(color: .clear,               location: 0.70),
-                                    .init(color: .black.opacity(0.25), location: 1.0)
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-
-                            // 3. Glassy play glyph — DIRECT ZStack child so
-                            //    it's centered in the whole card, not under
-                            //    the title.
-                            Image(systemName: "play.fill")
-                                .font(.system(size: 24))
-                                .foregroundStyle(.white)
-                                .frame(width: 64, height: 64)
-                                .background(.white.opacity(0.15), in: Circle())
-                                .overlay(Circle().stroke(.white, lineWidth: 1))
-                                .accessibilityHidden(true)
-
-                            // 4. Title block pinned to top-leading via the
-                            //    outer frame's alignment. Text shadows give
-                            //    legibility against both light photos
-                            //    (Mist) and dark photos (Night Sky).
-                            VStack(alignment: .leading, spacing: FloSpacing.sm) {
-                                Text(session.title)
-                                    .font(.floLabel)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.white)
-                                    .tracking(1)
-                                    .shadow(color: .black.opacity(0.35), radius: 4, y: 1)
-
-                                Rectangle()
-                                    .fill(Color.white.opacity(0.85))
-                                    .frame(width: 40, height: 1)
-
-                                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                                    Text("\(displayDuration.rawValue)")
-                                        .font(.floSerif(size: 32))
-                                        .foregroundColor(.white)
-                                    Text("mins")
-                                        .font(.floSerif(size: 14))
-                                        .foregroundColor(.white.opacity(0.9))
-                                }
-                                .shadow(color: .black.opacity(0.35), radius: 4, y: 1)
-                            }
-                            .padding(FloSpacing.lg)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                        }
-                        // Pin the overlay to the base size so the .topLeading
-                        // alignment and ZStack-centered play glyph both
-                        // measure against the card frame.
+                ZStack {
+                    Image(displayedImageName)
+                        .resizable()
+                        .scaledToFill()
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .clipped()
+
+                    LinearGradient(
+                        stops: [
+                            .init(color: .black.opacity(0.55), location: 0.0),
+                            .init(color: .clear,               location: 0.35),
+                            .init(color: .clear,               location: 0.70),
+                            .init(color: .black.opacity(0.25), location: 1.0)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
                     )
-                    .contentShape(Rectangle())
-                    .clipShape(RoundedRectangle(cornerRadius: FloRadius.lg))
-                    .shadow(color: FloShadow.large.color, radius: FloShadow.large.radius, x: 0, y: FloShadow.large.y)
+
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 24))
+                        .foregroundStyle(.white)
+                        .frame(width: 64, height: 64)
+                        .background(.white.opacity(0.15), in: Circle())
+                        .overlay(Circle().stroke(.white, lineWidth: 1))
+                        .accessibilityHidden(true)
+
+                    VStack(alignment: .leading, spacing: FloSpacing.sm) {
+                        Text(session.title)
+                            .font(.floLabel)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.white)
+                            .tracking(1)
+                            .shadow(color: .black.opacity(0.35), radius: 4, y: 1)
+
+                        Rectangle()
+                            .fill(Color.white.opacity(0.85))
+                            .frame(width: 40, height: 1)
+
+                        HStack(alignment: .firstTextBaseline, spacing: 4) {
+                            Text("\(displayDuration.rawValue)")
+                                .font(.floSerif(size: 32))
+                                .foregroundColor(.white)
+                            Text("mins")
+                                .font(.floSerif(size: 14))
+                                .foregroundColor(.white.opacity(0.9))
+                        }
+                        .shadow(color: .black.opacity(0.35), radius: 4, y: 1)
+                    }
+                    .padding(FloSpacing.lg)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: Self.cardHeight)
+                .contentShape(Rectangle())
+                .clipShape(RoundedRectangle(cornerRadius: FloRadius.lg))
+                .shadow(color: FloShadow.large.color, radius: FloShadow.large.radius, x: 0, y: FloShadow.large.y)
             }
             .buttonStyle(.floPressed)
             .accessibilityLabel("Play \(session.title) meditation, \(displayDuration.rawValue) minutes")
