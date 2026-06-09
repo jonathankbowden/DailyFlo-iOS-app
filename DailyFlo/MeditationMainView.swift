@@ -193,33 +193,31 @@ struct MeditationMainView: View {
                     .fill(Color(hex: "707070"))
                     .frame(height: 1)
 
-                // Meditation cards — full 10-theme library regardless of
-                // duration tab. Duration drives the timer, not the list.
-                ScrollView {
-                    LazyVStack(spacing: FloSpacing.lg) {
-                        ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
-                            MeditationCard(
-                                session: session,
-                                displayDuration: selectedDuration,
-                                onPlay: {
-                                    FloHaptics.medium()
-                                    playerRequest = PlayerRequest(
-                                        session: session,
-                                        duration: selectedDuration
-                                    )
-                                },
-                                onFavorite: {
-                                    FloHaptics.selection()
-                                    toggleFavorite(session)
-                                }
-                            )
-                            .fadeIn(delay: hasAppeared ? 0 : 0.25 + Double(index) * 0.1)
-                        }
+                // Three columns (5/15/60) bound to the same selectedDuration
+                // as the tabs above — tap a tab to switch, swipe to switch,
+                // either updates the binding and the other follows.
+                TabView(selection: $selectedDuration) {
+                    ForEach(MeditationDuration.allCases) { duration in
+                        MeditationColumn(
+                            duration: duration,
+                            sessions: sessions,
+                            hasAppeared: hasAppeared,
+                            onPlay: { session, duration in
+                                FloHaptics.medium()
+                                playerRequest = PlayerRequest(
+                                    session: session,
+                                    duration: duration
+                                )
+                            },
+                            onFavorite: { session in
+                                FloHaptics.selection()
+                                toggleFavorite(session)
+                            }
+                        )
+                        .tag(duration)
                     }
-                    .padding(.horizontal, FloSpacing.lg)
-                    .padding(.top, FloSpacing.lg)
-                    .padding(.bottom, 140)
                 }
+                .tabViewStyle(.page(indexDisplayMode: .never))
             }
         }
         .fullScreenCover(item: $playerRequest) { req in
@@ -333,26 +331,65 @@ struct MeditationMainView: View {
     }
 }
 
+// MARK: - Meditation Column
+//
+// A single duration's vertical scroll of theme cards. Extracted so the
+// parent can present three columns inside a paged TabView bound to
+// `selectedDuration` — tapping a duration tab and swiping the columns
+// both update the same binding.
+private struct MeditationColumn: View {
+    let duration: MeditationDuration
+    let sessions: [MeditationSession]
+    let hasAppeared: Bool
+    /// Column hands its own duration back so the parent's PlayerRequest
+    /// captures the column-render duration, not whatever selectedDuration
+    /// happens to read at tap time (which could be mid-swipe).
+    let onPlay: (MeditationSession, MeditationDuration) -> Void
+    let onFavorite: (MeditationSession) -> Void
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(spacing: FloSpacing.lg) {
+                ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
+                    MeditationCard(
+                        session: session,
+                        displayDuration: duration,
+                        onPlay: { onPlay(session, duration) },
+                        onFavorite: { onFavorite(session) }
+                    )
+                    .fadeIn(delay: hasAppeared ? 0 : 0.25 + Double(index) * 0.1)
+                }
+            }
+            .padding(.horizontal, FloSpacing.lg)
+            .padding(.top, FloSpacing.lg)
+            .padding(.bottom, 140)
+        }
+    }
+}
+
 // MARK: - Meditation Card
+//
+// Portrait 4:5 card (337×424 reference, sized responsively via
+// .aspectRatio so it fills the column width on any device).
 //
 // Architectural rule: the play Button and the favorite Button are SIBLINGS,
 // not nested. A Button placed inside another Button's label breaks the
 // outer button's tap on iOS — taps land on neither button reliably — so
 // the play action never fires. Here, the card-as-Button sits at the base
-// of an outer ZStack and the heart sits as a sibling .overlay(alignment:
-// .topTrailing). The play Button's label contains zero interactive
-// descendants; the visual play glyph is a non-interactive ZStack of
-// shapes. One tap anywhere on the card = onPlay; one tap on the heart =
-// onFavorite, never the other way around.
+// of an outer ZStack and the heart sits as a sibling overlay. The play
+// Button's label contains zero interactive descendants; the visual play
+// glyph is a non-interactive view. One tap anywhere on the card = onPlay;
+// one tap on the heart = onFavorite, never the other way around.
 struct MeditationCard: View {
     let session: MeditationSession
     let displayDuration: MeditationDuration
     let onPlay: () -> Void
     let onFavorite: () -> Void
 
-    /// Picks the variant photo for the active duration tab. 5 min uses
-    /// `_a`, 15 min uses `_b`, 60 min uses `_c`. Falls back to the
-    /// session's default `imageName` if the array is short.
+    /// 4:5 portrait ratio (337×424 reference). Width is whatever the
+    /// column gives us; height follows from the aspect.
+    private static let aspect: CGFloat = 337.0 / 424.0
+
     private var displayedImageName: String {
         imageVariant(for: displayDuration, in: session)
     }
@@ -360,24 +397,16 @@ struct MeditationCard: View {
     var body: some View {
         ZStack(alignment: .topTrailing) {
             // BASE LAYER — single Button covering the whole card. Label
-            // contains only non-interactive views.
-            //
-            // Image MUST constrain maxWidth: .infinity. .aspectRatio(.fill)
-            // with only a height constraint sizes the image to whatever
-            // width preserves the source ratio at that height — for a tall
-            // photo that's ~150pt wide, so the card and its Button hit area
-            // collapse to that strip. maxWidth forces full card width
-            // regardless of which a/b/c image loads.
-            //
-            // The outer ZStack adds an explicit .frame + .contentShape so
-            // the ENTIRE 320pt-tall, full-width rectangle is hit-tested,
-            // never just the image's visible content area.
+            // contains only non-interactive views. .aspectRatio pins the
+            // card to portrait 4:5; .contentShape makes the entire
+            // rectangle hit-testable even where the image is transparent
+            // or fully gradient-covered.
             Button(action: onPlay) {
                 ZStack {
                     Image(displayedImageName)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
-                        .frame(maxWidth: .infinity, maxHeight: 320)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .clipped()
 
                     LinearGradient(
@@ -423,34 +452,25 @@ struct MeditationCard: View {
                         }
                         .padding(FloSpacing.lg)
 
-                        Spacer()
-                            .frame(maxHeight: 16)
+                        Spacer(minLength: 0)
 
-                        // Visual-only play glyph; the card itself handles
+                        // Glassy play glyph — white fill at 15%, 1px white
+                        // stroke. Stops competing with the green "+" FAB
+                        // in the tab bar. Visual-only; the card handles
                         // the tap.
-                        ZStack {
-                            Circle()
-                                .fill(Color.floSage.opacity(0.3))
-                                .frame(width: 80, height: 80)
-                                .blur(radius: 10)
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 24))
+                            .foregroundStyle(.white)
+                            .frame(width: 64, height: 64)
+                            .background(.white.opacity(0.15), in: Circle())
+                            .overlay(Circle().stroke(.white, lineWidth: 1))
+                            .accessibilityHidden(true)
 
-                            Circle()
-                                .fill(Color.floSage)
-                                .frame(width: 64, height: 64)
-                                .shadow(color: Color.floSage.opacity(0.5), radius: 10, x: 0, y: 4)
-
-                            Image(systemName: "play.fill")
-                                .font(.system(size: 24))
-                                .foregroundColor(.white)
-                                .offset(x: 2)
-                        }
-                        .accessibilityHidden(true)
-
-                        Spacer()
+                        Spacer(minLength: 0)
                     }
                 }
+                .aspectRatio(Self.aspect, contentMode: .fit)
                 .frame(maxWidth: .infinity)
-                .frame(height: 320)
                 .contentShape(Rectangle())
                 .cornerRadius(FloRadius.lg)
                 .shadow(color: FloShadow.large.color, radius: FloShadow.large.radius, x: 0, y: FloShadow.large.y)
