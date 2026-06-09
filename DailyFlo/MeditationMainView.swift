@@ -369,8 +369,9 @@ private struct MeditationColumn: View {
 
 // MARK: - Meditation Card
 //
-// Portrait 4:5 card (337×424 reference, sized responsively via
-// .aspectRatio so it fills the column width on any device).
+// Full-width card with a fixed, tunable height. Width fills the column
+// (.infinity); height is `cardHeight`. Tuning `cardHeight` is the one
+// dial — bumping it tighter exposes more of the next card below.
 //
 // Architectural rule: the play Button and the favorite Button are SIBLINGS,
 // not nested. A Button placed inside another Button's label breaks the
@@ -386,9 +387,9 @@ struct MeditationCard: View {
     let onPlay: () -> Void
     let onFavorite: () -> Void
 
-    /// 4:5 portrait ratio (337×424 reference). Width is whatever the
-    /// column gives us; height follows from the aspect.
-    private static let aspect: CGFloat = 337.0 / 424.0
+    /// Tunable card height. ~80pt shorter than the previous 4:5 aspect
+    /// so the next card peeks more clearly below.
+    private static let cardHeight: CGFloat = 354
 
     private var displayedImageName: String {
         imageVariant(for: displayDuration, in: session)
@@ -414,8 +415,8 @@ struct MeditationCard: View {
             // clipped by the outer .clipShape.
             Button(action: onPlay) {
                 Color.clear
-                    .aspectRatio(Self.aspect, contentMode: .fit)
                     .frame(maxWidth: .infinity)
+                    .frame(height: Self.cardHeight)
                     .overlay(
                         ZStack {
                             Image(displayedImageName)
