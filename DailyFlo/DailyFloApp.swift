@@ -25,6 +25,11 @@ struct DailyFloApp: App {
     @Environment(\.scenePhase) private var scenePhase
     private let greeting = SplashGreeting.random
 
+    // Held as a property — not a `let` local in body — so SwiftUI's @Observable
+    // dependency tracking sees reads of `effectiveRole` and re-runs body when
+    // the role flips (real profile refresh or DEBUG override toggled).
+    private let cycleManager = CycleManager.shared
+
     init() {
         // Configure RevenueCat before any caller touches Purchases.shared
         // or SubscriptionManager.shared. Must happen on the first launch
@@ -76,14 +81,23 @@ struct DailyFloApp: App {
                     .transition(.opacity)
 
                 case .main:
-                    ContentView(greeting: greeting, animateFromSplash: true)
-                        .transition(.opacity)
-                        .task {
-                            // TEMP: capture all screen screenshots - remove after use
-                            if ProcessInfo.processInfo.arguments.contains("--screenshots") {
-                                ScreenshotHelper.captureAllScreens()
+                    // Role routing: supporter → supporter-only home; tracker /
+                    // both / unknown → existing tab bar. Reads `effectiveRole`
+                    // directly so the @Observable manager re-runs body when
+                    // the profile fetch lands or the DEBUG override flips.
+                    if cycleManager.effectiveRole == .supporter {
+                        SupporterHomeView()
+                            .transition(.opacity)
+                    } else {
+                        ContentView(greeting: greeting, animateFromSplash: true)
+                            .transition(.opacity)
+                            .task {
+                                // TEMP: capture all screen screenshots - remove after use
+                                if ProcessInfo.processInfo.arguments.contains("--screenshots") {
+                                    ScreenshotHelper.captureAllScreens()
+                                }
                             }
-                        }
+                    }
                 }
             }
             // Single smooth crossfade between app states

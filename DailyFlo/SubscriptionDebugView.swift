@@ -15,6 +15,7 @@ import SwiftUI
 
 struct SubscriptionDebugView: View {
     private let manager = SubscriptionManager.shared
+    private let cycleManager = CycleManager.shared
 
     /// When presented as a sheet/full-screen, the host passes its dismiss
     /// callback through. Embedded uses (e.g. dropped into another screen
@@ -28,6 +29,7 @@ struct SubscriptionDebugView: View {
                     titleBar
                 }
                 gateOverrideCard
+                supporterOverrideCard
                 liveGatePreview
                 inspectorCard
             }
@@ -113,6 +115,50 @@ struct SubscriptionDebugView: View {
         case .some(false):
             return "Pinned OFF. Every Pro-gated surface should treat the user as free."
         }
+    }
+
+    // MARK: - Supporter role override
+
+    private var supporterOverrideCard: some View {
+        VStack(alignment: .leading, spacing: FloSpacing.md) {
+            sectionLabel("Force supporter view")
+
+            Toggle(isOn: supporterOverrideBinding) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Force supporter view")
+                        .font(.floBodyLarge.weight(.medium))
+                        .foregroundColor(.floCharcoal)
+                    Text(supporterOverrideExplainer)
+                        .font(.floBodySmall)
+                        .foregroundColor(.floGray)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .tint(.floSage)
+        }
+        .padding(FloSpacing.lg)
+        .background(Color.white)
+        .cornerRadius(FloRadius.lg)
+        .overlay(
+            RoundedRectangle(cornerRadius: FloRadius.lg)
+                .stroke(Color.floLightGray, lineWidth: 1)
+        )
+    }
+
+    private var supporterOverrideBinding: Binding<Bool> {
+        Binding(
+            get: { cycleManager.debugForceSupporter },
+            set: { newValue in
+                FloHaptics.selection()
+                cycleManager.debugForceSupporter = newValue
+            }
+        )
+    }
+
+    private var supporterOverrideExplainer: String {
+        cycleManager.debugForceSupporter
+            ? "Routing the app as a supporter regardless of profile.role."
+            : "Following profile.role. Toggle on to preview the supporter home."
     }
 
     // MARK: - Live gate preview

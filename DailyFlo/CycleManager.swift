@@ -70,6 +70,40 @@ class CycleManager {
         UserDefaults.standard.object(forKey: "birthDate") as? Date
     }
 
+    // MARK: - Role (partner-share routing)
+
+    /// Authoritative role from the `profiles.role` column. Cached locally
+    /// so the launch render can resolve a destination before the network
+    /// refresh returns; updated through `apply(profile:)` after each fetch.
+    var userRole: UserRole = {
+        if let raw = UserDefaults.standard.string(forKey: "userRole"),
+           let role = UserRole(rawValue: raw) {
+            return role
+        }
+        return .tracker
+    }() {
+        didSet { UserDefaults.standard.set(userRole.rawValue, forKey: "userRole") }
+    }
+
+    #if DEBUG
+    /// DEBUG harness: when true, `effectiveRole` reports `.supporter`
+    /// regardless of the signed-in profile so supporter surfaces can be
+    /// driven without standing up real relationship data.
+    var debugForceSupporter: Bool = UserDefaults.standard.bool(forKey: "debugForceSupporter") {
+        didSet { UserDefaults.standard.set(debugForceSupporter, forKey: "debugForceSupporter") }
+    }
+    #endif
+
+    /// The role the app should route on. Honors the DEBUG override first,
+    /// then falls back to the stored profile role. "both" routes to the
+    /// tracker experience in this step; supporter view is opt-in only.
+    var effectiveRole: UserRole {
+        #if DEBUG
+        if debugForceSupporter { return .supporter }
+        #endif
+        return userRole
+    }
+
     // MARK: - Phase Boundaries (proportional to cycle length)
     // Menstrual: days 1...periodLength
     // Follicular: periodLength+1 ... ovulationStart-1
@@ -383,7 +417,7 @@ class CycleManager {
         do {
             let profile: ProfileFetchRow = try await SupabaseClient.shared
                 .from(profilesTable)
-                .select("display_name, birth_date, default_cycle_length_days, default_period_length_days")
+                .select("display_name, birth_date, default_cycle_length_days, default_period_length_days, role")
                 .eq("user_id", value: userId)
                 .single()
                 .execute()
@@ -428,14 +462,18 @@ class CycleManager {
         if let pl = profile.defaultPeriodLengthDays {
             UserDefaults.standard.set(pl.clamped(to: 2...10), forKey: "periodLength")
         }
+        if let role = UserRole(rawString: profile.role) {
+            userRole = role
+        }
     }
 
     // MARK: - Cache lifecycle
 
     private func clearLocalCache() {
-        for key in ["userName", "birthDate", "lastPeriodDate", "cycleLength", "periodLength"] {
+        for key in ["userName", "birthDate", "lastPeriodDate", "cycleLength", "periodLength", "userRole"] {
             UserDefaults.standard.removeObject(forKey: key)
         }
+        userRole = .tracker
     }
 
     private func logRemoteError(operation: String, error: Error) {
@@ -493,12 +531,14 @@ private struct ProfileFetchRow: Decodable {
     let birthDate: String?
     let defaultCycleLengthDays: Int?
     let defaultPeriodLengthDays: Int?
+    let role: String?
 
     enum CodingKeys: String, CodingKey {
         case displayName = "display_name"
         case birthDate = "birth_date"
         case defaultCycleLengthDays = "default_cycle_length_days"
         case defaultPeriodLengthDays = "default_period_length_days"
+        case role
     }
 }
 
@@ -514,5 +554,23 @@ private struct CycleFetchRow: Decodable {
 extension Int {
     func clamped(to range: ClosedRange<Int>) -> Int {
         return Swift.min(Swift.max(self, range.lowerBound), range.upperBound)
+    }
+}
+
+// MARK: - User Role
+
+/// Mirrors the `profiles.role` enum. Internal naming uses tracker/supporter;
+/// surface copy never exposes the word "tracker".
+enum UserRole: String, Sendable {
+    case tracker
+    case supporter
+    case both
+
+    /// Tolerant init for db-side strings: trims whitespace + lowercases so
+    /// off-by-case rows ("Tracker", "SUPPORTER") still resolve.
+    init?(rawString: String?) {
+        guard let raw = rawString?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              !raw.isEmpty else { return nil }
+        self.init(rawValue: raw)
     }
 }
