@@ -44,11 +44,25 @@ struct SingleDayView: View {
         self._currentDate = State(initialValue: Calendar.current.startOfDay(for: date))
     }
 
-    // Generate array of dates around the initial date (normalized to start of day)
+    // The paged TabView's selection is `currentDate`, which is initialized
+    // to startOfDay(date). For TabView(selection:) to land on the tapped
+    // day, the page array must contain a tag that is hash-equal to that
+    // selection — same Calendar, same startOfDay normalization.
+    //
+    // The previous implementation anchored the window on TODAY, so any
+    // tap on a date outside today−swipeRange…today (e.g. a future day, or
+    // any day after a normalization mismatch) had no matching tag and
+    // TabView silently fell back to its first page, which was always
+    // today−swipeRange ≈ "April 9".
+    //
+    // Anchoring on the tapped `date` instead, with a symmetric window on
+    // both sides, guarantees the tapped day is always in the array and
+    // becomes the centered opening page. Swiping then moves day-by-day
+    // from there in either direction.
     private var datePages: [Date] {
-        let today = calendar.startOfDay(for: Date())
-        return (-swipeRange...0).compactMap { offset in
-            calendar.date(byAdding: .day, value: offset, to: today)
+        let anchor = calendar.startOfDay(for: date)
+        return (-swipeRange...swipeRange).compactMap { offset in
+            calendar.date(byAdding: .day, value: offset, to: anchor)
         }
     }
 
