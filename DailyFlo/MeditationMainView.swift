@@ -421,6 +421,8 @@ struct MeditationCard: View {
                             Image(displayedImageName)
                                 .resizable()
                                 .scaledToFill()
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .clipped()
 
                             LinearGradient(
                                 colors: [
@@ -482,6 +484,16 @@ struct MeditationCard: View {
                                 Spacer(minLength: 0)
                             }
                         }
+                        // Pin the overlay's ZStack to the base size. Without
+                        // this, the .scaledToFill Image's natural (oversized)
+                        // size drove the ZStack layout — content centered
+                        // against that oversized stack, so the top-left
+                        // title block was pushed above the clip and the
+                        // play glyph went off-center. The base is now
+                        // determinate (Color.clear .aspectRatio anchor),
+                        // so maxHeight: .infinity here can't reintroduce
+                        // the old greedy-stretch — it just fills the base.
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     )
                     .contentShape(Rectangle())
                     .clipShape(RoundedRectangle(cornerRadius: FloRadius.lg))
