@@ -397,83 +397,95 @@ struct MeditationCard: View {
     var body: some View {
         ZStack(alignment: .topTrailing) {
             // BASE LAYER — single Button covering the whole card. Label
-            // contains only non-interactive views. .aspectRatio pins the
-            // card to portrait 4:5; .contentShape makes the entire
-            // rectangle hit-testable even where the image is transparent
-            // or fully gradient-covered.
+            // contains only non-interactive views.
+            //
+            // Why a Color.clear base + .overlay instead of a raw ZStack:
+            // .aspectRatio(_:contentMode: .fit) only binds when its
+            // subject would otherwise be larger than the requested ratio.
+            // A ZStack containing a maxHeight: .infinity Image is greedy,
+            // so .aspectRatio sits on top of an unbounded container and
+            // never fires — the card stretches to the page's full height.
+            //
+            // Color.clear has no intrinsic size, so .aspectRatio anchored
+            // to it gives a deterministic 4:5 (337×424 reference) at the
+            // column width. The image, gradient, and content ride on an
+            // .overlay sized to that base. Image uses .scaledToFill with
+            // NO maxHeight: .infinity — it fills the overlay frame and is
+            // clipped by the outer .clipShape.
             Button(action: onPlay) {
-                ZStack {
-                    Image(displayedImageName)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .clipped()
+                Color.clear
+                    .aspectRatio(Self.aspect, contentMode: .fit)
+                    .frame(maxWidth: .infinity)
+                    .overlay(
+                        ZStack {
+                            Image(displayedImageName)
+                                .resizable()
+                                .scaledToFill()
 
-                    LinearGradient(
-                        colors: [
-                            Color.black.opacity(0.35),
-                            Color.black.opacity(0.15),
-                            Color.black.opacity(0.25)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
+                            LinearGradient(
+                                colors: [
+                                    Color.black.opacity(0.35),
+                                    Color.black.opacity(0.15),
+                                    Color.black.opacity(0.25)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
 
-                    VStack {
-                        HStack(alignment: .top) {
-                            VStack(alignment: .leading, spacing: FloSpacing.sm) {
-                                Text(session.title)
-                                    .font(.floLabel)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.white)
-                                    .tracking(1)
-                                    .padding(.bottom, FloSpacing.xs)
+                            VStack {
+                                HStack(alignment: .top) {
+                                    VStack(alignment: .leading, spacing: FloSpacing.sm) {
+                                        Text(session.title)
+                                            .font(.floLabel)
+                                            .fontWeight(.semibold)
+                                            .foregroundColor(.white)
+                                            .tracking(1)
+                                            .padding(.bottom, FloSpacing.xs)
 
-                                Rectangle()
-                                    .fill(Color.white.opacity(0.6))
-                                    .frame(width: 40, height: 1)
-                                    .padding(.bottom, FloSpacing.xxs)
+                                        Rectangle()
+                                            .fill(Color.white.opacity(0.6))
+                                            .frame(width: 40, height: 1)
+                                            .padding(.bottom, FloSpacing.xxs)
 
-                                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                                    Text("\(displayDuration.rawValue)")
-                                        .font(.floSerif(size: 32))
-                                        .foregroundColor(.white)
+                                        HStack(alignment: .firstTextBaseline, spacing: 4) {
+                                            Text("\(displayDuration.rawValue)")
+                                                .font(.floSerif(size: 32))
+                                                .foregroundColor(.white)
 
-                                    Text("mins")
-                                        .font(.floSerif(size: 14))
-                                        .foregroundColor(.white.opacity(0.85))
+                                            Text("mins")
+                                                .font(.floSerif(size: 14))
+                                                .foregroundColor(.white.opacity(0.85))
+                                        }
+                                    }
+
+                                    // Flexible spacer pushes the title block to
+                                    // the leading edge; the heart overlay sits in
+                                    // the sibling layer above, not in this HStack.
+                                    Spacer(minLength: 56)
                                 }
+                                .padding(FloSpacing.lg)
+
+                                Spacer(minLength: 0)
+
+                                // Glassy play glyph — white fill at 15%, 1px white
+                                // stroke. Stops competing with the green "+" FAB
+                                // in the tab bar. Visual-only; the card handles
+                                // the tap.
+                                Image(systemName: "play.fill")
+                                    .font(.system(size: 24))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 64, height: 64)
+                                    .background(.white.opacity(0.15), in: Circle())
+                                    .overlay(Circle().stroke(.white, lineWidth: 1))
+                                    .accessibilityHidden(true)
+
+                                Spacer(minLength: 0)
                             }
-
-                            // Flexible spacer pushes the title block to
-                            // the leading edge; the heart overlay sits in
-                            // the sibling layer above, not in this HStack.
-                            Spacer(minLength: 56)
                         }
-                        .padding(FloSpacing.lg)
-
-                        Spacer(minLength: 0)
-
-                        // Glassy play glyph — white fill at 15%, 1px white
-                        // stroke. Stops competing with the green "+" FAB
-                        // in the tab bar. Visual-only; the card handles
-                        // the tap.
-                        Image(systemName: "play.fill")
-                            .font(.system(size: 24))
-                            .foregroundStyle(.white)
-                            .frame(width: 64, height: 64)
-                            .background(.white.opacity(0.15), in: Circle())
-                            .overlay(Circle().stroke(.white, lineWidth: 1))
-                            .accessibilityHidden(true)
-
-                        Spacer(minLength: 0)
-                    }
-                }
-                .aspectRatio(Self.aspect, contentMode: .fit)
-                .frame(maxWidth: .infinity)
-                .contentShape(Rectangle())
-                .cornerRadius(FloRadius.lg)
-                .shadow(color: FloShadow.large.color, radius: FloShadow.large.radius, x: 0, y: FloShadow.large.y)
+                    )
+                    .contentShape(Rectangle())
+                    .clipShape(RoundedRectangle(cornerRadius: FloRadius.lg))
+                    .shadow(color: FloShadow.large.color, radius: FloShadow.large.radius, x: 0, y: FloShadow.large.y)
             }
             .buttonStyle(.floPressed)
             .accessibilityLabel("Play \(session.title) meditation, \(displayDuration.rawValue) minutes")
