@@ -421,6 +421,8 @@ private struct MeditationColumn: View {
 
     /// Vertical gap between stacked cards in a column (Figma spec, 28pt).
     private static let cardSpacing: CGFloat = 28
+    /// Breathing room between the dark divider and the first card.
+    private static let topGap: CGFloat = 21
 
     var body: some View {
         ScrollView {
@@ -428,12 +430,17 @@ private struct MeditationColumn: View {
             // padding here. The column's outer width already comes from
             // the parent's contentMargins + containerRelativeFrame.
             //
-            // No top padding either: the first card sits flush against
-            // the parent ScrollView's top edge, which IS the dark
-            // divider under the duration tabs. The bottom padding is
-            // sized to clear the floating tab bar (88pt frame + safe
-            // area + a small cushion) so the last card can be scrolled
-            // fully above the nav while still passing under it.
+            // Top padding lives on the LazyVStack itself rather than as
+            // .contentMargins(.top) on the ScrollView because the
+            // horizontal parent ScrollView's content-area math doesn't
+            // propagate vertical content margins down into nested
+            // vertical ScrollViews — the gap silently disappeared
+            // there. Padding on the stack is direct and reliable.
+            //
+            // Bottom padding is sized to clear the floating tab bar
+            // (88pt frame + safe area + a small cushion) so the last
+            // card can be scrolled fully above the nav while still
+            // passing under it.
             LazyVStack(spacing: Self.cardSpacing) {
                 ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
                     MeditationCard(
@@ -445,6 +452,7 @@ private struct MeditationColumn: View {
                     .fadeIn(delay: hasAppeared ? 0 : 0.25 + Double(index) * 0.1)
                 }
             }
+            .padding(.top, Self.topGap)
             .padding(.bottom, 140)
         }
     }
@@ -463,7 +471,9 @@ private struct MeditationColumn: View {
 // underline / numeral overlay sits in `.overlay(alignment: .topLeading)`,
 // and the centered play glyph sits in a separate `.overlay`. Wrapping
 // the whole thing in `.clipShape` rounds the corners; `.shadow` paints
-// FloShadow.xlarge underneath.
+// FloShadow.large underneath — a faint, even drop applied uniformly to
+// every card. Active vs peeking dimming happens at the column level via
+// .scrollTransition, NOT by varying the shadow.
 //
 // Architectural rule: the play Button and the favorite Button are
 // SIBLINGS, not nested. A Button placed inside another Button's label
@@ -549,10 +559,10 @@ struct MeditationCard: View {
                     )
                     .clipShape(RoundedRectangle(cornerRadius: FloRadius.lg))
                     .shadow(
-                        color: FloShadow.xlarge.color,
-                        radius: FloShadow.xlarge.radius,
-                        x: FloShadow.xlarge.x,
-                        y: FloShadow.xlarge.y
+                        color: FloShadow.large.color,
+                        radius: FloShadow.large.radius,
+                        x: FloShadow.large.x,
+                        y: FloShadow.large.y
                     )
                     .contentShape(Rectangle())
             }

@@ -123,9 +123,6 @@ struct FloShadow {
     static let medium = Shadow(color: .black.opacity(0.08), radius: 8, x: 0, y: 4)
     static let large = Shadow(color: .black.opacity(0.12), radius: 16, x: 0, y: 8)
     static let elevated = Shadow(color: .black.opacity(0.16), radius: 24, x: 0, y: 12)
-    /// Dramatic floating card shadow per the Summer-2026-Build Figma —
-    /// used today by the meditation cards in the peeking carousel.
-    static let xlarge = Shadow(color: .black.opacity(0.25), radius: 35, x: 0, y: 25)
 
     struct Shadow {
         let color: Color
