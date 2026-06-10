@@ -73,19 +73,24 @@ struct MeditationMainView: View {
 
     private var userName: String { CycleManager.shared.userName }
 
-    // MARK: - Carousel geometry
+    // MARK: - Carousel geometry (Summer-2026-Build Figma node 3:4144, 414pt frame)
     //
-    // Peeking carousel: each column shrinks so the neighbouring column
-    // shows ~12pt at the trailing edge of the snapped column, separated
-    // by a 16pt gutter. The leading side margin = peek + gutter so that
-    // for the middle column both sides peek symmetrically; for the first
-    // and last columns the outer side is empty margin instead.
-    private let columnPeek: CGFloat = 12
-    private let columnGutter: CGFloat = FloSpacing.md  // 16
+    // Each column shows ~9pt of the neighbouring column at its edge,
+    // separated by a 24pt gutter. Side margin = peek + gutter so the
+    // middle column peeks symmetrically on both sides; first/last
+    // columns show empty margin on the outer side instead.
+    private let columnPeek: CGFloat = 9
+    private let columnGutter: CGFloat = 24
     private var columnSideMargin: CGFloat { columnPeek + columnGutter }
-    // Vertical breathing room so card shadows (FloShadow.large, radius 16)
-    // aren't clipped at the top of the horizontal ScrollView's content area.
-    private let columnVerticalPadding: CGFloat = 12
+    // Vertical breathing room so the active card's FloShadow.xlarge
+    // (radius 35, y 25) isn't clipped at the top/bottom of the
+    // horizontal ScrollView's content area.
+    private let columnVerticalPadding: CGFloat = 28
+    /// Opacity for non-centered columns. Driven by .scrollTransition so
+    /// the dim animates smoothly with the swipe gesture rather than
+    /// snapping at the rest position. 0.2 = Figma; raise to taste if
+    /// the peek feels too faint live.
+    private let peekingColumnOpacity: CGFloat = 0.2
 
     /// Two-way binding for `.scrollPosition(id:)`. Reads/writes the same
     /// `selectedDuration` state the tab strip drives so a tap on a tab
@@ -227,11 +232,13 @@ struct MeditationMainView: View {
 
                 // Three columns (5/15/60) as a peeking horizontal carousel:
                 // each column snaps to a leading-aligned position with the
-                // adjacent column showing ~12pt at the edge and a 16pt
-                // gutter between columns. Sized with containerRelativeFrame
-                // so the math follows the actual scroll-container width on
-                // any device. .scrollPosition + selectedDuration keeps the
-                // tab strip above in lock-step with the active column.
+                // adjacent column showing ~9pt at the edge and a 24pt gutter
+                // between columns. Sized with containerRelativeFrame so the
+                // math follows the actual scroll-container width on any
+                // device. .scrollTransition fades non-centered columns to
+                // `peekingColumnOpacity` smoothly during the swipe;
+                // .scrollPosition + selectedDuration keeps the tab strip
+                // above in lock-step with the active column.
                 ScrollView(.horizontal) {
                     LazyHStack(spacing: columnGutter) {
                         ForEach(MeditationDuration.allCases) { duration in
@@ -254,10 +261,20 @@ struct MeditationMainView: View {
                             // `width` here is already the post-contentMargins
                             // container width, so use it unchanged. The visible
                             // peek emerges naturally from the geometry:
-                            //   contentMargin (28) − gutter (16) = 12pt of the
+                            //   contentMargin (33) − gutter (24) = 9pt of the
                             // adjacent column showing at each edge.
                             .containerRelativeFrame(.horizontal) { width, _ in
                                 width
+                            }
+                            // Per-item scroll phase (-1 leading … 0 centered
+                            // … +1 trailing) drives the dim. `.interactive`
+                            // updates phase.value continuously during the
+                            // swipe so opacity tracks the gesture rather
+                            // than snapping at the rest position.
+                            .scrollTransition(.interactive, axis: .horizontal) { content, phase in
+                                let distance = min(1.0, abs(phase.value))
+                                let opacity = 1.0 - (1.0 - peekingColumnOpacity) * distance
+                                return content.opacity(opacity)
                             }
                         }
                     }
@@ -397,9 +414,15 @@ private struct MeditationColumn: View {
     let onPlay: (MeditationSession, MeditationDuration) -> Void
     let onFavorite: (MeditationSession) -> Void
 
+    /// Vertical gap between stacked cards in a column (Figma spec, 28pt).
+    private static let cardSpacing: CGFloat = 28
+
     var body: some View {
         ScrollView {
-            LazyVStack(spacing: FloSpacing.lg) {
+            // Cards fill the column width edge-to-edge — no horizontal
+            // padding here. The column's outer width already comes from
+            // the parent's contentMargins + containerRelativeFrame.
+            LazyVStack(spacing: Self.cardSpacing) {
                 ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
                     MeditationCard(
                         session: session,
@@ -410,7 +433,6 @@ private struct MeditationColumn: View {
                     .fadeIn(delay: hasAppeared ? 0 : 0.25 + Double(index) * 0.1)
                 }
             }
-            .padding(.horizontal, FloSpacing.lg)
             .padding(.top, FloSpacing.lg)
             .padding(.bottom, 140)
         }
@@ -419,27 +441,37 @@ private struct MeditationColumn: View {
 
 // MARK: - Meditation Card
 //
-// Full-width card with a fixed, tunable height. Width fills the column
-// (.infinity); height is `cardHeight`. Tuning `cardHeight` is the one
-// dial — bumping it tighter exposes more of the next card below.
+// Width-driven card sized from the column it sits inside; height
+// follows from a 347:435 (≈4:5) aspect ratio per the Summer-2026-Build
+// Figma. No fixed heights anywhere — the column geometry alone decides
+// how tall a card is.
 //
-// Architectural rule: the play Button and the favorite Button are SIBLINGS,
-// not nested. A Button placed inside another Button's label breaks the
-// outer button's tap on iOS — taps land on neither button reliably — so
-// the play action never fires. Here, the card-as-Button sits at the base
-// of an outer ZStack and the heart sits as a sibling overlay. The play
-// Button's label contains zero interactive descendants; the visual play
-// glyph is a non-interactive view. One tap anywhere on the card = onPlay;
-// one tap on the heart = onFavorite, never the other way around.
+// Layout pattern: a Color.clear base carries the aspectRatio (the only
+// thing in SwiftUI with truly no intrinsic size, so .aspectRatio binds
+// reliably). The image + scrim ride on `.background`, the title /
+// underline / numeral overlay sits in `.overlay(alignment: .topLeading)`,
+// and the centered play glyph sits in a separate `.overlay`. Wrapping
+// the whole thing in `.clipShape` rounds the corners; `.shadow` paints
+// FloShadow.xlarge underneath.
+//
+// Architectural rule: the play Button and the favorite Button are
+// SIBLINGS, not nested. A Button placed inside another Button's label
+// breaks the outer button's tap on iOS — taps land on neither button
+// reliably — so the play action never fires. Here, the card-as-Button
+// sits at the base of an outer ZStack and the heart sits as a sibling
+// overlay. The play Button's label contains zero interactive
+// descendants. One tap anywhere on the card = onPlay; one tap on the
+// heart = onFavorite, never the other way around.
 struct MeditationCard: View {
     let session: MeditationSession
     let displayDuration: MeditationDuration
     let onPlay: () -> Void
     let onFavorite: () -> Void
 
-    /// Tunable card height. Bumped to 370 to give the title and play
-    /// glyph more breathing room while still letting the next card peek.
-    private static let cardHeight: CGFloat = 370
+    /// Width:height ratio for the card frame — locked to the Figma
+    /// design's 347:435 reference. Card height = card width × 435/347.
+    private static let aspectWidth: CGFloat = 347
+    private static let aspectHeight: CGFloat = 435
 
     private var displayedImageName: String {
         imageVariant(for: displayDuration, in: session)
@@ -449,88 +481,69 @@ struct MeditationCard: View {
         ZStack(alignment: .topTrailing) {
             // BASE LAYER — single Button covering the whole card. Label
             // contains only non-interactive views.
-            //
-            // Why a Color.clear base + .overlay instead of a raw ZStack:
-            // .aspectRatio(_:contentMode: .fit) only binds when its
-            // subject would otherwise be larger than the requested ratio.
-            // A ZStack containing a maxHeight: .infinity Image is greedy,
-            // so .aspectRatio sits on top of an unbounded container and
-            // never fires — the card stretches to the page's full height.
-            //
-            // Color.clear has no intrinsic size, so .aspectRatio anchored
-            // to it gives a deterministic 4:5 (337×424 reference) at the
-            // column width. The image, gradient, and content ride on an
-            // .overlay sized to that base. Image uses .scaledToFill with
-            // NO maxHeight: .infinity — it fills the overlay frame and is
-            // clipped by the outer .clipShape.
-            // Title is the FOREGROUND content of the Button label. The
-            // ZStack-sibling approach silently dropped the title and
-            // scrim out of the rendered layout — the diagnostic confirmed
-            // the title's .frame collapsed to content size instead of
-            // expanding to the card frame. Making the title the
-            // layout-driving content with an explicit
-            // .frame(height: cardHeight) gives the rest of the card a
-            // deterministic shape to size against:
-            //   - .background(image + scrim) draws behind the title
-            //   - .overlay(play glyph) draws in front, centered
-            //   - .clipShape rounds the whole card
             Button(action: onPlay) {
-                VStack(alignment: .leading, spacing: FloSpacing.sm) {
-                    Text(session.title)
-                        .font(.floLabel)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.white)
-                        .tracking(1)
-                        .shadow(color: .black.opacity(0.45), radius: 4, y: 1)
+                Color.clear
+                    .aspectRatio(Self.aspectWidth / Self.aspectHeight, contentMode: .fit)
+                    .frame(maxWidth: .infinity)
+                    .background(
+                        ZStack {
+                            Image(displayedImageName)
+                                .resizable()
+                                .scaledToFill()
+                            LinearGradient(
+                                stops: [
+                                    .init(color: .black.opacity(0.5), location: 0.0),
+                                    .init(color: .clear,              location: 0.4),
+                                    .init(color: .clear,              location: 0.75),
+                                    .init(color: .black.opacity(0.2), location: 1.0)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        }
+                    )
+                    .overlay(alignment: .topLeading) {
+                        VStack(alignment: .leading, spacing: FloSpacing.sm) {
+                            Text(session.title)
+                                .font(.floLabel)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.white)
+                                .tracking(1)
+                                .shadow(color: .black.opacity(0.45), radius: 4, y: 1)
 
-                    Rectangle()
-                        .fill(Color.white.opacity(0.85))
-                        .frame(width: 40, height: 1)
+                            Rectangle()
+                                .fill(Color.white.opacity(0.85))
+                                .frame(width: 40, height: 1)
 
-                    HStack(alignment: .firstTextBaseline, spacing: 4) {
-                        Text("\(displayDuration.rawValue)")
-                            .font(.floSerif(size: 32))
-                            .foregroundColor(.white)
-                        Text("mins")
-                            .font(.floSerif(size: 14))
-                            .foregroundColor(.white.opacity(0.9))
+                            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                                Text("\(displayDuration.rawValue)")
+                                    .font(.floSerif(size: 32))
+                                    .foregroundColor(.white)
+                                Text("mins")
+                                    .font(.floSerif(size: 14))
+                                    .foregroundColor(.white.opacity(0.9))
+                            }
+                            .shadow(color: .black.opacity(0.45), radius: 4, y: 1)
+                        }
+                        .padding(FloSpacing.lg)
                     }
-                    .shadow(color: .black.opacity(0.45), radius: 4, y: 1)
-
-                    Spacer(minLength: 0)
-                }
-                .padding(FloSpacing.lg)
-                .frame(maxWidth: .infinity)
-                .frame(height: Self.cardHeight, alignment: .topLeading)
-                .background(
-                    ZStack {
-                        Image(displayedImageName)
-                            .resizable()
-                            .scaledToFill()
-                        LinearGradient(
-                            stops: [
-                                .init(color: .black.opacity(0.5), location: 0.0),
-                                .init(color: .clear,              location: 0.4),
-                                .init(color: .clear,              location: 0.75),
-                                .init(color: .black.opacity(0.2), location: 1.0)
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    }
-                )
-                .overlay(
-                    Image(systemName: "play.fill")
-                        .font(.system(size: 24))
-                        .foregroundStyle(.white)
-                        .frame(width: 64, height: 64)
-                        .background(.white.opacity(0.15), in: Circle())
-                        .overlay(Circle().stroke(.white, lineWidth: 1))
-                        .accessibilityHidden(true)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: FloRadius.lg))
-                .shadow(color: FloShadow.large.color, radius: FloShadow.large.radius, x: 0, y: FloShadow.large.y)
-                .contentShape(Rectangle())
+                    .overlay(
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 24))
+                            .foregroundStyle(.white)
+                            .frame(width: 64, height: 64)
+                            .background(.white.opacity(0.15), in: Circle())
+                            .overlay(Circle().stroke(.white, lineWidth: 1))
+                            .accessibilityHidden(true)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: FloRadius.lg))
+                    .shadow(
+                        color: FloShadow.xlarge.color,
+                        radius: FloShadow.xlarge.radius,
+                        x: FloShadow.xlarge.x,
+                        y: FloShadow.xlarge.y
+                    )
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.floPressed)
             .accessibilityLabel("Play \(session.title) meditation, \(displayDuration.rawValue) minutes")
