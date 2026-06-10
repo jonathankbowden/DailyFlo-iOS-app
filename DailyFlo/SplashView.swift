@@ -12,16 +12,20 @@ struct SplashGreeting {
     let text: String
     let imageName: String
 
+    // Use the high-res 1500×3250 medbg backgrounds so the splash renders
+    // crisp on 3x devices. The legacy /images/ assets (single 466×926
+    // universal slot) were getting 2.5× upscaled into the full-screen
+    // frame — that's the source of the fuzz.
     static let greetings: [SplashGreeting] = [
-        SplashGreeting(text: "Oh good.\nIt's you.", imageName: "rivertrees"),
-        SplashGreeting(text: "Oh, there\nyou are.", imageName: "starynight"),
-        SplashGreeting(text: "Hey there\nbeautiful.", imageName: "caves"),
-        SplashGreeting(text: "Yep.\nI see you.", imageName: "sunsetrocks"),
-        SplashGreeting(text: "Okay good.\nLet's get started.", imageName: "greencliff"),
-        SplashGreeting(text: "There\nyou are.", imageName: "treetops"),
-        SplashGreeting(text: "Always good\nto see you.", imageName: "nightsky"),
-        SplashGreeting(text: "Let's soak\nit in.", imageName: "wavecrash"),
-        SplashGreeting(text: "You are\na light.", imageName: "treepath"),
+        SplashGreeting(text: "Oh good.\nIt's you.", imageName: "medbg_canopy_a"),
+        SplashGreeting(text: "Oh, there\nyou are.", imageName: "medbg_nightsky_a"),
+        SplashGreeting(text: "Hey there\nbeautiful.", imageName: "medbg_goldenhour_a"),
+        SplashGreeting(text: "Yep.\nI see you.", imageName: "medbg_stillwater_a"),
+        SplashGreeting(text: "Okay good.\nLet's get started.", imageName: "medbg_openhills_a"),
+        SplashGreeting(text: "There\nyou are.", imageName: "medbg_forest_a"),
+        SplashGreeting(text: "Always good\nto see you.", imageName: "medbg_mist_a"),
+        SplashGreeting(text: "Let's soak\nit in.", imageName: "medbg_ocean_a"),
+        SplashGreeting(text: "You are\na light.", imageName: "medbg_solitude_a"),
     ]
 
     static var random: SplashGreeting {

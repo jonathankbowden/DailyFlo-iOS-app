@@ -39,7 +39,9 @@ struct SignInView: View {
                     brandingSection
                         .fadeIn(delay: hasAppeared ? 0 : 0.1)
 
-                    Image("treetops")
+                    // High-res medbg variant — same canopy vibe as the
+                    // splash welcome card, crisp at any scale.
+                    Image("medbg_canopy_a")
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(height: 74)
