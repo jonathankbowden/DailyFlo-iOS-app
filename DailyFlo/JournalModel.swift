@@ -93,11 +93,13 @@ struct JournalEntry: Identifiable, Codable {
     let note: String
     let cyclePhase: Int // Raw value of CyclePhase
 
-    // Optional user-uploaded photo for the entry. Runtime/preview only —
-    // emotion_entries has no photo_url column, and this property is excluded
-    // from `CodingKeys` so it's never round-tripped to the local cache or
-    // the Supabase row mapper. Production entries are always nil; previews
-    // can opt into State-3 by setting this directly.
+    // Optional user-uploaded photo for the entry. Stored as a
+    // `JournalPhotoStore`-relative filename (e.g. "<uuid>.jpg") whose
+    // bytes live at Documents/JournalImages/. Persisted through the
+    // local UserDefaults cache (via CodingKeys) so the feed shows the
+    // image immediately after save and after a relaunch. The Supabase
+    // row mapper still drops it because `emotion_entries` has no
+    // photo_url column — cloud sync of user photos is a future step.
     var userPhotoURL: String? = nil
 
     init(id: UUID = UUID(), date: Date = Date(), emotion: CoreEmotion, intensity: Int, note: String, cyclePhase: CyclePhase, userPhotoURL: String? = nil) {
@@ -110,8 +112,6 @@ struct JournalEntry: Identifiable, Codable {
         self.userPhotoURL = userPhotoURL
     }
 
-    // Persisted fields only — userPhotoURL is intentionally absent so
-    // Codable round-trips ignore it.
     private enum CodingKeys: String, CodingKey {
         case id
         case date
@@ -119,6 +119,7 @@ struct JournalEntry: Identifiable, Codable {
         case intensity
         case note
         case cyclePhase
+        case userPhotoURL
     }
 
     var phase: CyclePhase {

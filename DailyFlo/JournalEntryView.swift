@@ -68,6 +68,12 @@ struct JournalEntryView: View {
             _entryTitle = State(initialValue: parts.title)
             _entryBody = State(initialValue: parts.body)
             _selectedIntensity = State(initialValue: entry.intensity)
+            // Re-hydrate any previously-attached photo so the editor's
+            // photo card opens in its "image present" state and the
+            // user can swap or remove it.
+            if let stored = JournalPhotoStore.image(forStoredPath: entry.userPhotoURL) {
+                _photoImage = State(initialValue: stored)
+            }
         } else {
             _selectedFeeling = State(initialValue: nil)
             _entryDate = State(initialValue: Date())
@@ -402,31 +408,6 @@ struct JournalEntryView: View {
                         .buttonStyle(.floPressed)
                         .padding(FloSpacing.sm)
                     }
-                } else if let assetName = entry?.userPhotoURL {
-                    // Edit mode: existing entry already has a stored photo
-                    // (currently an asset name). Tapping the swap badge
-                    // opens the picker to replace it.
-                    ZStack(alignment: .topTrailing) {
-                        Image(assetName)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(height: 180)
-                            .frame(maxWidth: .infinity)
-                            .clipped()
-
-                        PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                            Circle()
-                                .fill(Color.black.opacity(0.5))
-                                .frame(width: 32, height: 32)
-                                .overlay(
-                                    Image(systemName: "square.and.pencil")
-                                        .font(.system(size: 12, weight: .bold))
-                                        .foregroundColor(.white)
-                                )
-                        }
-                        .padding(FloSpacing.sm)
-                        .accessibilityLabel("Change photo")
-                    }
                 } else {
                     PhotosPicker(selection: $selectedPhoto, matching: .images) {
                         HStack(spacing: FloSpacing.md) {
@@ -631,6 +612,22 @@ struct JournalEntryView: View {
         let phase = CycleManager.shared.phase(for: entryDate)
 
         if let existing = entry {
+            // Photo state for the updated entry:
+            //  - image present: re-save unconditionally so a swap to a
+            //    different image overwrites the JPEG on disk in-place.
+            //  - image cleared: delete the file and null out the URL.
+            //  - no prior photo, no current photo: leave URL nil.
+            let updatedPhotoURL: String?
+            if let photoImage {
+                updatedPhotoURL = JournalPhotoStore.save(photoImage, for: existing.id)
+                    ?? existing.userPhotoURL
+            } else if existing.userPhotoURL != nil {
+                JournalPhotoStore.delete(for: existing.id)
+                updatedPhotoURL = nil
+            } else {
+                updatedPhotoURL = nil
+            }
+
             let updated = JournalEntry(
                 id: existing.id,
                 date: entryDate,
@@ -638,17 +635,20 @@ struct JournalEntryView: View {
                 intensity: selectedIntensity,
                 note: fullNote,
                 cyclePhase: phase,
-                userPhotoURL: existing.userPhotoURL
+                userPhotoURL: updatedPhotoURL
             )
             journalManager.updateEntry(updated)
         } else {
-            let new = JournalEntry(
+            var new = JournalEntry(
                 date: entryDate,
                 emotion: emotion,
                 intensity: selectedIntensity,
                 note: fullNote,
                 cyclePhase: phase
             )
+            if let photoImage {
+                new.userPhotoURL = JournalPhotoStore.save(photoImage, for: new.id)
+            }
             journalManager.addEntry(new)
         }
 

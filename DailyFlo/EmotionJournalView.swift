@@ -506,10 +506,11 @@ struct JournalGridView: View {
     //             muted "Add entry" title, hairline, POSTED + date.
     //   STATE 2 — entry, no user photo: short sliver banner with the entry's
     //             emotion image, edit pencil top-right, bold one-line title.
-    //   STATE 3 — entry with user photo: large image (~339:213) on top,
-    //             edit pencil bottom-right with subtle light circle backing.
-    //             Gated by `entry.userPhotoURL` which is currently always
-    //             nil — layout is ready, but no real entry renders it yet.
+    //   STATE 3 — entry with user photo: tall 4:3 hero image on top,
+    //             edit pencil bottom-right with subtle light circle
+    //             backing. Gated by `entry.userPhotoURL`; the JPEG
+    //             behind it lives in `JournalPhotoStore` and is loaded
+    //             through `userPhoto(for:)`.
     @ViewBuilder
     private func dayCard(for date: Date) -> some View {
         let entries = journalManager.entries(for: date).sorted { $0.date > $1.date }
@@ -557,7 +558,7 @@ struct JournalGridView: View {
     // MARK: STATE 3 — entry with user photo
     private func largePhotoCard(date: Date, entry: JournalEntry) -> some View {
         VStack(spacing: 0) {
-            largeImageBanner(imageName: entry.userPhotoURL ?? entry.emotion.photoName)
+            largeImageBanner(entry: entry)
                 .zIndex(1)
             cardContentArea(
                 title: entryTitle(entry),
@@ -593,16 +594,26 @@ struct JournalGridView: View {
             }
     }
 
-    /// Large image preserving the ~339:213 aspect, edit pencil bottom-right
-    /// with a soft light-circle backing so it stays legible over photo content.
-    private func largeImageBanner(imageName: String) -> some View {
+    /// Tall 4:3 hero for entries with an attached user photo. Renders the
+    /// JPEG from `JournalPhotoStore` (loaded via `userPhoto(for:)`); if the
+    /// file is missing — e.g. an entry shipped a stored URL but the bytes
+    /// are gone — falls back to the emotion photo at the same shape so the
+    /// card layout doesn't shift between states. Top corners are rounded
+    /// by the parent card's `.clipShape` so they match `FloRadius.xl`.
+    private func largeImageBanner(entry: JournalEntry) -> some View {
         Color.clear
-            .aspectRatio(339.0 / 213.0, contentMode: .fit)
-            .overlay(
-                Image(imageName)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            )
+            .aspectRatio(4.0 / 3.0, contentMode: .fit)
+            .overlay {
+                if let image = userPhoto(for: entry) {
+                    Image(uiImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else {
+                    Image(entry.emotion.photoName)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                }
+            }
             .clipped()
             .overlay(alignment: .bottomTrailing) {
                 ZStack {
@@ -614,6 +625,14 @@ struct JournalGridView: View {
                 .padding(.trailing, FloSpacing.md)
                 .offset(y: 18)
             }
+    }
+
+    /// Resolves a journal entry's stored photo to an in-memory UIImage.
+    /// Direct disk read per render is fine for the LazyVStack feed at
+    /// current scale; revisit with a thumbnail cache if scroll feels
+    /// heavy with many photo entries.
+    private func userPhoto(for entry: JournalEntry) -> UIImage? {
+        JournalPhotoStore.image(forStoredPath: entry.userPhotoURL)
     }
 
     private func badgeIcon(systemName: String) -> some View {
