@@ -31,51 +31,41 @@ struct SignInView: View {
     }
 
     var body: some View {
-        ZStack {
-            Color.floCream.ignoresSafeArea()
+        // NavigationStack so the bottom "Create account" link can push
+        // SignUpView. The bar itself is always hidden — we draw our own
+        // chrome — but the stack gives us the .dismiss() back-edge that
+        // SignUpView relies on for the mirror "Log in" link.
+        NavigationStack {
+            ZStack {
+                Color.floCream.ignoresSafeArea()
 
-            ScrollView {
-                VStack(spacing: 0) {
-                    brandingSection
-                        .fadeIn(delay: hasAppeared ? 0 : 0.1)
+                ScrollView {
+                    VStack(spacing: FloSpacing.xl) {
+                        brandingSection
+                            .fadeIn(delay: hasAppeared ? 0 : 0.1)
 
-                    // High-res medbg variant — same canopy vibe as the
-                    // splash welcome card, crisp at any scale.
-                    Image("medbg_canopy_a")
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(height: 74)
-                        .clipped()
-                        .padding(.horizontal, FloSpacing.lg)
-                        .fadeIn(delay: hasAppeared ? 0 : 0.2)
-
-                    VStack(spacing: FloSpacing.lg) {
-                        socialSignInButtons
-                            .fadeIn(delay: hasAppeared ? 0 : 0.3)
-
-                        orDivider
-                            .fadeIn(delay: hasAppeared ? 0 : 0.35)
-
-                        emailPasswordForm
-                            .fadeIn(delay: hasAppeared ? 0 : 0.4)
+                        signInCard
+                            .fadeIn(delay: hasAppeared ? 0 : 0.2)
                     }
                     .padding(.horizontal, FloSpacing.lg)
-                    .padding(.top, FloSpacing.xl)
+                    .padding(.top, FloSpacing.lg)
                     .padding(.bottom, FloSpacing.xxl)
                 }
-            }
-            .dismissKeyboardOnTap()
+                .scrollDismissesKeyboard(.interactively)
+                .dismissKeyboardOnTap()
 
-            if showError {
-                VStack {
-                    Spacer()
-                    Text(errorMessage)
-                        .floToast(.error)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                        .padding(.bottom, FloSpacing.xxl)
+                if showError {
+                    VStack {
+                        Spacer()
+                        Text(errorMessage)
+                            .floToast(.error)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                            .padding(.bottom, FloSpacing.xxl)
+                    }
+                    .animation(FloAnimation.springGentle, value: showError)
                 }
-                .animation(FloAnimation.springGentle, value: showError)
             }
+            .toolbar(.hidden, for: .navigationBar)
         }
         .onAppear {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -84,7 +74,77 @@ struct SignInView: View {
         }
     }
 
+    // MARK: - Floating card
+    //
+    // White card on cream with a nature image strip header, the social
+    // providers, email/password form, and the "Create account" hand-off
+    // at the bottom. The card sets its own corner radius and the inner
+    // Image is clipped by it — that's how the top corners of the header
+    // strip match the card's curve without extra masking.
+    private var signInCard: some View {
+        VStack(spacing: 0) {
+            cardHeaderImage
+
+            VStack(alignment: .leading, spacing: FloSpacing.lg) {
+                Text("Log In:")
+                    .font(.floSerif(size: 36))
+                    .foregroundColor(.floCharcoal)
+                    .accessibilityAddTraits(.isHeader)
+
+                socialSignInButtons
+                orDivider
+                emailPasswordForm
+
+                Divider()
+                    .padding(.top, FloSpacing.sm)
+
+                createAccountLink
+            }
+            .padding(FloSpacing.lg)
+        }
+        .background(Color.white)
+        .cornerRadius(FloRadius.xl)
+        .shadow(
+            color: FloShadow.medium.color,
+            radius: FloShadow.medium.radius,
+            x: FloShadow.medium.x,
+            y: FloShadow.medium.y
+        )
+    }
+
+    private var cardHeaderImage: some View {
+        Image("medbg_canopy_a")
+            .resizable()
+            .aspectRatio(contentMode: .fill)
+            .frame(height: 120)
+            .frame(maxWidth: .infinity)
+            .clipped()
+            .accessibilityHidden(true)
+    }
+
+    private var createAccountLink: some View {
+        HStack {
+            Spacer()
+            NavigationLink {
+                SignUpView(isSignedIn: $isSignedIn)
+            } label: {
+                Text("Create account")
+                    .font(.floBodyMedium.weight(.medium))
+                    .foregroundColor(.floCharcoal)
+                    .underline()
+            }
+            .simultaneousGesture(TapGesture().onEnded { FloHaptics.light() })
+            .accessibilityLabel("Create account")
+            .accessibilityHint("Opens the sign-up screen")
+            Spacer()
+        }
+        .padding(.top, FloSpacing.xs)
+    }
+
     // MARK: - Branding
+    //
+    // Title block above the card. No internal horizontal padding because
+    // the parent ScrollView VStack already insets to match the card.
     private var brandingSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
@@ -94,29 +154,25 @@ struct SignInView: View {
                     .foregroundColor(.floCharcoal)
                     .tracking(3)
             }
-            .padding(.horizontal, FloSpacing.lg)
-            .padding(.top, FloSpacing.xl)
+            .padding(.top, FloSpacing.md)
 
             Text("Welcome to:")
                 .font(.floSerif(size: 36))
                 .foregroundColor(.floCharcoal)
-                .padding(.horizontal, FloSpacing.lg)
                 .padding(.top, FloSpacing.md)
                 .accessibilityAddTraits(.isHeader)
 
             Text("Daily")
                 .font(.floSerif(size: 72))
                 .foregroundColor(.floCharcoal)
-                .padding(.horizontal, FloSpacing.lg)
                 .padding(.top, -8)
 
             Text("FLO")
                 .font(.system(size: 20, weight: .black))
                 .foregroundColor(.floCharcoal)
                 .tracking(3)
-                .padding(.horizontal, FloSpacing.lg)
-                .padding(.bottom, FloSpacing.md)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Welcome to Daily Flo")
     }
@@ -282,7 +338,7 @@ struct SignInView: View {
                     if isLoading {
                         FloLoadingIndicator(size: 20, color: .white, lineWidth: 2)
                     } else {
-                        Text("CONTINUE")
+                        Text("LOG IN")
                             .tracking(2)
                     }
                 }
@@ -296,8 +352,8 @@ struct SignInView: View {
             .buttonStyle(.floPressed)
             .disabled(isLoading || !isFormValid)
             .animation(FloAnimation.easeOutQuick, value: isFormValid)
-            .accessibilityLabel("Continue")
-            .accessibilityHint(isFormValid ? "Double tap to continue with email" : "Enter email and password to continue")
+            .accessibilityLabel("Log in")
+            .accessibilityHint(isFormValid ? "Sign in with the email and password above" : "Enter email and password to log in")
         }
     }
 

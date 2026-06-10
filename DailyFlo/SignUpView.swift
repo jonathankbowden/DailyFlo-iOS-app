@@ -2,7 +2,10 @@
 //  SignUpView.swift
 //  DailyFlo
 //
-//  Patreon-style: social providers first, then email.
+//  Mirror of SignInView: the same floating-card layout with a nature
+//  image strip, "Create Account:" header, social providers, email +
+//  Continue, and a "Already have an account? Log in" link that pops
+//  back to SignInView through the NavigationStack.
 //
 
 import SwiftUI
@@ -16,6 +19,7 @@ struct SignUpView: View {
     @State private var errorMessage = ""
     @State private var hasAppeared = false
     @FocusState private var emailFocused: Bool
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         ZStack {
@@ -23,38 +27,20 @@ struct SignUpView: View {
 
             ScrollView {
                 VStack(spacing: FloSpacing.xl) {
-                    Spacer(minLength: FloSpacing.xxxl)
-
-                    logo
+                    brandingSection
                         .fadeIn(delay: hasAppeared ? 0 : 0.1)
 
-                    header
+                    signUpCard
                         .fadeIn(delay: hasAppeared ? 0 : 0.2)
 
-                    VStack(spacing: FloSpacing.md) {
-                        socialButtons
-                            .fadeIn(delay: hasAppeared ? 0 : 0.3)
-
-                        orDivider
-                            .fadeIn(delay: hasAppeared ? 0 : 0.35)
-
-                        emailSection
-                            .fadeIn(delay: hasAppeared ? 0 : 0.4)
-                    }
-                    .padding(.horizontal, FloSpacing.lg)
-
-                    helpLink
-                        .fadeIn(delay: hasAppeared ? 0 : 0.5)
-
-                    Spacer(minLength: FloSpacing.lg)
-
                     termsText
-                        .fadeIn(delay: hasAppeared ? 0 : 0.55)
-                        .padding(.horizontal, FloSpacing.xl)
-                        .padding(.bottom, FloSpacing.xl)
+                        .fadeIn(delay: hasAppeared ? 0 : 0.3)
                 }
-                .frame(maxWidth: .infinity)
+                .padding(.horizontal, FloSpacing.lg)
+                .padding(.top, FloSpacing.lg)
+                .padding(.bottom, FloSpacing.xxl)
             }
+            .scrollDismissesKeyboard(.interactively)
             .dismissKeyboardOnTap()
 
             if showError {
@@ -68,6 +54,7 @@ struct SignUpView: View {
                 .animation(FloAnimation.springGentle, value: showError)
             }
         }
+        .toolbar(.hidden, for: .navigationBar)
         .onAppear {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                 hasAppeared = true
@@ -75,39 +62,106 @@ struct SignUpView: View {
         }
     }
 
-    // MARK: - Logo / wordmark
-    private var logo: some View {
-        VStack(spacing: FloSpacing.xs) {
+    // MARK: - Branding (matches SignInView)
+    //
+    // Same wordmark stack above the card so the pair feels coherent —
+    // "Welcome to: Daily FLO" reads the same on both screens.
+    private var brandingSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Spacer()
+                Text("FLO")
+                    .font(.system(size: 16, weight: .black))
+                    .foregroundColor(.floCharcoal)
+                    .tracking(3)
+            }
+            .padding(.top, FloSpacing.md)
+
+            Text("Welcome to:")
+                .font(.floSerif(size: 36))
+                .foregroundColor(.floCharcoal)
+                .padding(.top, FloSpacing.md)
+                .accessibilityAddTraits(.isHeader)
+
             Text("Daily")
-                .font(.floSerif(size: 44))
+                .font(.floSerif(size: 72))
                 .foregroundColor(.floCharcoal)
+                .padding(.top, -8)
+
             Text("FLO")
-                .font(.system(size: 14, weight: .black))
-                .tracking(4)
+                .font(.system(size: 20, weight: .black))
                 .foregroundColor(.floCharcoal)
+                .tracking(3)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Daily Flo")
-        .accessibilityAddTraits(.isHeader)
+        .accessibilityLabel("Welcome to Daily Flo")
     }
 
-    private var header: some View {
-        Text("Log in or sign up")
-            .font(.floSerif(size: 22))
-            .foregroundColor(.floCharcoal)
-            .accessibilityAddTraits(.isHeader)
+    // MARK: - Sign up card
+    private var signUpCard: some View {
+        VStack(spacing: 0) {
+            Image("medbg_openhills_a")
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(height: 120)
+                .frame(maxWidth: .infinity)
+                .clipped()
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: FloSpacing.lg) {
+                Text("Create Account:")
+                    .font(.floSerif(size: 36))
+                    .foregroundColor(.floCharcoal)
+                    .accessibilityAddTraits(.isHeader)
+
+                socialButtons
+                orDivider
+                emailSection
+
+                Divider()
+                    .padding(.top, FloSpacing.sm)
+
+                backToLogInLink
+            }
+            .padding(FloSpacing.lg)
+        }
+        .background(Color.white)
+        .cornerRadius(FloRadius.xl)
+        .shadow(
+            color: FloShadow.medium.color,
+            radius: FloShadow.medium.radius,
+            x: FloShadow.medium.x,
+            y: FloShadow.medium.y
+        )
     }
 
-    // MARK: - Social (Patreon pattern: stacked, equal weight)
+    private var backToLogInLink: some View {
+        HStack(spacing: FloSpacing.xs) {
+            Spacer()
+            Text("Already have an account?")
+                .font(.floBodyMedium)
+                .foregroundColor(.floGray)
+
+            Button {
+                FloHaptics.light()
+                dismiss()
+            } label: {
+                Text("Log in")
+                    .font(.floBodyMedium.weight(.medium))
+                    .foregroundColor(.floCharcoal)
+                    .underline()
+            }
+            .accessibilityLabel("Log in")
+            .accessibilityHint("Returns to the sign-in screen")
+            Spacer()
+        }
+        .padding(.top, FloSpacing.xs)
+    }
+
+    // MARK: - Social (Apple + Google — match SignInView's pair)
     private var socialButtons: some View {
         VStack(spacing: FloSpacing.sm) {
-            socialButton(
-                icon: "g.circle.fill",
-                label: "Continue with Google",
-                action: { continueWithProvider("Google") }
-            )
-            .accessibilityLabel("Continue with Google")
-
             SignInWithAppleButton(.continue) { request in
                 request.requestedScopes = [.fullName, .email]
             } onCompletion: { result in
@@ -121,17 +175,17 @@ struct SignUpView: View {
                     showErrorTemporarily()
                 }
             }
-            .signInWithAppleButtonStyle(.whiteOutline)
+            .signInWithAppleButtonStyle(.black)
             .frame(height: 52)
             .cornerRadius(FloRadius.md)
             .accessibilityLabel("Continue with Apple")
 
             socialButton(
-                icon: "f.circle.fill",
-                label: "Continue with Facebook",
-                action: { continueWithProvider("Facebook") }
+                icon: "g.circle.fill",
+                label: "Continue with Google",
+                action: { continueWithProvider("Google") }
             )
-            .accessibilityLabel("Continue with Facebook")
+            .accessibilityLabel("Continue with Google")
         }
     }
 
@@ -214,8 +268,9 @@ struct SignUpView: View {
                     if isLoading {
                         FloLoadingIndicator(size: 20, color: .white, lineWidth: 2)
                     } else {
-                        Text("Continue")
+                        Text("CREATE ACCOUNT")
                             .font(.floButton)
+                            .tracking(2)
                     }
                 }
                 .foregroundColor(.white)
@@ -227,18 +282,9 @@ struct SignUpView: View {
             .buttonStyle(.floPressed)
             .disabled(!isEmailValid || isLoading)
             .animation(FloAnimation.easeOutQuick, value: isEmailValid)
-            .accessibilityLabel("Continue")
-            .accessibilityHint(isEmailValid ? "Continue with email" : "Enter your email to continue")
+            .accessibilityLabel("Create account")
+            .accessibilityHint(isEmailValid ? "Create your DailyFLO account with this email" : "Enter your email to create an account")
         }
-    }
-
-    private var helpLink: some View {
-        Button(action: {}) {
-            Text("Need help signing in?")
-                .font(.floBodySmall)
-                .foregroundColor(.floSage)
-        }
-        .accessibilityLabel("Need help signing in")
     }
 
     private var termsText: some View {
