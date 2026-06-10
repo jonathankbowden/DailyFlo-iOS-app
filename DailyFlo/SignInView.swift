@@ -2,7 +2,20 @@
 //  SignInView.swift
 //  DailyFlo
 //
-//  Patreon-style: social providers first, email + password below.
+//  Unified auth: one screen for new and returning users. Three paths,
+//  same outcome (a Supabase session):
+//
+//    - Sign in with Apple   (real OIDC via Supabase signInWithIdToken)
+//    - Continue with Google (real OIDC via Supabase signInWithIdToken)
+//    - Email + 6-digit code (auth.signInWithOTP → push CodeEntryView
+//                            → auth.verifyOTP)
+//
+//  Password sign-in survives behind a low-prominence "Use a password
+//  instead" link for App Review's demo account, but is hidden from the
+//  primary flow. There is no separate sign-up screen — `shouldCreateUser`
+//  is left at the SDK default (true) so a fresh address gets a user row
+//  and the auth.users trigger seeds a profiles row (default role=tracker)
+//  on the server. CycleManager picks it up on the next auth state change.
 //
 
 import AuthenticationServices
@@ -12,30 +25,29 @@ import GoogleSignIn
 import Supabase
 import SwiftUI
 
+// Routes pushed onto the auth NavigationStack.
+private enum AuthRoute: Hashable {
+    case codeEntry(email: String)
+}
+
 struct SignInView: View {
     @Binding var isSignedIn: Bool
 
+    // Main form state
     @State private var email = ""
-    @State private var password = ""
-    @State private var isShowingPassword = false
-    @State private var isLoading = false
+    @State private var isLoading = false           // any auth action in flight
+    @State private var isSendingOtp = false        // CONTINUE button spinner
     @State private var showError = false
     @State private var errorMessage = ""
     @State private var hasAppeared = false
     @State private var currentNonce: String?
+    @State private var path: [AuthRoute] = []
+    @State private var showPasswordSheet = false
 
-    @FocusState private var focusedField: Field?
-
-    enum Field {
-        case email, password
-    }
+    @FocusState private var emailFocused: Bool
 
     var body: some View {
-        // NavigationStack so the bottom "Create account" link can push
-        // SignUpView. The bar itself is always hidden — we draw our own
-        // chrome — but the stack gives us the .dismiss() back-edge that
-        // SignUpView relies on for the mirror "Log in" link.
-        NavigationStack {
+        NavigationStack(path: $path) {
             ZStack {
                 Color.floCream.ignoresSafeArea()
 
@@ -46,6 +58,9 @@ struct SignInView: View {
 
                         signInCard
                             .fadeIn(delay: hasAppeared ? 0 : 0.2)
+
+                        usePasswordLink
+                            .fadeIn(delay: hasAppeared ? 0 : 0.3)
                     }
                     .padding(.horizontal, FloSpacing.lg)
                     .padding(.top, FloSpacing.lg)
@@ -66,6 +81,21 @@ struct SignInView: View {
                 }
             }
             .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(for: AuthRoute.self) { route in
+                switch route {
+                case .codeEntry(let email):
+                    CodeEntryView(
+                        email: email,
+                        isSignedIn: $isSignedIn,
+                        onUseDifferentEmail: {
+                            if !path.isEmpty { path.removeLast() }
+                        }
+                    )
+                }
+            }
+        }
+        .sheet(isPresented: $showPasswordSheet) {
+            PasswordSignInSheet(isSignedIn: $isSignedIn)
         }
         .onAppear {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -75,28 +105,14 @@ struct SignInView: View {
     }
 
     // MARK: - Floating card
-    //
-    // White card on cream with a nature image strip header, the social
-    // providers, email/password form, and the "Create account" hand-off
-    // at the bottom. The card sets its own corner radius and the inner
-    // Image is clipped by it — that's how the top corners of the header
-    // strip match the card's curve without extra masking.
     private var signInCard: some View {
         VStack(spacing: 0) {
             cardHeaderImage
 
-            // Card content opens straight on the social buttons now
-            // that the "Log In:" title is gone. Extra top padding inside
-            // the card keeps the image-to-button gap from feeling tight.
             VStack(alignment: .leading, spacing: FloSpacing.lg) {
                 socialSignInButtons
                 orDivider
-                emailPasswordForm
-
-                Divider()
-                    .padding(.top, FloSpacing.sm)
-
-                createAccountLink
+                emailContinueForm
             }
             .padding(.horizontal, FloSpacing.lg)
             .padding(.top, FloSpacing.xl)
@@ -122,25 +138,6 @@ struct SignInView: View {
             .accessibilityHidden(true)
     }
 
-    private var createAccountLink: some View {
-        HStack {
-            Spacer()
-            NavigationLink {
-                SignUpView(isSignedIn: $isSignedIn)
-            } label: {
-                Text("Create account")
-                    .font(.floBodyMedium.weight(.medium))
-                    .foregroundColor(.floCharcoal)
-                    .underline()
-            }
-            .simultaneousGesture(TapGesture().onEnded { FloHaptics.light() })
-            .accessibilityLabel("Create account")
-            .accessibilityHint("Opens the sign-up screen")
-            Spacer()
-        }
-        .padding(.top, FloSpacing.xs)
-    }
-
     // MARK: - Branding
     //
     // Just the "Daily" + "FLO" wordmark lockup. The greeting line and
@@ -164,7 +161,7 @@ struct SignInView: View {
         .accessibilityLabel("Daily Flo")
     }
 
-    // MARK: - Social (Patreon pattern: Apple, Google — stacked)
+    // MARK: - Social
     private var socialSignInButtons: some View {
         VStack(spacing: FloSpacing.sm) {
             SignInWithAppleButton(.signIn) { request in
@@ -237,118 +234,128 @@ struct SignInView: View {
         .accessibilityHidden(true)
     }
 
-    // MARK: - Email + Password (handles both sign up and sign in)
-    private var emailPasswordForm: some View {
-        VStack(alignment: .leading, spacing: FloSpacing.lg) {
-            VStack(alignment: .leading, spacing: FloSpacing.xs) {
-                Text("Email address")
-                    .font(.floBodyMedium)
-                    .foregroundColor(.floCharcoal)
-
-                TextField("example@gmail.com", text: $email)
-                    .font(.floBodyMedium)
-                    .foregroundColor(.floCharcoal)
-                    .padding()
-                    .background(Color.white)
-                    .cornerRadius(FloRadius.md)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: FloRadius.md)
-                            .stroke(
-                                focusedField == .email ? Color.floSage : Color.floGray.opacity(0.3),
-                                lineWidth: focusedField == .email ? 2 : 1
-                            )
-                    )
-                    .keyboardType(.emailAddress)
-                    .textContentType(.emailAddress)
-                    .autocapitalization(.none)
-                    .focused($focusedField, equals: .email)
-                    .submitLabel(.next)
-                    .onSubmit { focusedField = .password }
-                    .accessibilityLabel("Email address")
-            }
-            .animation(FloAnimation.easeOutQuick, value: focusedField)
-
-            VStack(alignment: .leading, spacing: FloSpacing.xs) {
-                Text("Password")
-                    .font(.floBodyMedium)
-                    .foregroundColor(.floCharcoal)
-
-                HStack {
-                    Group {
-                        if isShowingPassword {
-                            TextField("password", text: $password)
-                        } else {
-                            SecureField("password", text: $password)
-                        }
-                    }
-                    .font(.floBodyMedium)
-                    .focused($focusedField, equals: .password)
-                    .submitLabel(.done)
-                    .onSubmit {
-                        if isFormValid { submitEmailPassword() }
-                    }
-
-                    Button(action: {
-                        FloHaptics.light()
-                        isShowingPassword.toggle()
-                    }) {
-                        Image(systemName: isShowingPassword ? "eye.slash" : "eye")
-                            .foregroundColor(.floGray)
-                            .frame(width: 24, height: 24)
-                    }
-                    .accessibilityLabel(isShowingPassword ? "Hide password" : "Show password")
-                }
-                .padding()
+    // MARK: - Email + CONTINUE (passwordless OTP)
+    private var emailContinueForm: some View {
+        VStack(spacing: FloSpacing.md) {
+            TextField("Email", text: $email)
+                .font(.floBodyMedium)
+                .foregroundColor(.floCharcoal)
+                .padding(.horizontal, FloSpacing.md)
+                .frame(height: 52)
                 .background(Color.white)
                 .cornerRadius(FloRadius.md)
                 .overlay(
                     RoundedRectangle(cornerRadius: FloRadius.md)
                         .stroke(
-                            focusedField == .password ? Color.floSage : Color.floGray.opacity(0.3),
-                            lineWidth: focusedField == .password ? 2 : 1
+                            emailFocused ? Color.floSage : Color.floGray.opacity(0.3),
+                            lineWidth: emailFocused ? 2 : 1
                         )
                 )
-                .textContentType(.password)
-            }
-            .animation(FloAnimation.easeOutQuick, value: focusedField)
+                .keyboardType(.emailAddress)
+                .textContentType(.emailAddress)
+                .autocapitalization(.none)
+                .focused($emailFocused)
+                .submitLabel(.go)
+                .onSubmit {
+                    if isEmailValid { sendOtp() }
+                }
+                .animation(FloAnimation.easeOutQuick, value: emailFocused)
+                .accessibilityLabel("Email")
 
-            Button(action: {}) {
-                Text("Forgot your password?")
-                    .font(.floBodySmall)
-                    .foregroundColor(.floSage)
-                    .underline()
-            }
-            .accessibilityLabel("Forgot your password")
-
-            Button(action: submitEmailPassword) {
+            Button(action: sendOtp) {
                 HStack(spacing: FloSpacing.sm) {
-                    if isLoading {
+                    if isSendingOtp {
                         FloLoadingIndicator(size: 20, color: .white, lineWidth: 2)
                     } else {
-                        Text("LOG IN")
+                        Text("CONTINUE")
                             .tracking(2)
                     }
                 }
                 .font(.floButton)
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, FloSpacing.md)
-                .background(isFormValid ? Color.floCharcoal : Color.floGray.opacity(0.4))
+                .frame(height: 52)
+                .background(isEmailValid ? Color.floCharcoal : Color.floGray.opacity(0.4))
                 .cornerRadius(FloRadius.md)
             }
             .buttonStyle(.floPressed)
-            .disabled(isLoading || !isFormValid)
-            .animation(FloAnimation.easeOutQuick, value: isFormValid)
-            .accessibilityLabel("Log in")
-            .accessibilityHint(isFormValid ? "Sign in with the email and password above" : "Enter email and password to log in")
+            .disabled(!isEmailValid || isLoading)
+            .animation(FloAnimation.easeOutQuick, value: isEmailValid)
+            .accessibilityLabel("Continue")
+            .accessibilityHint(isEmailValid ? "Send a 6-digit code to this email" : "Enter your email to continue")
         }
     }
 
+    // MARK: - "Use a password instead" (low-prominence, App Review demo)
+    private var usePasswordLink: some View {
+        HStack {
+            Spacer()
+            Button {
+                FloHaptics.light()
+                emailFocused = false
+                showPasswordSheet = true
+            } label: {
+                Text("Use a password instead")
+                    .font(.floBodySmall)
+                    .foregroundColor(.floGray)
+                    .underline()
+            }
+            .accessibilityLabel("Use a password instead")
+            .accessibilityHint("Opens the email and password sign-in form")
+            Spacer()
+        }
+        .padding(.top, FloSpacing.xs)
+    }
+
     // MARK: - Validation
-    private var isFormValid: Bool {
-        !email.trimmingCharacters(in: .whitespaces).isEmpty &&
-        !password.isEmpty &&
-        email.contains("@")
+    private var isEmailValid: Bool {
+        let trimmed = email.trimmingCharacters(in: .whitespaces)
+        return !trimmed.isEmpty && trimmed.contains("@") && trimmed.contains(".")
+    }
+
+    // MARK: - OTP send
+    //
+    // signInWithOTP with shouldCreateUser: true (the SDK default) covers
+    // both sign-in and sign-up — Supabase creates the auth.users row on
+    // first request and the table's trigger seeds the matching profiles
+    // row. The user then gets the 6-digit code (when the email template
+    // includes `{{ .Token }}`) and is dropped on CodeEntryView.
+    private func sendOtp() {
+        guard isEmailValid, !isLoading else { return }
+        FloHaptics.light()
+        emailFocused = false
+        isLoading = true
+        isSendingOtp = true
+
+        let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        #if DEBUG
+        print("[SignInView] auth.signInWithOTP starting — email=\(trimmedEmail)")
+        #endif
+
+        Task { @MainActor in
+            defer {
+                isLoading = false
+                isSendingOtp = false
+            }
+            do {
+                try await SupabaseClient.shared.auth.signInWithOTP(
+                    email: trimmedEmail,
+                    shouldCreateUser: true
+                )
+                #if DEBUG
+                print("[SignInView] signInWithOTP OK — pushing CodeEntryView")
+                #endif
+                FloHaptics.success()
+                path.append(.codeEntry(email: trimmedEmail))
+            } catch {
+                #if DEBUG
+                print("[SignInView] signInWithOTP FAILED — \(type(of: error)): \(error)")
+                #endif
+                FloHaptics.error()
+                presentError(friendlyOtpSendError(for: error))
+            }
+        }
     }
 
     // MARK: - Apple Sign In
@@ -366,7 +373,7 @@ struct SignInView: View {
                 return
             }
 
-            focusedField = nil
+            emailFocused = false
             isLoading = true
 
             Task { @MainActor in
@@ -404,7 +411,7 @@ struct SignInView: View {
             return
         }
 
-        focusedField = nil
+        emailFocused = false
         isLoading = true
 
         // GoogleSignIn-iOS 7.1.0 doesn't expose a nonce parameter on signIn,
@@ -463,51 +470,13 @@ struct SignInView: View {
         return vc
     }
 
-    // MARK: - Email + Password submission
-    private func submitEmailPassword() {
-        guard isFormValid else { return }
-
-        FloHaptics.light()
-        focusedField = nil
-        isLoading = true
-
-        let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
-        let pw = password
-
-        Task { @MainActor in
-            defer { isLoading = false }
-            do {
-                try await signUpOrSignIn(email: trimmedEmail, password: pw)
-                FloHaptics.success()
-                withAnimation(FloAnimation.easeOutMedium) {
-                    isSignedIn = true
-                }
-            } catch {
-                FloHaptics.error()
-                presentError(friendlyMessage(for: error))
-            }
-        }
-    }
-
-    private func signUpOrSignIn(email: String, password: String) async throws {
-        let auth = SupabaseClient.shared.auth
-        do {
-            _ = try await auth.signUp(email: email, password: password)
-        } catch let AuthError.api(_, errorCode, _, _) where errorCode == .userAlreadyExists {
-            _ = try await auth.signIn(email: email, password: password)
-        }
-    }
-
-    private func friendlyMessage(for error: Error) -> String {
+    // MARK: - Friendly error mapping
+    private func friendlyOtpSendError(for error: Error) -> String {
         if let authError = error as? AuthError {
-            switch authError.errorCode {
-            case .invalidCredentials:
-                return "That email and password didn't match. Try again."
-            case .weakPassword:
-                return "Please choose a stronger password."
-            default:
-                return authError.message
-            }
+            // Most common cases: 429 rate limit, captcha required, server
+            // down. Use the raw server message rather than guessing — it
+            // describes the underlying issue accurately.
+            return authError.message
         }
         return error.localizedDescription
     }
@@ -515,7 +484,7 @@ struct SignInView: View {
     // MARK: - Error toast
     private func presentError(_ message: String) {
         errorMessage = message
-        showError = true
+        withAnimation { showError = true }
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
             withAnimation { showError = false }
         }
@@ -544,6 +513,214 @@ struct SignInView: View {
     private static func sha256(_ input: String) -> String {
         let hashed = SHA256.hash(data: Data(input.utf8))
         return hashed.compactMap { String(format: "%02x", $0) }.joined()
+    }
+}
+
+// MARK: - Password sign-in sheet
+//
+// Sign-in only — no sign-up via password. Lives behind the "Use a
+// password instead" link as a back door for App Review's demo
+// credentials, never the primary flow.
+private struct PasswordSignInSheet: View {
+    @Binding var isSignedIn: Bool
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var email = ""
+    @State private var password = ""
+    @State private var isShowingPassword = false
+    @State private var isLoading = false
+    @State private var showError = false
+    @State private var errorMessage = ""
+    @FocusState private var focusedField: Field?
+
+    enum Field { case email, password }
+
+    private var isFormValid: Bool {
+        !email.trimmingCharacters(in: .whitespaces).isEmpty &&
+        !password.isEmpty &&
+        email.contains("@")
+    }
+
+    var body: some View {
+        ZStack {
+            Color.floCream.ignoresSafeArea()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: FloSpacing.lg) {
+                    HStack {
+                        Capsule()
+                            .fill(Color.floGray.opacity(0.3))
+                            .frame(width: 36, height: 5)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .padding(.top, FloSpacing.sm)
+
+                    Text("Log in with password")
+                        .font(.custom("LUNARY free", size: 32))
+                        .foregroundColor(.floCharcoal)
+                        .padding(.top, FloSpacing.md)
+                        .accessibilityAddTraits(.isHeader)
+
+                    Text("For App Review and existing accounts with a password set up.")
+                        .font(.floBodySmall)
+                        .foregroundColor(.floGray)
+
+                    formFields
+                        .padding(.top, FloSpacing.md)
+
+                    Button(action: submit) {
+                        HStack(spacing: FloSpacing.sm) {
+                            if isLoading {
+                                FloLoadingIndicator(size: 20, color: .white, lineWidth: 2)
+                            } else {
+                                Text("LOG IN")
+                                    .tracking(2)
+                            }
+                        }
+                        .font(.floButton)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, FloSpacing.md)
+                        .background(isFormValid ? Color.floCharcoal : Color.floGray.opacity(0.4))
+                        .cornerRadius(FloRadius.md)
+                    }
+                    .buttonStyle(.floPressed)
+                    .disabled(isLoading || !isFormValid)
+                    .accessibilityLabel("Log in")
+                }
+                .padding(.horizontal, FloSpacing.lg)
+                .padding(.bottom, FloSpacing.xxl)
+            }
+            .scrollDismissesKeyboard(.interactively)
+
+            if showError {
+                VStack {
+                    Spacer()
+                    Text(errorMessage)
+                        .floToast(.error)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .padding(.bottom, FloSpacing.xxl)
+                }
+                .animation(FloAnimation.springGentle, value: showError)
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.hidden)
+    }
+
+    private var formFields: some View {
+        VStack(alignment: .leading, spacing: FloSpacing.md) {
+            TextField("Email", text: $email)
+                .font(.floBodyMedium)
+                .padding(.horizontal, FloSpacing.md)
+                .frame(height: 52)
+                .background(Color.white)
+                .cornerRadius(FloRadius.md)
+                .overlay(
+                    RoundedRectangle(cornerRadius: FloRadius.md)
+                        .stroke(
+                            focusedField == .email ? Color.floSage : Color.floGray.opacity(0.3),
+                            lineWidth: focusedField == .email ? 2 : 1
+                        )
+                )
+                .keyboardType(.emailAddress)
+                .textContentType(.emailAddress)
+                .autocapitalization(.none)
+                .focused($focusedField, equals: .email)
+                .submitLabel(.next)
+                .onSubmit { focusedField = .password }
+
+            HStack {
+                Group {
+                    if isShowingPassword {
+                        TextField("Password", text: $password)
+                    } else {
+                        SecureField("Password", text: $password)
+                    }
+                }
+                .font(.floBodyMedium)
+                .textContentType(.password)
+                .focused($focusedField, equals: .password)
+                .submitLabel(.go)
+                .onSubmit {
+                    if isFormValid { submit() }
+                }
+
+                Button {
+                    FloHaptics.light()
+                    isShowingPassword.toggle()
+                } label: {
+                    Image(systemName: isShowingPassword ? "eye.slash" : "eye")
+                        .foregroundColor(.floGray)
+                        .frame(width: 24, height: 24)
+                }
+                .accessibilityLabel(isShowingPassword ? "Hide password" : "Show password")
+            }
+            .padding(.horizontal, FloSpacing.md)
+            .frame(height: 52)
+            .background(Color.white)
+            .cornerRadius(FloRadius.md)
+            .overlay(
+                RoundedRectangle(cornerRadius: FloRadius.md)
+                    .stroke(
+                        focusedField == .password ? Color.floSage : Color.floGray.opacity(0.3),
+                        lineWidth: focusedField == .password ? 2 : 1
+                    )
+            )
+        }
+        .animation(FloAnimation.easeOutQuick, value: focusedField)
+    }
+
+    private func submit() {
+        guard isFormValid else { return }
+        FloHaptics.light()
+        focusedField = nil
+        isLoading = true
+
+        let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        let pw = password
+
+        #if DEBUG
+        print("[PasswordSignInSheet] auth.signIn starting — email=\(trimmedEmail)")
+        #endif
+
+        Task { @MainActor in
+            defer { isLoading = false }
+            do {
+                _ = try await SupabaseClient.shared.auth.signIn(
+                    email: trimmedEmail,
+                    password: pw
+                )
+                #if DEBUG
+                print("[PasswordSignInSheet] auth.signIn OK")
+                #endif
+                FloHaptics.success()
+                withAnimation(FloAnimation.easeOutMedium) {
+                    isSignedIn = true
+                }
+                dismiss()
+            } catch {
+                #if DEBUG
+                print("[PasswordSignInSheet] auth.signIn FAILED — \(type(of: error)): \(error)")
+                #endif
+                FloHaptics.error()
+                if let authError = error as? AuthError, authError.errorCode == .invalidCredentials {
+                    presentError("That email and password didn't match. Try again.")
+                } else if let authError = error as? AuthError {
+                    presentError(authError.message)
+                } else {
+                    presentError(error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    private func presentError(_ message: String) {
+        errorMessage = message
+        withAnimation { showError = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            withAnimation { showError = false }
+        }
     }
 }
 
