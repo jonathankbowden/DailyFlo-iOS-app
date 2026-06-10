@@ -73,6 +73,38 @@ struct MeditationMainView: View {
 
     private var userName: String { CycleManager.shared.userName }
 
+    // MARK: - Carousel geometry
+    //
+    // Peeking carousel: each column shrinks so the neighbouring column
+    // shows ~12pt at the trailing edge of the snapped column, separated
+    // by a 16pt gutter. The leading side margin = peek + gutter so that
+    // for the middle column both sides peek symmetrically; for the first
+    // and last columns the outer side is empty margin instead.
+    private let columnPeek: CGFloat = 12
+    private let columnGutter: CGFloat = FloSpacing.md  // 16
+    private var columnSideMargin: CGFloat { columnPeek + columnGutter }
+    // Vertical breathing room so card shadows (FloShadow.large, radius 16)
+    // aren't clipped at the top of the horizontal ScrollView's content area.
+    private let columnVerticalPadding: CGFloat = 12
+
+    /// Two-way binding for `.scrollPosition(id:)`. Reads/writes the same
+    /// `selectedDuration` state the tab strip drives so a tap on a tab
+    /// scrolls to that column and a swipe updates the active tab. The
+    /// FloHaptics tick only fires for user-driven changes — programmatic
+    /// writes from tab taps already produce their own selection haptic.
+    private var durationScrollBinding: Binding<Int?> {
+        Binding(
+            get: { selectedDuration.rawValue },
+            set: { newValue in
+                guard let raw = newValue,
+                      let duration = MeditationDuration(rawValue: raw),
+                      duration != selectedDuration else { return }
+                FloHaptics.selection()
+                selectedDuration = duration
+            }
+        )
+    }
+
     /// The full 10-theme library. Each theme has an `_a`/`_b`/`_c`
     /// background set; the active surface uses `_a` and the rest are
     /// wired through `collectibleImages` for the future gallery. The
@@ -193,31 +225,44 @@ struct MeditationMainView: View {
                     .fill(Color(hex: "707070"))
                     .frame(height: 1)
 
-                // Three columns (5/15/60) bound to the same selectedDuration
-                // as the tabs above — tap a tab to switch, swipe to switch,
-                // either updates the binding and the other follows.
-                TabView(selection: $selectedDuration) {
-                    ForEach(MeditationDuration.allCases) { duration in
-                        MeditationColumn(
-                            duration: duration,
-                            sessions: sessions,
-                            hasAppeared: hasAppeared,
-                            onPlay: { session, duration in
-                                FloHaptics.medium()
-                                playerRequest = PlayerRequest(
-                                    session: session,
-                                    duration: duration
-                                )
-                            },
-                            onFavorite: { session in
-                                FloHaptics.selection()
-                                toggleFavorite(session)
+                // Three columns (5/15/60) as a peeking horizontal carousel:
+                // each column snaps to a leading-aligned position with the
+                // adjacent column showing ~12pt at the edge and a 16pt
+                // gutter between columns. Sized with containerRelativeFrame
+                // so the math follows the actual scroll-container width on
+                // any device. .scrollPosition + selectedDuration keeps the
+                // tab strip above in lock-step with the active column.
+                ScrollView(.horizontal) {
+                    LazyHStack(spacing: columnGutter) {
+                        ForEach(MeditationDuration.allCases) { duration in
+                            MeditationColumn(
+                                duration: duration,
+                                sessions: sessions,
+                                hasAppeared: hasAppeared,
+                                onPlay: { session, duration in
+                                    FloHaptics.medium()
+                                    playerRequest = PlayerRequest(
+                                        session: session,
+                                        duration: duration
+                                    )
+                                },
+                                onFavorite: { session in
+                                    FloHaptics.selection()
+                                    toggleFavorite(session)
+                                }
+                            )
+                            .containerRelativeFrame(.horizontal) { width, _ in
+                                width - 2 * columnSideMargin
                             }
-                        )
-                        .tag(duration)
+                        }
                     }
+                    .scrollTargetLayout()
+                    .padding(.vertical, columnVerticalPadding)
                 }
-                .tabViewStyle(.page(indexDisplayMode: .never))
+                .contentMargins(.horizontal, columnSideMargin, for: .scrollContent)
+                .scrollIndicators(.hidden)
+                .scrollTargetBehavior(.viewAligned)
+                .scrollPosition(id: durationScrollBinding)
             }
         }
         .fullScreenCover(item: $playerRequest) { req in
