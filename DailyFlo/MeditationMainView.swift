@@ -82,10 +82,6 @@ struct MeditationMainView: View {
     private let columnPeek: CGFloat = 9
     private let columnGutter: CGFloat = 24
     private var columnSideMargin: CGFloat { columnPeek + columnGutter }
-    // Vertical breathing room so the active card's FloShadow.xlarge
-    // (radius 35, y 25) isn't clipped at the top/bottom of the
-    // horizontal ScrollView's content area.
-    private let columnVerticalPadding: CGFloat = 28
     /// Opacity for non-centered columns. Driven by .scrollTransition so
     /// the dim animates smoothly with the swipe gesture rather than
     /// snapping at the rest position. 0.2 = Figma; raise to taste if
@@ -239,6 +235,15 @@ struct MeditationMainView: View {
                 // `peekingColumnOpacity` smoothly during the swipe;
                 // .scrollPosition + selectedDuration keeps the tab strip
                 // above in lock-step with the active column.
+                //
+                // Viewport bounds: the ScrollView's top edge IS the dark
+                // divider above (this is the last item in the parent VStack
+                // with no spacer between), and `.ignoresSafeArea(.bottom)`
+                // extends its bottom edge to the screen bottom so cards
+                // visibly scroll behind the tab bar. The ScrollView's own
+                // frame is therefore the clip mask the design calls for —
+                // no shadow ever shows above the divider, and cards can
+                // pass under the nav.
                 ScrollView(.horizontal) {
                     LazyHStack(spacing: columnGutter) {
                         ForEach(MeditationDuration.allCases) { duration in
@@ -279,12 +284,12 @@ struct MeditationMainView: View {
                         }
                     }
                     .scrollTargetLayout()
-                    .padding(.vertical, columnVerticalPadding)
                 }
                 .contentMargins(.horizontal, columnSideMargin, for: .scrollContent)
                 .scrollIndicators(.hidden)
                 .scrollTargetBehavior(.viewAligned)
                 .scrollPosition(id: durationScrollBinding)
+                .ignoresSafeArea(.container, edges: .bottom)
             }
         }
         .fullScreenCover(item: $playerRequest) { req in
@@ -422,6 +427,13 @@ private struct MeditationColumn: View {
             // Cards fill the column width edge-to-edge — no horizontal
             // padding here. The column's outer width already comes from
             // the parent's contentMargins + containerRelativeFrame.
+            //
+            // No top padding either: the first card sits flush against
+            // the parent ScrollView's top edge, which IS the dark
+            // divider under the duration tabs. The bottom padding is
+            // sized to clear the floating tab bar (88pt frame + safe
+            // area + a small cushion) so the last card can be scrolled
+            // fully above the nav while still passing under it.
             LazyVStack(spacing: Self.cardSpacing) {
                 ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
                     MeditationCard(
@@ -433,7 +445,6 @@ private struct MeditationColumn: View {
                     .fadeIn(delay: hasAppeared ? 0 : 0.25 + Double(index) * 0.1)
                 }
             }
-            .padding(.top, FloSpacing.lg)
             .padding(.bottom, 140)
         }
     }
