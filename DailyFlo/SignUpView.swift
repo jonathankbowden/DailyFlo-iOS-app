@@ -3,23 +3,39 @@
 //  DailyFlo
 //
 //  Mirror of SignInView: the same floating-card layout with a nature
-//  image strip, "Create Account:" header, social providers, email +
-//  Continue, and a "Already have an account? Log in" link that pops
-//  back to SignInView through the NavigationStack.
+//  image strip, social providers, email + password, "CREATE ACCOUNT",
+//  and a "Already have an account? Log in" link that pops back to
+//  SignInView through the NavigationStack.
+//
+//  Email signup hits Supabase Auth's signUp(email:password:) directly.
+//  With email-confirmation enabled (the default on the project), a
+//  successful signUp returns a user with NO session — we surface a
+//  "check your inbox" toast and stay on the screen rather than
+//  transitioning into the app. Errors get a red toast with a
+//  human-readable message so users see when something fails.
 //
 
+import Supabase
 import SwiftUI
 import AuthenticationServices
 
 struct SignUpView: View {
     @Binding var isSignedIn: Bool
     @State private var email = ""
+    @State private var password = ""
+    @State private var isShowingPassword = false
     @State private var isLoading = false
     @State private var showError = false
     @State private var errorMessage = ""
+    @State private var showSuccess = false
+    @State private var successMessage = ""
     @State private var hasAppeared = false
-    @FocusState private var emailFocused: Bool
+    @FocusState private var focusedField: Field?
     @Environment(\.dismiss) private var dismiss
+
+    enum Field {
+        case email, password
+    }
 
     var body: some View {
         ZStack {
@@ -52,6 +68,17 @@ struct SignUpView: View {
                         .padding(.bottom, FloSpacing.xxl)
                 }
                 .animation(FloAnimation.springGentle, value: showError)
+            }
+
+            if showSuccess {
+                VStack {
+                    Spacer()
+                    Text(successMessage)
+                        .floToast(.success)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .padding(.bottom, FloSpacing.xxl)
+                }
+                .animation(FloAnimation.springGentle, value: showSuccess)
             }
         }
         .toolbar(.hidden, for: .navigationBar)
@@ -220,9 +247,10 @@ struct SignUpView: View {
         .accessibilityHidden(true)
     }
 
-    // MARK: - Email + continue (Patreon: single field then Continue)
+    // MARK: - Email + password + CREATE ACCOUNT
     private var emailSection: some View {
-        VStack(spacing: FloSpacing.sm) {
+        VStack(spacing: FloSpacing.md) {
+            // Email
             TextField("Email", text: $email)
                 .font(.floBodyMedium)
                 .foregroundColor(.floCharcoal)
@@ -233,22 +261,63 @@ struct SignUpView: View {
                 .overlay(
                     RoundedRectangle(cornerRadius: FloRadius.md)
                         .stroke(
-                            emailFocused ? Color.floSage : Color.floGray.opacity(0.3),
-                            lineWidth: emailFocused ? 2 : 1
+                            focusedField == .email ? Color.floSage : Color.floGray.opacity(0.3),
+                            lineWidth: focusedField == .email ? 2 : 1
                         )
                 )
                 .keyboardType(.emailAddress)
                 .textContentType(.emailAddress)
                 .autocapitalization(.none)
-                .focused($emailFocused)
-                .submitLabel(.continue)
-                .onSubmit {
-                    if isEmailValid { continueWithEmail() }
-                }
-                .animation(FloAnimation.easeOutQuick, value: emailFocused)
+                .focused($focusedField, equals: .email)
+                .submitLabel(.next)
+                .onSubmit { focusedField = .password }
+                .animation(FloAnimation.easeOutQuick, value: focusedField)
                 .accessibilityLabel("Email")
 
-            Button(action: continueWithEmail) {
+            // Password
+            HStack {
+                Group {
+                    if isShowingPassword {
+                        TextField("Password (min 6 characters)", text: $password)
+                    } else {
+                        SecureField("Password (min 6 characters)", text: $password)
+                    }
+                }
+                .font(.floBodyMedium)
+                .foregroundColor(.floCharcoal)
+                .textContentType(.newPassword)
+                .autocapitalization(.none)
+                .focused($focusedField, equals: .password)
+                .submitLabel(.go)
+                .onSubmit {
+                    if isFormValid { submitSignUp() }
+                }
+
+                Button {
+                    FloHaptics.light()
+                    isShowingPassword.toggle()
+                } label: {
+                    Image(systemName: isShowingPassword ? "eye.slash" : "eye")
+                        .foregroundColor(.floGray)
+                        .frame(width: 24, height: 24)
+                }
+                .accessibilityLabel(isShowingPassword ? "Hide password" : "Show password")
+            }
+            .padding(.horizontal, FloSpacing.md)
+            .frame(height: 52)
+            .background(Color.white)
+            .cornerRadius(FloRadius.md)
+            .overlay(
+                RoundedRectangle(cornerRadius: FloRadius.md)
+                    .stroke(
+                        focusedField == .password ? Color.floSage : Color.floGray.opacity(0.3),
+                        lineWidth: focusedField == .password ? 2 : 1
+                    )
+            )
+            .animation(FloAnimation.easeOutQuick, value: focusedField)
+
+            // Create account
+            Button(action: submitSignUp) {
                 HStack(spacing: FloSpacing.sm) {
                     if isLoading {
                         FloLoadingIndicator(size: 20, color: .white, lineWidth: 2)
@@ -261,14 +330,14 @@ struct SignUpView: View {
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
                 .frame(height: 52)
-                .background(isEmailValid ? Color.floCharcoal : Color.floGray.opacity(0.4))
+                .background(isFormValid ? Color.floCharcoal : Color.floGray.opacity(0.4))
                 .cornerRadius(FloRadius.md)
             }
             .buttonStyle(.floPressed)
-            .disabled(!isEmailValid || isLoading)
-            .animation(FloAnimation.easeOutQuick, value: isEmailValid)
+            .disabled(!isFormValid || isLoading)
+            .animation(FloAnimation.easeOutQuick, value: isFormValid)
             .accessibilityLabel("Create account")
-            .accessibilityHint(isEmailValid ? "Create your DailyFLO account with this email" : "Enter your email to create an account")
+            .accessibilityHint(isFormValid ? "Create your DailyFLO account" : "Enter your email and a password of at least six characters")
         }
     }
 
@@ -286,22 +355,80 @@ struct SignUpView: View {
         return !trimmed.isEmpty && trimmed.contains("@") && trimmed.contains(".")
     }
 
-    // MARK: - Actions
-    private func continueWithEmail() {
-        guard isEmailValid else { return }
+    private var isPasswordValid: Bool {
+        // Supabase's default minimum is 6 characters; match that here so
+        // the client-side gate doesn't reject anything the server accepts.
+        password.count >= 6
+    }
+
+    private var isFormValid: Bool {
+        isEmailValid && isPasswordValid
+    }
+
+    // MARK: - Sign up (real Supabase auth.signUp)
+    //
+    // Replaces the previous fake DispatchQueue sleep. With email
+    // confirmation enabled on the project, signUp returns a user with
+    // NO session — that's the success path that surfaces the "check
+    // your inbox" toast. If confirmation is off (or already done), a
+    // session comes back and we transition into the app.
+    private func submitSignUp() {
+        guard isFormValid else { return }
         FloHaptics.light()
-        emailFocused = false
+        focusedField = nil
         isLoading = true
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-            isLoading = false
-            FloHaptics.success()
-            completeSignIn()
+        let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        let pw = password
+
+        #if DEBUG
+        print("[SignUpView] auth.signUp starting — email=\(trimmedEmail)")
+        #endif
+
+        Task { @MainActor in
+            defer { isLoading = false }
+            do {
+                let response = try await SupabaseClient.shared.auth.signUp(
+                    email: trimmedEmail,
+                    password: pw
+                )
+
+                #if DEBUG
+                print("[SignUpView] auth.signUp OK — user.id=\(response.user.id), session=\(response.session != nil ? "present" : "nil")")
+                #endif
+
+                FloHaptics.success()
+                if response.session != nil {
+                    // Confirmation disabled — straight into the app.
+                    completeSignIn()
+                } else {
+                    // Confirmation required — user has been created
+                    // (you can see them in the Auth dashboard) but they
+                    // need to click the email link before signing in.
+                    presentSuccess("Check your inbox to confirm your account.")
+                }
+            } catch {
+                #if DEBUG
+                print("[SignUpView] auth.signUp FAILED — \(type(of: error)): \(error)")
+                #endif
+                FloHaptics.error()
+                presentError(friendlyMessage(for: error))
+            }
         }
     }
 
-    private func continueWithProvider(_ provider: String) {
-        completeSignIn()
+    private func friendlyMessage(for error: Error) -> String {
+        if let authError = error as? AuthError {
+            switch authError.errorCode {
+            case .userAlreadyExists:
+                return "An account with that email already exists. Try logging in instead."
+            case .weakPassword:
+                return "That password is too weak. Try at least 6 characters."
+            default:
+                return authError.message
+            }
+        }
+        return error.localizedDescription
     }
 
     private func completeSignIn() {
@@ -310,8 +437,31 @@ struct SignUpView: View {
         }
     }
 
+    private func presentError(_ message: String) {
+        errorMessage = message
+        withAnimation { showError = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            withAnimation { showError = false }
+        }
+    }
+
+    private func presentSuccess(_ message: String) {
+        successMessage = message
+        withAnimation { showSuccess = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+            withAnimation { showSuccess = false }
+        }
+    }
+
+    // Kept for the SignInWithAppleButton fake-success path until that
+    // gets its real Supabase bridge — out of scope for the email-signup
+    // fix but still required because the social buttons above call it.
+    private func continueWithProvider(_ provider: String) {
+        completeSignIn()
+    }
+
     private func showErrorTemporarily() {
-        showError = true
+        withAnimation { showError = true }
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
             withAnimation { showError = false }
         }
