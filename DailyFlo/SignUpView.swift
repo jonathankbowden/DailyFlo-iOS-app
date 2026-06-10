@@ -64,38 +64,23 @@ struct SignUpView: View {
 
     // MARK: - Branding (matches SignInView)
     //
-    // Same wordmark stack above the card so the pair feels coherent —
-    // "Welcome to: Daily FLO" reads the same on both screens.
+    // Just the "Daily" + "FLO" wordmark lockup, same as SignInView, so
+    // the pair feels coherent.
     private var brandingSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Spacer()
-                Text("FLO")
-                    .font(.system(size: 16, weight: .black))
-                    .foregroundColor(.floCharcoal)
-                    .tracking(3)
-            }
-            .padding(.top, FloSpacing.md)
-
-            Text("Welcome to:")
-                .font(.floSerif(size: 36))
-                .foregroundColor(.floCharcoal)
-                .padding(.top, FloSpacing.md)
-                .accessibilityAddTraits(.isHeader)
-
             Text("Daily")
-                .font(.floSerif(size: 72))
+                .font(.custom("LUNARY free", size: 72))
                 .foregroundColor(.floCharcoal)
-                .padding(.top, -8)
 
             Text("FLO")
                 .font(.system(size: 20, weight: .black))
                 .foregroundColor(.floCharcoal)
                 .tracking(3)
         }
+        .padding(.top, FloSpacing.xl)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Welcome to Daily Flo")
+        .accessibilityLabel("Daily Flo")
     }
 
     // MARK: - Sign up card
@@ -109,12 +94,10 @@ struct SignUpView: View {
                 .clipped()
                 .accessibilityHidden(true)
 
+            // Card opens straight on the social buttons now that the
+            // "Create Account:" title is gone. Extra top padding inside
+            // the card keeps the image-to-button gap from feeling tight.
             VStack(alignment: .leading, spacing: FloSpacing.lg) {
-                Text("Create Account:")
-                    .font(.floSerif(size: 36))
-                    .foregroundColor(.floCharcoal)
-                    .accessibilityAddTraits(.isHeader)
-
                 socialButtons
                 orDivider
                 emailSection
@@ -124,7 +107,9 @@ struct SignUpView: View {
 
                 backToLogInLink
             }
-            .padding(FloSpacing.lg)
+            .padding(.horizontal, FloSpacing.lg)
+            .padding(.top, FloSpacing.xl)
+            .padding(.bottom, FloSpacing.lg)
         }
         .background(Color.white)
         .cornerRadius(FloRadius.xl)

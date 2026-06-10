@@ -85,12 +85,10 @@ struct SignInView: View {
         VStack(spacing: 0) {
             cardHeaderImage
 
+            // Card content opens straight on the social buttons now
+            // that the "Log In:" title is gone. Extra top padding inside
+            // the card keeps the image-to-button gap from feeling tight.
             VStack(alignment: .leading, spacing: FloSpacing.lg) {
-                Text("Log In:")
-                    .font(.floSerif(size: 36))
-                    .foregroundColor(.floCharcoal)
-                    .accessibilityAddTraits(.isHeader)
-
                 socialSignInButtons
                 orDivider
                 emailPasswordForm
@@ -100,7 +98,9 @@ struct SignInView: View {
 
                 createAccountLink
             }
-            .padding(FloSpacing.lg)
+            .padding(.horizontal, FloSpacing.lg)
+            .padding(.top, FloSpacing.xl)
+            .padding(.bottom, FloSpacing.lg)
         }
         .background(Color.white)
         .cornerRadius(FloRadius.xl)
@@ -143,38 +143,25 @@ struct SignInView: View {
 
     // MARK: - Branding
     //
-    // Title block above the card. No internal horizontal padding because
-    // the parent ScrollView VStack already insets to match the card.
+    // Just the "Daily" + "FLO" wordmark lockup. The greeting line and
+    // the top-right corner marker were removed so the page leads with
+    // the brand alone; the lockup sits a touch lower from the safe-area
+    // edge to give it breathing room above the card.
     private var brandingSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Spacer()
-                Text("FLO")
-                    .font(.system(size: 16, weight: .black))
-                    .foregroundColor(.floCharcoal)
-                    .tracking(3)
-            }
-            .padding(.top, FloSpacing.md)
-
-            Text("Welcome to:")
-                .font(.floSerif(size: 36))
-                .foregroundColor(.floCharcoal)
-                .padding(.top, FloSpacing.md)
-                .accessibilityAddTraits(.isHeader)
-
             Text("Daily")
-                .font(.floSerif(size: 72))
+                .font(.custom("LUNARY free", size: 72))
                 .foregroundColor(.floCharcoal)
-                .padding(.top, -8)
 
             Text("FLO")
                 .font(.system(size: 20, weight: .black))
                 .foregroundColor(.floCharcoal)
                 .tracking(3)
         }
+        .padding(.top, FloSpacing.xl)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Welcome to Daily Flo")
+        .accessibilityLabel("Daily Flo")
     }
 
     // MARK: - Social (Patreon pattern: Apple, Google — stacked)
