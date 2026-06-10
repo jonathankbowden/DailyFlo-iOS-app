@@ -251,8 +251,13 @@ struct MeditationMainView: View {
                                     toggleFavorite(session)
                                 }
                             )
+                            // `width` here is already the post-contentMargins
+                            // container width, so use it unchanged. The visible
+                            // peek emerges naturally from the geometry:
+                            //   contentMargin (28) − gutter (16) = 12pt of the
+                            // adjacent column showing at each edge.
                             .containerRelativeFrame(.horizontal) { width, _ in
-                                width - 2 * columnSideMargin
+                                width
                             }
                         }
                     }
