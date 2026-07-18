@@ -186,6 +186,7 @@ struct OnboardingView: View {
                     .padding(.vertical, FloSpacing.md)
                 }
                 .buttonStyle(.floPressed)
+                .floHitTarget()
                 .accessibilityLabel("Go back to previous step")
             } else {
                 Spacer()

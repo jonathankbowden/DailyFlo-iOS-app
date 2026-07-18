@@ -300,6 +300,7 @@ struct SignInView: View {
                     .foregroundColor(.floGray)
                     .underline()
             }
+            .floHitTarget()
             .accessibilityLabel("Use a password instead")
             .accessibilityHint("Opens the email and password sign-in form")
             Spacer()
@@ -654,6 +655,7 @@ private struct PasswordSignInSheet: View {
                         .foregroundColor(.floGray)
                         .frame(width: 24, height: 24)
                 }
+                .floHitTarget()
                 .accessibilityLabel(isShowingPassword ? "Hide password" : "Show password")
             }
             .padding(.horizontal, FloSpacing.md)

@@ -100,6 +100,7 @@ struct ConnectMainView: View {
                         .font(.system(size: 28))
                         .foregroundColor(.floGray.opacity(0.5))
                 }
+                .floHitTarget()
                 .accessibilityLabel("Close")
             }
 
@@ -183,6 +184,7 @@ struct ConnectMainView: View {
                             .font(.system(size: 32))
                             .foregroundColor(.floSage)
                     }
+                    .floHitTarget()
                 }
             }
             .padding(.top, FloSpacing.md)
@@ -289,6 +291,7 @@ struct ConnectMainView: View {
                         .font(.system(size: 20))
                         .foregroundColor(.floGray)
                 }
+                .floHitTarget()
             }
             .padding(FloSpacing.md)
             .background(Color.white)
@@ -497,6 +500,7 @@ struct InvitePartnerSheet: View {
                             .font(.floBodyMedium)
                             .foregroundColor(.floSage)
                         }
+                        .floHitTarget()
                     }
                 }
 
