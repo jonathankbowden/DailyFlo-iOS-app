@@ -11,9 +11,13 @@ import UIKit
 struct PhaseDetailView: View {
     let phase: CyclePhase
     let onDismiss: () -> Void
+    /// Non-nil only when presented from the calendar: called after a successful
+    /// log so the calendar can collapse this sheet and confirm the change.
+    var onLoggedCycle: (() -> Void)? = nil
 
     @State private var selectedTab: PhaseContentTab = .body
     @State private var showLogCycle = false
+    @State private var didLogCycle = false
 
     var body: some View {
         ZStack {
@@ -62,12 +66,20 @@ struct PhaseDetailView: View {
             }
             .ignoresSafeArea(.container, edges: .bottom)
         }
-        .sheet(isPresented: $showLogCycle) {
+        .sheet(isPresented: $showLogCycle, onDismiss: {
+            // Fires after the LogCycle sheet finishes dismissing. If the user
+            // actually logged (not cancelled) and we were presented from the
+            // calendar, collapse this sheet too so we land back on the calendar.
+            if didLogCycle {
+                didLogCycle = false
+                onLoggedCycle?()
+            }
+        }) {
             LogCycleView(
                 selectedDate: Date(),
                 onSave: { startDate in
+                    didLogCycle = true
                     Task { await CycleManager.shared.logCycle(startDate: startDate) }
-                    showLogCycle = false
                 },
                 onDismiss: { showLogCycle = false }
             )

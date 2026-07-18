@@ -24,10 +24,14 @@ struct SingleDayView: View {
     var phase: CyclePhase = .follicular
     var dayOfCycle: Int = 1
     let onDismiss: () -> Void
+    /// Non-nil only when presented from the calendar: called after a successful
+    /// log so the calendar can collapse this sheet and confirm the change.
+    let onLoggedCycle: (() -> Void)?
 
     @State private var currentDate: Date
     @State private var showLogCycle = false
     @State private var showJournalEntry = false
+    @State private var didLogCycle = false
     @State private var journalManager = JournalManager.shared
 
     private let cycleManager = CycleManager.shared
@@ -36,11 +40,12 @@ struct SingleDayView: View {
     // Number of days to allow swiping in each direction
     private let swipeRange = 60
 
-    init(date: Date, phase: CyclePhase = .follicular, dayOfCycle: Int = 1, onDismiss: @escaping () -> Void) {
+    init(date: Date, phase: CyclePhase = .follicular, dayOfCycle: Int = 1, onDismiss: @escaping () -> Void, onLoggedCycle: (() -> Void)? = nil) {
         self.date = date
         self.phase = phase
         self.dayOfCycle = dayOfCycle
         self.onDismiss = onDismiss
+        self.onLoggedCycle = onLoggedCycle
         self._currentDate = State(initialValue: Calendar.current.startOfDay(for: date))
     }
 
@@ -123,10 +128,19 @@ struct SingleDayView: View {
             }
             .ignoresSafeArea(.container, edges: .bottom)
         }
-        .sheet(isPresented: $showLogCycle) {
+        .sheet(isPresented: $showLogCycle, onDismiss: {
+            // Fires after the LogCycle sheet finishes dismissing. If the user
+            // actually logged (not cancelled) and we were presented from the
+            // calendar, collapse this sheet too so we land back on the calendar.
+            if didLogCycle {
+                didLogCycle = false
+                onLoggedCycle?()
+            }
+        }) {
             LogCycleView(
                 selectedDate: currentDate,
                 onSave: { startDate in
+                    didLogCycle = true
                     Task { await CycleManager.shared.logCycle(startDate: startDate) }
                 },
                 onDismiss: { showLogCycle = false }

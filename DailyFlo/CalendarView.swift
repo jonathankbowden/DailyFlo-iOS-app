@@ -16,6 +16,12 @@ struct CalendarView: View {
     // Drives scrollPosition anchoring; starts on the current month (offset 0).
     @State private var scrolledMonth: Int? = 0
 
+    // Log-confirmation choreography. When a log-cycle sheet collapses back to the
+    // calendar, `pendingLogConfirmation` is set so the sheet's onDismiss can play
+    // a one-shot soft emphasis (`emphasizeLoggedStart`) on the new start day.
+    @State private var pendingLogConfirmation = false
+    @State private var emphasizeLoggedStart = false
+
     private let cycleManager = CycleManager.shared
     private let calendar = Calendar.current
     private let daysOfWeek = ["M", "T", "W", "T", "F", "S", "S"]
@@ -70,16 +76,28 @@ struct CalendarView: View {
                 .scrollPosition(id: $scrolledMonth, anchor: .top)
             }
         }
-        .sheet(isPresented: $showPhaseDetail) {
-            PhaseDetailView(phase: selectedPhase, onDismiss: {
-                showPhaseDetail = false
-            })
+        .sheet(isPresented: $showPhaseDetail, onDismiss: playLogConfirmationIfNeeded) {
+            PhaseDetailView(
+                phase: selectedPhase,
+                onDismiss: { showPhaseDetail = false },
+                onLoggedCycle: {
+                    pendingLogConfirmation = true
+                    showPhaseDetail = false
+                }
+            )
         }
-        .sheet(isPresented: $showSingleDay) {
+        .sheet(isPresented: $showSingleDay, onDismiss: playLogConfirmationIfNeeded) {
             if let date = selectedDate {
-                SingleDayView(date: date, phase: cycleManager.phase(for: date), dayOfCycle: cycleManager.dayOfCycle(for: date), onDismiss: {
-                    showSingleDay = false
-                })
+                SingleDayView(
+                    date: date,
+                    phase: cycleManager.phase(for: date),
+                    dayOfCycle: cycleManager.dayOfCycle(for: date),
+                    onDismiss: { showSingleDay = false },
+                    onLoggedCycle: {
+                        pendingLogConfirmation = true
+                        showSingleDay = false
+                    }
+                )
                 .presentationDetents([.large])
                 .presentationDragIndicator(.hidden)
                 .presentationCornerRadius(28)
@@ -183,6 +201,7 @@ struct CalendarView: View {
                         cycleData: cycleData,
                         monthLabel: day == 1 ? monthAbbrev : nil,
                         columnIndex: index % 7,
+                        emphasizeAsNewStart: emphasizeLoggedStart && isLoggedCycleStart(day, in: monthDate),
                         onTapDay: {
                             selectDay(day, in: monthDate, cycleData: cycleData)
                         },
@@ -319,6 +338,33 @@ struct CalendarView: View {
     private func getCycleData(for monthDate: Date) -> CycleData {
         return cycleManager.cycleData(for: monthDate)
     }
+
+    // MARK: - Log Confirmation Choreography
+
+    /// Whether a given calendar day is the most-recently-logged cycle start.
+    /// Used only to place the transient post-log emphasis ring.
+    private func isLoggedCycleStart(_ day: Int, in monthDate: Date) -> Bool {
+        var components = calendar.dateComponents([.year, .month], from: monthDate)
+        components.day = day
+        guard let dayDate = calendar.date(from: components) else { return false }
+        return calendar.isDate(dayDate, inSameDayAs: cycleManager.lastPeriodDate)
+    }
+
+    /// Runs when a log-cycle sheet finishes dismissing back to the calendar. The
+    /// data is already correct (instant-update fix); this plays a single soft
+    /// emphasis on the newly-logged start day so the change is felt as it lands,
+    /// then fades it out. No timers — the fade-out is the animation's completion.
+    private func playLogConfirmationIfNeeded() {
+        guard pendingLogConfirmation else { return }
+        pendingLogConfirmation = false
+        withAnimation(FloAnimation.springGentle) {
+            emphasizeLoggedStart = true
+        } completion: {
+            withAnimation(FloAnimation.easeOutMedium) {
+                emphasizeLoggedStart = false
+            }
+        }
+    }
 }
 
 // MARK: - Day Activity Data Model
@@ -378,6 +424,7 @@ struct DayCellWithPhase: View {
     let cycleData: CycleData
     let monthLabel: String? // Shows month abbreviation on day 1
     let columnIndex: Int // 0-6, which column this day is in
+    var emphasizeAsNewStart: Bool = false // transient soft ring after logging a cycle
     let onTapDay: () -> Void
     let onTapPhase: () -> Void
 
@@ -434,6 +481,15 @@ struct DayCellWithPhase: View {
                             .frame(width: 32, height: 32)
                             .scaleEffect(1.0)
                             .shadow(color: Color.floSage.opacity(0.3), radius: 4, x: 0, y: 2)
+                    }
+
+                    // Transient soft ring confirming a just-logged cycle start.
+                    // Blooms in and fades out via the parent's one-shot animation.
+                    if emphasizeAsNewStart {
+                        Circle()
+                            .stroke(Color.floSage, lineWidth: 2)
+                            .frame(width: 38, height: 38)
+                            .transition(.scale(scale: 1.3).combined(with: .opacity))
                     }
 
                     Text("\(day)")
