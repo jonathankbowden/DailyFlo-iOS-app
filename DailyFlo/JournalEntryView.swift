@@ -557,7 +557,7 @@ struct JournalEntryView: View {
                     } else {
                         Image(systemName: "xmark.circle")
                             .font(.system(size: 18, weight: .medium))
-                        Text("CLOSE")
+                        Text("SAVE")
                             .tracking(1.5)
                     }
                 }
