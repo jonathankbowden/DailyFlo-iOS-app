@@ -48,22 +48,62 @@ class CycleManager {
     }
 
     // MARK: - User Cycle Data (cached in UserDefaults)
+    //
+    // These stay backed by UserDefaults (the single source of truth, shared with
+    // OnboardingView / ProfileMainView), but are bracketed with the Observation
+    // registrar's `access`/`withMutation` so SwiftUI actually tracks them. Without
+    // this, the @Observable macro only instruments *stored* properties — a plain
+    // computed UserDefaults read is invisible to Observation, so writing a new
+    // cycle never invalidated any observing view. Writers must go through the
+    // setters (not raw UserDefaults.set) for the mutation notification to fire.
     var lastPeriodDate: Date {
-        UserDefaults.standard.object(forKey: "lastPeriodDate") as? Date ?? Date()
+        get {
+            access(keyPath: \.lastPeriodDate)
+            return UserDefaults.standard.object(forKey: "lastPeriodDate") as? Date ?? Date()
+        }
+        set {
+            withMutation(keyPath: \.lastPeriodDate) {
+                UserDefaults.standard.set(newValue, forKey: "lastPeriodDate")
+            }
+        }
     }
 
     var cycleLength: Int {
-        let stored = UserDefaults.standard.integer(forKey: "cycleLength")
-        return stored > 0 ? stored.clamped(to: 21...45) : 28
+        get {
+            access(keyPath: \.cycleLength)
+            let stored = UserDefaults.standard.integer(forKey: "cycleLength")
+            return stored > 0 ? stored.clamped(to: 21...45) : 28
+        }
+        set {
+            withMutation(keyPath: \.cycleLength) {
+                UserDefaults.standard.set(newValue, forKey: "cycleLength")
+            }
+        }
     }
 
     var periodLength: Int {
-        let stored = UserDefaults.standard.integer(forKey: "periodLength")
-        return stored > 0 ? stored.clamped(to: 2...10) : 5
+        get {
+            access(keyPath: \.periodLength)
+            let stored = UserDefaults.standard.integer(forKey: "periodLength")
+            return stored > 0 ? stored.clamped(to: 2...10) : 5
+        }
+        set {
+            withMutation(keyPath: \.periodLength) {
+                UserDefaults.standard.set(newValue, forKey: "periodLength")
+            }
+        }
     }
 
     var userName: String {
-        UserDefaults.standard.string(forKey: "userName") ?? "Friend"
+        get {
+            access(keyPath: \.userName)
+            return UserDefaults.standard.string(forKey: "userName") ?? "Friend"
+        }
+        set {
+            withMutation(keyPath: \.userName) {
+                UserDefaults.standard.set(newValue, forKey: "userName")
+            }
+        }
     }
 
     var birthDate: Date? {
@@ -381,7 +421,9 @@ class CycleManager {
     @MainActor
     func logCycle(startDate: Date) async {
         // Optimistic local write — preserves the offline-cache contract.
-        UserDefaults.standard.set(startDate, forKey: "lastPeriodDate")
+        // Goes through the setter so Observation fires and observing views
+        // (e.g. CalendarView) update instantly on modal dismiss.
+        lastPeriodDate = startDate
 
         guard let userId = SupabaseClient.shared.auth.currentSession?.user.id else {
             print("[CycleManager] logCycle: no signed-in session — saved locally only")
@@ -441,7 +483,7 @@ class CycleManager {
 
             if let mostRecent = cycles.first,
                let date = Self.dbDateFormatter.date(from: mostRecent.startDate) {
-                UserDefaults.standard.set(date, forKey: "lastPeriodDate")
+                lastPeriodDate = date
             }
         } catch {
             logRemoteError(operation: "latest cycle fetch", error: error)
@@ -450,17 +492,17 @@ class CycleManager {
 
     private func apply(profile: ProfileFetchRow) {
         if !profile.displayName.isEmpty {
-            UserDefaults.standard.set(profile.displayName, forKey: "userName")
+            userName = profile.displayName
         }
         if let birthDateString = profile.birthDate,
            let bd = Self.dbDateFormatter.date(from: birthDateString) {
             UserDefaults.standard.set(bd, forKey: "birthDate")
         }
         if let cl = profile.defaultCycleLengthDays {
-            UserDefaults.standard.set(cl.clamped(to: 21...45), forKey: "cycleLength")
+            cycleLength = cl.clamped(to: 21...45)
         }
         if let pl = profile.defaultPeriodLengthDays {
-            UserDefaults.standard.set(pl.clamped(to: 2...10), forKey: "periodLength")
+            periodLength = pl.clamped(to: 2...10)
         }
         if let role = UserRole(rawString: profile.role) {
             userRole = role
