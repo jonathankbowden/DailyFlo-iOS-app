@@ -241,11 +241,34 @@ class CycleManager {
 
     // MARK: - Cycle Data for Calendar Month
 
-    /// Generates CycleData for a given month using real user data
+    /// Generates CycleData for a given month.
+    ///
+    /// This is the single data seam for the calendar: the view asks for any
+    /// month and never knows whether the phases were computed here or (later)
+    /// fetched as real logged cycles from Supabase. Today, past months are
+    /// back-extrapolated from `lastPeriodDate` + averages via the modulo in
+    /// `dayOfCycle(for:)`; a future migration swaps the source without touching
+    /// this signature or the view.
+    ///
+    /// Two honesty flags travel with the data:
+    /// - `hasPhaseData` is false when no period start has ever been recorded, so
+    ///   the view draws a plain calendar instead of fabricating phases.
+    /// - `isEstimated` marks months before the current month, which the view
+    ///   renders muted. Journal/emotion activity is real data in every month and
+    ///   is never gated by these flags.
     func cycleData(for monthDate: Date) -> CycleData {
         let calendar = Calendar.current
         let range = calendar.range(of: .day, in: .month, for: monthDate)!
         let daysInMonth = range.count
+
+        // Real anchor to compute phases from? `lastPeriodDate`'s getter falls back
+        // to Date(), so probe the raw store to distinguish "never set" from a value.
+        let hasPhaseData = UserDefaults.standard.object(forKey: "lastPeriodDate") != nil
+
+        // Months strictly before the current month are shown muted (estimated).
+        let firstOfThisMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: Date())) ?? Date()
+        let firstOfMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: monthDate)) ?? monthDate
+        let isEstimated = firstOfMonth < firstOfThisMonth
 
         var periodDays: Set<Int> = []
         var follicularDays: Set<Int> = []
@@ -253,26 +276,29 @@ class CycleManager {
         var ovDay: Int = 0
         var lutealDays: Set<Int> = []
 
-        for day in 1...daysInMonth {
-            var components = calendar.dateComponents([.year, .month], from: monthDate)
-            components.day = day
-            guard let dayDate = calendar.date(from: components) else { continue }
+        // No anchor → leave every phase set empty so the view renders plainly.
+        if hasPhaseData {
+            for day in 1...daysInMonth {
+                var components = calendar.dateComponents([.year, .month], from: monthDate)
+                components.day = day
+                guard let dayDate = calendar.date(from: components) else { continue }
 
-            let phase = self.phase(for: dayDate)
-            switch phase {
-            case .menstrual:
-                periodDays.insert(day)
-            case .follicular:
-                follicularDays.insert(day)
-            case .ovulation:
-                fertileWindow.insert(day)
-                // Mark the actual ovulation day
-                let cycDay = dayOfCycle(for: dayDate)
-                if cycDay == ovulationDay {
-                    ovDay = day
+                let phase = self.phase(for: dayDate)
+                switch phase {
+                case .menstrual:
+                    periodDays.insert(day)
+                case .follicular:
+                    follicularDays.insert(day)
+                case .ovulation:
+                    fertileWindow.insert(day)
+                    // Mark the actual ovulation day
+                    let cycDay = dayOfCycle(for: dayDate)
+                    if cycDay == ovulationDay {
+                        ovDay = day
+                    }
+                case .luteal:
+                    lutealDays.insert(day)
                 }
-            case .luteal:
-                lutealDays.insert(day)
             }
         }
 
@@ -301,7 +327,9 @@ class CycleManager {
             ovulationDay: ovDay,
             lutealDays: lutealDays,
             daysInMonth: daysInMonth,
-            activityData: activityData
+            activityData: activityData,
+            isEstimated: isEstimated,
+            hasPhaseData: hasPhaseData
         )
     }
 

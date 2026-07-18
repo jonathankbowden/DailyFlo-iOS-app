@@ -13,12 +13,20 @@ struct CalendarView: View {
     @State private var showSingleDay = false
     @State private var selectedPhase: CyclePhase = .menstrual
 
+    // Drives scrollPosition anchoring; starts on the current month (offset 0).
+    @State private var scrolledMonth: Int? = 0
+
     private let cycleManager = CycleManager.shared
     private let calendar = Calendar.current
     private let daysOfWeek = ["M", "T", "W", "T", "F", "S", "S"]
 
-    // Number of months to show (past and future)
-    private let monthsToShow = 12
+    // Month window: 6 past (back-extrapolated), the current month, and the
+    // forward horizon. Rendered lazily; the current month is the open position.
+    private let pastMonthsToShow = 6
+    private let futureMonthsToShow = 12
+
+    // Offsets from the current month: -6 ... (futureMonthsToShow - 1). 0 = current.
+    private var monthOffsets: [Int] { Array(-pastMonthsToShow..<futureMonthsToShow) }
 
     var body: some View {
         ZStack {
@@ -50,14 +58,16 @@ struct CalendarView: View {
                 // Scrollable calendar with multiple months
                 ScrollView {
                     LazyVStack(spacing: 0) {
-                        ForEach(0..<monthsToShow, id: \.self) { monthOffset in
+                        ForEach(monthOffsets, id: \.self) { monthOffset in
                             monthView(for: monthOffset)
                         }
                     }
+                    .scrollTargetLayout()
                     .padding(.horizontal, FloSpacing.lg)
                     .padding(.top, FloSpacing.lg) // Vertical padding before calendar
                     .padding(.bottom, 140) // Space for tab bar
                 }
+                .scrollPosition(id: $scrolledMonth, anchor: .top)
             }
         }
         .sheet(isPresented: $showPhaseDetail) {
@@ -152,10 +162,14 @@ struct CalendarView: View {
 
         let monthAbbrev = monthAbbreviation(for: monthDate)
 
-        // Create array of all grid cells: nil for empty, day number for actual days
-        let totalCells = firstWeekday + days
+        // Always render a uniform 6-row (42-cell) grid: leading blanks before the
+        // 1st, trailing blanks after the last day. Equal-height month rows make the
+        // LazyVStack's offset math exact, so scrollPosition lands on the current
+        // month and scrolling up into lazily-realized past months doesn't jump.
+        let totalCells = 42
         let cellData: [Int?] = (0..<totalCells).map { index in
-            index < firstWeekday ? nil : index - firstWeekday + 1
+            let dayNumber = index - firstWeekday + 1
+            return (index >= firstWeekday && dayNumber <= days) ? dayNumber : nil
         }
 
         return LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: FloSpacing.xs) {
@@ -323,6 +337,8 @@ struct CycleData {
     let lutealDays: Set<Int>
     let daysInMonth: Int
     let activityData: [Int: DayActivityData] // day -> activity
+    let isEstimated: Bool   // past/back-extrapolated month → render phases muted
+    let hasPhaseData: Bool  // false → no cycle anchor, draw a plain calendar
 
     func phase(for day: Int) -> CyclePhase {
         if periodDays.contains(day) {
@@ -365,6 +381,10 @@ struct DayCellWithPhase: View {
     let onTapDay: () -> Void
     let onTapPhase: () -> Void
 
+    /// Opacity applied to phase tints in estimated (past) months. Muting is done
+    /// via opacity on the existing phase tokens — no new colors introduced.
+    private static let estimatedPhaseOpacity: Double = 0.45
+
     private var phase: CyclePhase { cycleData.phase(for: day) }
     private var isOvulation: Bool { day == cycleData.ovulationDay }
     private var isPhaseStart: Bool { cycleData.isPhaseStart(for: day) }
@@ -377,20 +397,26 @@ struct DayCellWithPhase: View {
 
     var body: some View {
         ZStack {
-            // Phase background bar - 22px tall, vertically centered on day number
-            // Rounded corners on outside edges of phase blocks AND grid edges
-            phaseBackgroundColor
-                .frame(height: 22)
-                .frame(maxWidth: .infinity)
-                .clipShape(PhaseBarShape(
-                    roundLeft: shouldRoundLeft,
-                    roundRight: shouldRoundRight,
-                    cornerRadius: 11
-                ))
-                .padding(.leading, isPhaseStart && day != 1 ? 4 : 0)
-                .padding(.trailing, isPhaseEnd && day != cycleData.daysInMonth ? 4 : 0)
-                .offset(y: -4)
-                .animation(FloAnimation.easeOutQuick, value: isSelected)
+            // Phase background bar - 22px tall, vertically centered on day number.
+            // Rounded corners on outside edges of phase blocks AND grid edges.
+            // Only drawn when there's real cycle data to anchor to (honest
+            // degradation); estimated past months are muted via reduced opacity
+            // on the same phase tokens.
+            if cycleData.hasPhaseData {
+                phaseBackgroundColor
+                    .frame(height: 22)
+                    .frame(maxWidth: .infinity)
+                    .clipShape(PhaseBarShape(
+                        roundLeft: shouldRoundLeft,
+                        roundRight: shouldRoundRight,
+                        cornerRadius: 11
+                    ))
+                    .padding(.leading, isPhaseStart && day != 1 ? 4 : 0)
+                    .padding(.trailing, isPhaseEnd && day != cycleData.daysInMonth ? 4 : 0)
+                    .opacity(cycleData.isEstimated ? Self.estimatedPhaseOpacity : 1)
+                    .offset(y: -4)
+                    .animation(FloAnimation.easeOutQuick, value: isSelected)
+            }
 
             VStack(spacing: 2) {
                 ZStack {
