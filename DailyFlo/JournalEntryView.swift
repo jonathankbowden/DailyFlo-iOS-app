@@ -555,7 +555,7 @@ struct JournalEntryView: View {
                     if isSaving {
                         FloLoadingIndicator(size: 16, color: .white, lineWidth: 2)
                     } else {
-                        Image(systemName: "xmark.circle")
+                        Image(systemName: "checkmark.circle")
                             .font(.system(size: 18, weight: .medium))
                         Text("SAVE")
                             .tracking(1.5)
