@@ -314,6 +314,61 @@ extension ButtonStyle where Self == FloPressedStyle {
     static var floPressed: FloPressedStyle { FloPressedStyle() }
 }
 
+// MARK: - Hit Target (Tap Area)
+
+/// Guarantees a reliable, fully hit-testable tap area without changing appearance.
+///
+/// - Enforces the Apple HIG minimum **44×44pt** touch target. Content stays visually
+///   centered, so a small glyph doesn't move — only the invisible tappable frame grows.
+/// - Applies `contentShape(Rectangle())` so the **entire frame** is tappable, not just
+///   the label text/glyph pixels (the root cause of "only the text is tappable").
+/// - Optionally expands to full width for buttons the design lays out edge-to-edge.
+///
+/// This is purely additive: no background, color, font, or visible layout change to the
+/// control. Pressed/disabled *visuals* remain owned by the button's own `ButtonStyle`
+/// (e.g. `.floPrimary`); this modifier only affects hit area. `.disabled(true)` still
+/// correctly suppresses taps — SwiftUI removes the view from hit testing regardless of
+/// `contentShape`, so a disabled control does not become tappable.
+///
+/// Apply it to the `Button` (or the button's `label`) at the call site:
+/// ```swift
+/// Button { … } label: { Image(systemName: "xmark") }
+///     .buttonStyle(.floPressed)
+///     .floHitTarget()               // icon/small button → 44×44 min
+///
+/// Button("Continue") { … }
+///     .buttonStyle(.floPrimary)
+///     .floHitTargetFullWidth()      // edge-to-edge, 44pt min height
+/// ```
+struct FloHitTarget: ViewModifier {
+    var fullWidth: Bool = false
+    var minSize: CGFloat = 44
+
+    func body(content: Content) -> some View {
+        content
+            .frame(
+                minWidth: fullWidth ? nil : minSize,
+                maxWidth: fullWidth ? .infinity : nil,
+                minHeight: minSize
+            )
+            .contentShape(Rectangle())
+    }
+}
+
+extension View {
+    /// Standard tappable control: enforces a min 44×44pt touch target and makes the whole
+    /// frame hit-testable. Use for icon buttons and any small/short control.
+    func floHitTarget(minSize: CGFloat = 44) -> some View {
+        modifier(FloHitTarget(fullWidth: false, minSize: minSize))
+    }
+
+    /// Full-width tappable control: spans the available width, keeps a min 44pt height, and
+    /// makes the whole frame hit-testable. Use where the design calls for edge-to-edge buttons.
+    func floHitTargetFullWidth(minSize: CGFloat = 44) -> some View {
+        modifier(FloHitTarget(fullWidth: true, minSize: minSize))
+    }
+}
+
 // MARK: - Shimmer Loading Effect
 struct ShimmerModifier: ViewModifier {
     @State private var phase: CGFloat = 0
@@ -575,6 +630,101 @@ extension View {
             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         }
     }
+}
+
+// MARK: - Hit Target Debug Overlay (previews only)
+
+/// Tints a control's actual laid-out frame so the tap area is visible during development.
+/// Also draws the 44×44pt HIG floor as a dashed guide. Debug aid only — never ship on a
+/// real control. Kept `fileprivate` so it can't leak into app code.
+private struct HitAreaDebugOverlay: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .background(Color.floError.opacity(0.18))     // fills the real (hit-testable) frame
+            .overlay(
+                Rectangle()
+                    .strokeBorder(Color.floError.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [3]))
+            )
+            .overlay(
+                Rectangle()
+                    .strokeBorder(Color.floTeal.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [2]))
+                    .frame(width: 44, height: 44)         // the HIG 44×44 floor, for comparison
+            )
+    }
+}
+
+private extension View {
+    /// Preview-only: visualize the frame this view actually occupies (its tap area).
+    func debugHitArea() -> some View { modifier(HitAreaDebugOverlay()) }
+}
+
+#Preview("Hit Target — tap area") {
+    // Red fill = the frame that is actually hit-testable. Teal dashes = the 44×44 HIG floor.
+    VStack(alignment: .leading, spacing: FloSpacing.xl) {
+
+        // Icon buttons — the reported bug vs. the fix.
+        VStack(alignment: .leading, spacing: FloSpacing.md) {
+            Text("Icon button").font(.floLabel).foregroundColor(.floGray)
+            HStack(spacing: FloSpacing.xxl) {
+                VStack(spacing: FloSpacing.sm) {
+                    Button { } label: {
+                        Image(systemName: "xmark").font(.system(size: 16, weight: .semibold))
+                    }
+                    .buttonStyle(.floPressed)
+                    .debugHitArea()
+                    Text("before").font(.floCaption).foregroundColor(.floGray)
+                }
+                VStack(spacing: FloSpacing.sm) {
+                    Button { } label: {
+                        Image(systemName: "xmark").font(.system(size: 16, weight: .semibold))
+                    }
+                    .buttonStyle(.floPressed)
+                    .floHitTarget()                // ← expands to 44×44, glyph unmoved
+                    .debugHitArea()
+                    Text("after").font(.floCaption).foregroundColor(.floSage)
+                }
+            }
+        }
+
+        // Small ghost/text button.
+        VStack(alignment: .leading, spacing: FloSpacing.md) {
+            Text("Ghost button").font(.floLabel).foregroundColor(.floGray)
+            HStack(spacing: FloSpacing.xxl) {
+                VStack(spacing: FloSpacing.sm) {
+                    Button("Skip") { }.buttonStyle(.floTertiary).debugHitArea()
+                    Text("before").font(.floCaption).foregroundColor(.floGray)
+                }
+                VStack(spacing: FloSpacing.sm) {
+                    Button("Skip") { }.buttonStyle(.floTertiary).floHitTarget().debugHitArea()
+                    Text("after").font(.floCaption).foregroundColor(.floSage)
+                }
+            }
+        }
+
+        // Full-width primary — already fine, shown to confirm no visual change.
+        VStack(alignment: .leading, spacing: FloSpacing.md) {
+            Text("Full-width button").font(.floLabel).foregroundColor(.floGray)
+            Button("Continue") { }
+                .buttonStyle(.floPrimary)
+                .floHitTargetFullWidth()
+                .debugHitArea()
+        }
+
+        // Disabled — must NOT become tappable even with the modifier applied.
+        VStack(alignment: .leading, spacing: FloSpacing.md) {
+            Text("Disabled (still not tappable)").font(.floLabel).foregroundColor(.floGray)
+            Button { } label: {
+                Image(systemName: "trash").font(.system(size: 16, weight: .semibold))
+            }
+            .buttonStyle(.floPressed)
+            .floHitTarget()
+            .disabled(true)
+            .debugHitArea()
+        }
+    }
+    .padding(FloSpacing.xl)
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .background(Color.floCream)
 }
 
 
