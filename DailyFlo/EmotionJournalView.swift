@@ -138,6 +138,7 @@ struct EmotionJournalView: View {
                         .foregroundColor(.floGray)
                 }
                 .buttonStyle(.floPressed)
+                .floHitTarget()
                 .transition(.opacity.combined(with: .scale))
             }
         }
@@ -768,6 +769,7 @@ struct JournalDaySheet: View {
                         }
                         .foregroundColor(.floSage)
                     }
+                    .floHitTarget()
 
                     Spacer()
                 }
@@ -1041,6 +1043,7 @@ struct JournalBaseView: View {
                         .foregroundColor(.floGray)
                 }
                 .buttonStyle(.floPressed)
+                .floHitTarget()
                 .transition(.opacity.combined(with: .scale))
             }
         }

@@ -113,6 +113,7 @@ struct PaywallView: View {
                         .background(Color.white.opacity(0.7))
                         .clipShape(Circle())
                 }
+                .floHitTarget()
                 .accessibilityLabel("Close")
             }
             .padding(.horizontal, FloSpacing.md)
