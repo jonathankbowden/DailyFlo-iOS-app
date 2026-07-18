@@ -333,6 +333,7 @@ struct VoiceEntryView: View {
             }
         }
         .buttonStyle(.floPressed)
+        .floHitTarget()
         .accessibilityLabel("Start voice recording")
     }
 

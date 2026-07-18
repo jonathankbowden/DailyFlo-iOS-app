@@ -802,6 +802,7 @@ struct MeditationPlayerView: View {
                 }
             }
             .buttonStyle(.floPressed)
+            .floHitTarget()
             .accessibilityLabel(isPlaying ? "Pause meditation" : "Play meditation")
         }
     }

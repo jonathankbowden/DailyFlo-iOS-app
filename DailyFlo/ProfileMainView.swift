@@ -290,6 +290,7 @@ struct ProfileMainView: View {
                         .frame(width: 32, height: 32)
                         .contentShape(Rectangle())
                 }
+                .floHitTarget()
                 .accessibilityLabel("Back")
                 .accessibilityHint("Returns to the dashboard")
             }

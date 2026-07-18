@@ -136,6 +136,7 @@ struct ContentView: View {
                     }
                     .scaleEffect(fabScale)
                 }
+                .floHitTarget()
                 .offset(y: -bottomSafeArea - 44 - 14)
                 .accessibilityLabel("Add journal entry")
                 .accessibilityHint("Opens journal entry screen to log your day")
@@ -168,6 +169,7 @@ struct ContentView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(TabBarButtonStyle())
+        .floHitTarget()
         .accessibilityLabel(tabAccessibilityLabel(for: tag))
         .accessibilityAddTraits(selectedTab == tag ? [.isButton, .isSelected] : .isButton)
     }
@@ -192,6 +194,7 @@ struct ContentView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(TabBarButtonStyle())
+        .floHitTarget()
         .accessibilityLabel(tabAccessibilityLabel(for: tag))
         .accessibilityAddTraits(selectedTab == tag ? [.isButton, .isSelected] : .isButton)
     }
