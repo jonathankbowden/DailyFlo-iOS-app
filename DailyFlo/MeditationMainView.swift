@@ -526,8 +526,7 @@ struct MeditationCard: View {
                     .overlay(alignment: .topLeading) {
                         VStack(alignment: .leading, spacing: FloSpacing.sm) {
                             Text(session.title)
-                                .font(.floLabel)
-                                .fontWeight(.semibold)
+                                .font(.floTitle)
                                 .foregroundColor(.white)
                                 .tracking(1)
                                 .shadow(color: .black.opacity(0.45), radius: 4, y: 1)
@@ -538,10 +537,12 @@ struct MeditationCard: View {
 
                             HStack(alignment: .firstTextBaseline, spacing: 4) {
                                 Text("\(displayDuration.rawValue)")
-                                    .font(.floSerif(size: 32))
+                                    .font(.floLunary(size: 44))
+                                    .fontWeight(.bold)
                                     .foregroundColor(.white)
                                 Text("mins")
-                                    .font(.floSerif(size: 14))
+                                    .font(.floLunary(size: 18))
+                                    .fontWeight(.bold)
                                     .foregroundColor(.white.opacity(0.9))
                             }
                             .shadow(color: .black.opacity(0.45), radius: 4, y: 1)

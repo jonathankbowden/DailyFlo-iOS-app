@@ -85,12 +85,21 @@ extension Font {
     static let floLabel = Font.system(size: 12, weight: .medium, design: .default)
     static let floButton = Font.system(size: 16, weight: .semibold, design: .default)
 
+    // Sans-serif title — heavier/larger than a label, for overlaid card titles
+    static let floTitle = Font.system(size: 18, weight: .heavy, design: .default)
+
     // Caption for small annotations
     static let floCaption = Font.system(size: 11, weight: .regular, design: .default)
 
     // Serif font for elegant headings
     static func floSerif(size: CGFloat) -> Font {
         Font.custom("Times New Roman", size: size)
+    }
+
+    // Lunary display face (lunary-free.otf) at an arbitrary size — the same
+    // custom font used for the app's large greetings/headers.
+    static func floLunary(size: CGFloat) -> Font {
+        Font.custom("LUNARY free", size: size)
     }
 }
 
