@@ -12,9 +12,12 @@ import PhotosUI
 /// sheet. Four-card layout — feeling, photo, voice, text — over a cream
 /// background, with LOG CYCLE + CLOSE floating at the bottom.
 ///
-/// `entry == nil` = new entry (creates via addEntry on CLOSE).
-/// `entry != nil` = edit that entry (state seeded from it; CLOSE writes
-/// back via updateEntry preserving the id; header shows a delete button).
+/// `entry == nil` = compose for `date` (defaults to today). Under the
+/// one-entry-per-day rule the init first resolves any existing entry on that
+/// day and, if found, seeds from it so this becomes an in-place edit instead
+/// of a duplicate. A genuinely empty day creates via addEntry on SAVE.
+/// `entry != nil` = edit that entry (state seeded from it; SAVE writes back
+/// via updateEntry preserving the id; header shows a delete button).
 struct JournalEntryView: View {
     let entry: JournalEntry?
     let journalManager: JournalManager
@@ -54,29 +57,38 @@ struct JournalEntryView: View {
 
     init(
         entry: JournalEntry? = nil,
+        date: Date? = nil,
         journalManager: JournalManager,
         onDismiss: @escaping () -> Void
     ) {
-        self.entry = entry
         self.journalManager = journalManager
         self.onDismiss = onDismiss
 
-        if let entry {
-            let parts = Self.splitNote(entry.note)
-            _selectedFeeling = State(initialValue: Self.emotionToFeeling[entry.emotion])
-            _entryDate = State(initialValue: entry.date)
+        // One-entry-per-day enforcement, shared by every create surface (the
+        // tab-bar FAB, the calendar day view, the journal grid): when opened to
+        // add a "new" entry, if the target day already has one, become that
+        // entry's editor instead of composing a duplicate. `date` is the day the
+        // presenting surface targets (calendar page / grid cell); it falls back
+        // to today for the FAB, which composes for the current day.
+        let resolvedEntry = entry ?? journalManager.entry(for: date ?? Date())
+        self.entry = resolvedEntry
+
+        if let resolvedEntry {
+            let parts = Self.splitNote(resolvedEntry.note)
+            _selectedFeeling = State(initialValue: Self.emotionToFeeling[resolvedEntry.emotion])
+            _entryDate = State(initialValue: resolvedEntry.date)
             _entryTitle = State(initialValue: parts.title)
             _entryBody = State(initialValue: parts.body)
-            _selectedIntensity = State(initialValue: entry.intensity)
+            _selectedIntensity = State(initialValue: resolvedEntry.intensity)
             // Re-hydrate any previously-attached photo so the editor's
             // photo card opens in its "image present" state and the
             // user can swap or remove it.
-            if let stored = JournalPhotoStore.image(forStoredPath: entry.userPhotoURL) {
+            if let stored = JournalPhotoStore.image(forStoredPath: resolvedEntry.userPhotoURL) {
                 _photoImage = State(initialValue: stored)
             }
         } else {
             _selectedFeeling = State(initialValue: nil)
-            _entryDate = State(initialValue: Date())
+            _entryDate = State(initialValue: date ?? Date())
             _entryTitle = State(initialValue: "")
             _entryBody = State(initialValue: "")
             _selectedIntensity = State(initialValue: 3)

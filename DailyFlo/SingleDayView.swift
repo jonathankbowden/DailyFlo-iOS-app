@@ -147,7 +147,11 @@ struct SingleDayView: View {
             )
         }
         .sheet(isPresented: $showJournalEntry) {
+            // Pass the page's date so the composer targets the day being viewed
+            // (not today), and so the one-entry-per-day resolver opens this day's
+            // existing entry for in-place editing instead of creating a duplicate.
             JournalEntryView(
+                date: currentDate,
                 journalManager: JournalManager.shared,
                 onDismiss: { showJournalEntry = false }
             )

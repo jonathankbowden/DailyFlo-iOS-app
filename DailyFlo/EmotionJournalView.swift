@@ -333,7 +333,8 @@ struct JournalGridView: View {
     @State private var journalManager = JournalManager.shared
     @State private var currentDate: Date?
     @State private var detailDate: Date? = nil
-    @State private var showNewEntry = false
+    /// Non-nil while composing a new entry for a specific (empty) day card.
+    @State private var newEntryDate: Date? = nil
 
     private let calendar = Calendar.current
 
@@ -366,10 +367,17 @@ struct JournalGridView: View {
                 detailDate = nil
             }
         }
-        .sheet(isPresented: $showNewEntry) {
+        .sheet(item: Binding(
+            get: { newEntryDate.map { JournalDayAnchor(date: $0) } },
+            set: { newEntryDate = $0?.date }
+        )) { anchor in
+            // Compose for the tapped day (empty card). Passing the date keeps the
+            // entry on that day and lets the one-entry-per-day resolver open an
+            // existing entry should one exist.
             JournalEntryView(
+                date: anchor.date,
                 journalManager: JournalManager.shared,
-                onDismiss: { showNewEntry = false }
+                onDismiss: { newEntryDate = nil }
             )
         }
     }
@@ -441,7 +449,7 @@ struct JournalGridView: View {
                 if hasEntries {
                     detailDate = date
                 } else {
-                    showNewEntry = true
+                    newEntryDate = date
                 }
             }
     }
@@ -489,7 +497,7 @@ struct JournalGridView: View {
                     if hasEntries {
                         detailDate = cellDate
                     } else {
-                        showNewEntry = true
+                        newEntryDate = cellDate
                     }
                 }
                 .padding(.horizontal, FloSpacing.lg)

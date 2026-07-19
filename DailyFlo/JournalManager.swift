@@ -44,6 +44,7 @@ class JournalManager {
 
     init() {
         loadFromCache()
+        collapseDuplicateDays()
         Task { @MainActor in
             await observeAuthState()
         }
@@ -52,6 +53,21 @@ class JournalManager {
     // MARK: - CRUD Operations
 
     func addEntry(_ entry: JournalEntry) {
+        // One-entry-per-day backstop (data layer). Primary enforcement lives in
+        // the create surfaces: when a day already has an entry they open it for
+        // editing instead of presenting a blank composer. This catches anything
+        // that still reaches addEntry for an occupied day — merge into the
+        // existing record rather than inserting a duplicate, so no note is lost.
+        //
+        // Follow-up (deferred): add a UNIQUE(user_id, entry_date) constraint on
+        // emotion_entries so this invariant is enforced server-side too. Not done
+        // in this task — duplicates still exist on un-migrated devices until
+        // collapseDuplicateDays() has run everywhere.
+        if let existing = self.entry(for: entry.date), existing.id != entry.id {
+            updateEntry(Self.mergeDay([entry, existing], keepingIdOf: existing))
+            return
+        }
+
         entries.insert(entry, at: 0)
         saveToCache()
 
@@ -100,6 +116,14 @@ class JournalManager {
         return entries.filter { calendar.isDate($0.date, inSameDayAs: date) }
     }
 
+    /// The single entry for a calendar day, or nil. Under the one-entry-per-day
+    /// rule the store holds at most one per day; if legacy duplicates survive
+    /// (a day not yet processed by `collapseDuplicateDays`), the most recent one
+    /// is returned so callers still land on the freshest content.
+    func entry(for date: Date) -> JournalEntry? {
+        entries(for: date).max { $0.date < $1.date }
+    }
+
     func entries(for emotion: CoreEmotion) -> [JournalEntry] {
         entries.filter { $0.emotion == emotion }
     }
@@ -130,6 +154,63 @@ class JournalManager {
         return Double(total) / Double(emotionEntries.count)
     }
 
+    // MARK: - One entry per day
+
+    /// Merges several same-day entries into one, losslessly. Notes are
+    /// concatenated newest-first beneath a soft divider — skipping any note whose
+    /// text is already present, so a re-run can't double it — and the newest
+    /// available photo is adopted when the surviving record has none. The
+    /// survivor's identity (`keepingIdOf` when given, else the most-recent entry)
+    /// decides which DB row and photo file stay authoritative.
+    private static func mergeDay(_ dayEntries: [JournalEntry], keepingIdOf survivor: JournalEntry? = nil) -> JournalEntry {
+        let newestFirst = dayEntries.sorted { $0.date > $1.date }
+        let base = survivor ?? newestFirst[0]
+
+        var combinedNote = ""
+        for note in newestFirst.map({ $0.note.trimmingCharacters(in: .whitespacesAndNewlines) }) {
+            guard !note.isEmpty else { continue }
+            if combinedNote.isEmpty {
+                combinedNote = note
+            } else if !combinedNote.contains(note) {
+                combinedNote += "\n\n— earlier that day —\n" + note
+            }
+        }
+
+        let adoptedPhoto = newestFirst.compactMap { $0.userPhotoURL }.first
+        return JournalEntry(
+            id: base.id,
+            date: base.date,
+            emotion: base.emotion,
+            intensity: base.intensity,
+            note: combinedNote,
+            cyclePhase: base.phase,
+            userPhotoURL: base.userPhotoURL ?? adoptedPhoto
+        )
+    }
+
+    /// Non-destructive collapse of any calendar day holding more than one entry
+    /// (legacy data created before the one-entry-per-day rule). The most-recent
+    /// entry survives carrying the merged note — and a sibling photo if it had
+    /// none — while the older duplicates are soft-deleted so their rows stay
+    /// recoverable behind `deleted_at` and their photo files remain on disk.
+    /// Idempotent: once every day holds a single entry it does nothing, so it's
+    /// safe to call on load and after each `refresh()`.
+    func collapseDuplicateDays() {
+        let calendar = Calendar.current
+        let byDay = Dictionary(grouping: entries) { calendar.startOfDay(for: $0.date) }
+        let duplicateDays = byDay.filter { $0.value.count > 1 }
+        guard !duplicateDays.isEmpty else { return }
+
+        for (_, dayEntries) in duplicateDays {
+            let newestFirst = dayEntries.sorted { $0.date > $1.date }
+            updateEntry(Self.mergeDay(dayEntries))   // survivor defaults to most recent
+            for loser in newestFirst.dropFirst() {
+                deleteEntry(loser)                   // soft delete; keeps the photo file
+            }
+        }
+        print("[JournalManager] collapseDuplicateDays: merged \(duplicateDays.count) day(s) with duplicate entries")
+    }
+
     // MARK: - Remote sync
 
     /// Pulls the signed-in user's entries from Supabase and replaces the local
@@ -150,6 +231,11 @@ class JournalManager {
                 .value
 
             entries = rows.compactMap { $0.toJournalEntry() }
+            // Collapse any day the server returned with more than one entry.
+            // Runs on every refresh because a round-trip can resurface duplicates
+            // another device hasn't soft-deleted yet; it's idempotent and a no-op
+            // once each day holds a single entry.
+            collapseDuplicateDays()
             saveToCache()
         } catch {
             print("[JournalManager] refresh failed: \(error)")
