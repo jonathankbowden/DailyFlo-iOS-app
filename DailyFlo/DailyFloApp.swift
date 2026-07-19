@@ -5,6 +5,7 @@
 //  Created by Jonathan Bowden on 2/2/26.
 //
 
+import AuthenticationServices
 import GoogleSignIn
 import RevenueCat
 import Supabase
@@ -105,6 +106,9 @@ struct DailyFloApp: App {
             .task {
                 await observeAuthState()
             }
+            .task {
+                await observeAppleCredentialRevocation()
+            }
             .onOpenURL { url in
                 // Delivers the OAuth redirect callback from Google Sign-In
                 // back into the SDK so it can complete the flow.
@@ -177,6 +181,21 @@ struct DailyFloApp: App {
             @unknown default:
                 break
             }
+        }
+    }
+
+    /// Watches for the user revoking Sign in with Apple (Settings → Apple ID →
+    /// Sign in with Apple → this app → Stop Using). Apple posts this while the
+    /// app is running; revoking there doesn't invalidate the Supabase session
+    /// on its own, so we tear it down here. `authStateChanges` then routes back
+    /// to sign-in. No-op for users who never signed in with Apple — the
+    /// notification only fires for apps holding an Apple ID credential.
+    private func observeAppleCredentialRevocation() async {
+        let notifications = NotificationCenter.default.notifications(
+            named: ASAuthorizationAppleIDProvider.credentialRevokedNotification
+        )
+        for await _ in notifications {
+            try? await SupabaseClient.shared.auth.signOut()
         }
     }
 }

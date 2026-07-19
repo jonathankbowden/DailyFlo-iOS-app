@@ -374,34 +374,94 @@ struct SignInView: View {
                 return
             }
 
+            // Apple hands back the user's name ONLY on the very first
+            // authorization for this Apple ID. Capture it now — the token
+            // itself never carries it — so we can seed the profile once the
+            // session lands. On every later sign-in this is nil.
+            let appleFullName = credential.fullName
+
             emailFocused = false
             isLoading = true
 
             Task { @MainActor in
                 defer { isLoading = false }
                 do {
-                    _ = try await SupabaseClient.shared.auth.signInWithIdToken(
+                    let session = try await SupabaseClient.shared.auth.signInWithIdToken(
                         credentials: OpenIDConnectCredentials(
                             provider: .apple,
                             idToken: idToken,
                             nonce: nonce
                         )
                     )
+                    // Persist the once-only Apple name before we route away.
+                    await persistAppleFullNameIfNeeded(appleFullName, userId: session.user.id)
                     FloHaptics.success()
                     withAnimation(FloAnimation.easeOutMedium) {
                         isSignedIn = true
                     }
                 } catch {
                     FloHaptics.error()
-                    presentError("Apple Sign In failed. \(error.localizedDescription)")
+                    presentError(friendlyAppleSignInError(for: error))
                 }
             }
 
         case .failure(let error):
-            if (error as? ASAuthorizationError)?.code == .canceled { return }
+            // User-cancelled (dismissed the sheet) is silent — no error banner.
+            if let authError = error as? ASAuthorizationError,
+               authError.code == .canceled || authError.code == .unknown {
+                return
+            }
             FloHaptics.error()
             presentError("Apple Sign In failed. Please try again.")
         }
+    }
+
+    /// Writes the Apple-provided full name into `profiles.display_name`, but
+    /// only when it's still blank — so we never clobber a name the user typed
+    /// during onboarding. Apple returns `fullName` at most once per Apple ID,
+    /// so this effectively runs a single time; losing it here means losing it
+    /// forever. Non-fatal on failure: the session is already valid.
+    private func persistAppleFullNameIfNeeded(_ nameComponents: PersonNameComponents?, userId: UUID) async {
+        guard let nameComponents else { return }
+        let formatter = PersonNameComponentsFormatter()
+        let fullName = formatter.string(from: nameComponents)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !fullName.isEmpty else { return }
+
+        do {
+            try await SupabaseClient.shared
+                .from("profiles")
+                .update(["display_name": fullName])
+                .eq("user_id", value: userId)
+                .eq("display_name", value: "")   // only if the trigger-seeded name is still blank
+                .execute()
+
+            // Mirror into the local cache CycleManager reads synchronously, so
+            // the name shows immediately without waiting for a profile refresh.
+            if (UserDefaults.standard.string(forKey: "userName") ?? "").isEmpty {
+                UserDefaults.standard.set(fullName, forKey: "userName")
+            }
+        } catch {
+            #if DEBUG
+            print("[SignInView] persist Apple full name failed — \(type(of: error)): \(error)")
+            #endif
+        }
+    }
+
+    /// Maps a failed Apple `signInWithIdToken` to a user-facing message. The
+    /// important case: the email is already registered under a different
+    /// provider (e.g. they first signed up with email) — steer them to that
+    /// path instead of leaving a dead-end "try again".
+    private func friendlyAppleSignInError(for error: Error) -> String {
+        if let authError = error as? AuthError {
+            switch authError.errorCode {
+            case .emailExists, .userAlreadyExists, .identityAlreadyExists:
+                return "An account with this email already exists. Sign in with your email instead."
+            default:
+                return authError.message
+            }
+        }
+        return "Apple Sign In failed. Please try again."
     }
 
     // MARK: - Google Sign In
