@@ -43,6 +43,10 @@ struct SignInView: View {
     @State private var currentNonce: String?
     @State private var path: [AuthRoute] = []
     @State private var showPasswordSheet = false
+    // Retained across taps so the in-flight ASAuthorizationController and its
+    // delegate callbacks outlive the button action; a local would deallocate
+    // before the sheet presents and silently drop the result.
+    @State private var appleSignInController = AppleSignInController()
 
     @FocusState private var emailFocused: Bool
 
@@ -164,19 +168,8 @@ struct SignInView: View {
     // MARK: - Social
     private var socialSignInButtons: some View {
         VStack(spacing: FloSpacing.sm) {
-            SignInWithAppleButton(.signIn) { request in
-                let nonce = Self.randomNonceString()
-                currentNonce = nonce
-                request.requestedScopes = [.fullName, .email]
-                request.nonce = Self.sha256(nonce)
-            } onCompletion: { result in
-                handleAppleCompletion(result)
-            }
-            .signInWithAppleButtonStyle(.black)
-            .frame(height: 52)
-            .cornerRadius(FloRadius.md)
-            .disabled(isLoading)
-            .accessibilityLabel("Sign in with Apple")
+            appleSignInButton
+                .accessibilityLabel("Sign in with Apple")
 
             socialButton(
                 icon: "g.circle.fill",
@@ -185,6 +178,33 @@ struct SignInView: View {
             )
             .accessibilityLabel("Continue with Google")
         }
+    }
+
+    /// A native SwiftUI `Button` styled to Apple's spec — deliberately NOT
+    /// `SignInWithAppleButton`. That control wraps a UIKit
+    /// `ASAuthorizationAppleIDButton` via `UIViewRepresentable`, and the
+    /// ScrollView's `.dismissKeyboardOnTap()` (a container-level
+    /// `.onTapGesture`) swallowed the tap before it reached the wrapped control,
+    /// so `onRequest` never fired — zero logs. Native SwiftUI buttons win
+    /// SwiftUI's gesture arbitration (which is why Google and email worked and
+    /// only Apple was dead), so this receives the tap reliably and we drive
+    /// `ASAuthorizationController` ourselves in `startSignInWithApple()`.
+    private var appleSignInButton: some View {
+        Button(action: startSignInWithApple) {
+            HStack(spacing: FloSpacing.sm) {
+                Image(systemName: "applelogo")
+                    .font(.system(size: 18, weight: .medium))
+                Text("Sign in with Apple")
+                    .font(.floButton)
+            }
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
+            .frame(height: 52)
+            .background(Color.black)
+            .cornerRadius(FloRadius.md)
+        }
+        .buttonStyle(.floPressed)
+        .disabled(isLoading)
     }
 
     private func socialButton(icon: String, label: String, action: @escaping () -> Void) -> some View {
@@ -360,9 +380,33 @@ struct SignInView: View {
     }
 
     // MARK: - Apple Sign In
+    private func startSignInWithApple() {
+        #if DEBUG
+        print("[AppleSignIn] (a) button tapped — building request, starting ASAuthorizationController")
+        #endif
+        FloHaptics.light()
+
+        let nonce = Self.randomNonceString()
+        currentNonce = nonce
+
+        let request = ASAuthorizationAppleIDProvider().createRequest()
+        request.requestedScopes = [.fullName, .email]
+        request.nonce = Self.sha256(nonce)
+
+        appleSignInController.start(request: request) { result in
+            handleAppleCompletion(result)
+        }
+    }
+
     private func handleAppleCompletion(_ result: Result<ASAuthorization, Error>) {
+        #if DEBUG
+        print("[AppleSignIn] (b) handleAppleCompletion — result received")
+        #endif
         switch result {
         case .success(let authorization):
+            #if DEBUG
+            print("[AppleSignIn] (c) didCompleteWithAuthorization — received credential")
+            #endif
             guard
                 let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
                 let tokenData = credential.identityToken,
@@ -393,6 +437,9 @@ struct SignInView: View {
                             nonce: nonce
                         )
                     )
+                    #if DEBUG
+                    print("[AppleSignIn] (c2) Supabase signInWithIdToken OK — session for user \(session.user.id)")
+                    #endif
                     // Persist the once-only Apple name before we route away.
                     await persistAppleFullNameIfNeeded(appleFullName, userId: session.user.id)
                     FloHaptics.success()
@@ -400,15 +447,29 @@ struct SignInView: View {
                         isSignedIn = true
                     }
                 } catch {
+                    #if DEBUG
+                    print("[AppleSignIn] (c3) Supabase signInWithIdToken FAILED — \(type(of: error)): \(error)")
+                    #endif
                     FloHaptics.error()
                     presentError(friendlyAppleSignInError(for: error))
                 }
             }
 
         case .failure(let error):
-            // User-cancelled (dismissed the sheet) is silent — no error banner.
-            if let authError = error as? ASAuthorizationError,
-               authError.code == .canceled || authError.code == .unknown {
+            let nsError = error as NSError
+            #if DEBUG
+            let codeText = (error as? ASAuthorizationError)
+                .map { "ASAuthorizationError code=\($0.code.rawValue)" } ?? "non-ASAuthorizationError"
+            print("[AppleSignIn] (d) didCompleteWithError — \(codeText) domain=\(nsError.domain) nsCode=\(nsError.code) desc=\(nsError.localizedDescription)")
+            print("[AppleSignIn] (d) full error: \(error)")
+            #endif
+            // Only a genuine user cancel (.canceled, 1001) is silent. `.unknown`
+            // (1000) is Apple's catch-all for REAL failures — most often the Sign
+            // In with Apple capability missing on the App ID / provisioning
+            // profile, or the daemon failing to present. It was previously
+            // swallowed here alongside .canceled, which is exactly why a failed
+            // attempt produced no sheet, no banner, and no log. Surface it now.
+            if let authError = error as? ASAuthorizationError, authError.code == .canceled {
                 return
             }
             FloHaptics.error()
@@ -783,6 +844,66 @@ private struct PasswordSignInSheet: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
             withAnimation { showError = false }
         }
+    }
+}
+
+// MARK: - Apple Sign In controller
+//
+// Retained driver for the native ASAuthorizationController flow. The view
+// holds one as @State so it — and the in-flight controller it owns — outlive
+// the button action; a controller created as a local would deallocate before
+// the system sheet presents, silently dropping the delegate callbacks. Also
+// supplies the presentation anchor that SwiftUI's SignInWithAppleButton used
+// to provide for us.
+private final class AppleSignInController: NSObject,
+    ASAuthorizationControllerDelegate,
+    ASAuthorizationControllerPresentationContextProviding {
+
+    private var completion: ((Result<ASAuthorization, Error>) -> Void)?
+    private var controller: ASAuthorizationController?
+
+    func start(
+        request: ASAuthorizationAppleIDRequest,
+        completion: @escaping (Result<ASAuthorization, Error>) -> Void
+    ) {
+        self.completion = completion
+        let controller = ASAuthorizationController(authorizationRequests: [request])
+        controller.delegate = self
+        controller.presentationContextProvider = self
+        self.controller = controller   // retain until a callback fires
+        #if DEBUG
+        print("[AppleSignIn] (a2) performRequests() — presenting Apple sheet")
+        #endif
+        controller.performRequests()
+    }
+
+    func authorizationController(
+        controller: ASAuthorizationController,
+        didCompleteWithAuthorization authorization: ASAuthorization
+    ) {
+        finish(.success(authorization))
+    }
+
+    func authorizationController(
+        controller: ASAuthorizationController,
+        didCompleteWithError error: Error
+    ) {
+        finish(.failure(error))
+    }
+
+    func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let keyWindow = scenes
+            .first { $0.activationState == .foregroundActive }?
+            .windows.first { $0.isKeyWindow }
+            ?? scenes.flatMap { $0.windows }.first { $0.isKeyWindow }
+        return keyWindow ?? ASPresentationAnchor()
+    }
+
+    private func finish(_ result: Result<ASAuthorization, Error>) {
+        completion?(result)
+        completion = nil
+        controller = nil
     }
 }
 
