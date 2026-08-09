@@ -38,14 +38,25 @@ struct ProfileMainView: View {
 
     private let cycleManager = CycleManager.shared
 
+    /// The user's chosen name, or "" when we don't have one yet. We NEVER
+    /// derive a name from the email address — an email local-part (e.g. an
+    /// Apple private-relay prefix like "7hcwmfhmfb") is not a name. Callers
+    /// render a neutral greeting when this is empty; onboarding fills it in.
     private var displayName: String {
         if let name = profile?.displayName, !name.isEmpty { return name }
-        let fallback = cycleManager.userName
-        if !fallback.isEmpty && fallback != "Friend" { return fallback }
-        if let email = profileEmail, let local = email.split(separator: "@").first {
-            return String(local)
-        }
-        return "Friend"
+        let cached = cycleManager.userName
+        if !cached.isEmpty && cached != "Friend" { return cached }
+        return ""
+    }
+
+    /// "Hello, Name!" when we have a name, otherwise a neutral greeting.
+    private var greetingTitle: String {
+        displayName.isEmpty ? "Hello!" : "Hello, \(displayName)!"
+    }
+
+    /// Avatar monogram, or "" (no name yet) so the caller shows a person glyph.
+    private var avatarInitial: String {
+        displayName.isEmpty ? "" : String(displayName.prefix(1)).uppercased()
     }
 
     private var userName: String { displayName }
@@ -312,7 +323,7 @@ struct ProfileMainView: View {
     private var greetingSection: some View {
         VStack(alignment: .leading, spacing: FloSpacing.md) {
             // Large greeting in Lunary font
-            Text("Hello, \(userName)!")
+            Text(greetingTitle)
                 .font(.custom("LUNARY free", size: 36))
                 .foregroundColor(.floCharcoal)
                 .accessibilityAddTraits(.isHeader)
@@ -504,15 +515,19 @@ struct ProfileMainView: View {
 
                         if isLoadingProfile && profile == nil {
                             FloLoadingIndicator(size: 20, color: .floSage, lineWidth: 2)
+                        } else if avatarInitial.isEmpty {
+                            Image(systemName: "person.fill")
+                                .font(.floDisplaySmall)
+                                .foregroundColor(.floSage)
                         } else {
-                            Text(String(displayName.prefix(1)).uppercased())
+                            Text(avatarInitial)
                                 .font(.floDisplaySmall)
                                 .foregroundColor(.floSage)
                         }
                     }
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(displayName)
+                        Text(displayName.isEmpty ? "Welcome" : displayName)
                             .font(.floBodyLarge)
                             .fontWeight(.medium)
                             .foregroundColor(.floCharcoal)
