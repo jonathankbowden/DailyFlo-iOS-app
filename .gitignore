@@ -12,3 +12,5 @@ xcuserdata/
 
 # Secrets / local config
 SupabaseConfig.xcconfig
+supabase/.temp/
+supabase/.env.local
