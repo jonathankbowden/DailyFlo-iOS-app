@@ -6,9 +6,9 @@ This file gives you (Claude) the context you need to be immediately useful in th
 
 On May 20, 2026 this project nearly lost untracked work because two out-of-sync copies existed (one in Dropbox, one in `~/Developer/DailyFlo`) and tooling wrote to different copies. These rules exist to prevent a recurrence. **Follow and reinforce them.**
 
-1. **Canonical location is `~/Developer/DailyFlo/` ONLY.** Never create, edit, or open a copy of this project inside any cloud-synced folder (Dropbox, iCloud Drive, OneDrive, Google Drive). Cloud sync corrupts `.xcodeproj` files and silently spawns duplicate copies. If you ever detect the project running from a synced path, STOP and flag it to Jonathan immediately — do not write files.
+1. **Canonical location is `~/Developer/Personal/DailyFlo/` ONLY.** (Moved from `~/Developer/DailyFlo/` in July 2026 when the folder was split into Personal/ and Ninety/.) Never create, edit, or open a copy of this project inside any cloud-synced folder (Dropbox, iCloud Drive, OneDrive, Google Drive). Cloud sync corrupts `.xcodeproj` files and silently spawns duplicate copies. If you ever detect the project running from a synced path, STOP and flag it to Jonathan immediately — do not write files.
 
-2. **At the start of every session,** verify you're operating on `~/Developer/DailyFlo/` and run `git status` so you and Jonathan both know what's uncommitted before making changes. If something looks like it's in a different location, surface it before proceeding.
+2. **At the start of every session,** verify you're operating on `~/Developer/Personal/DailyFlo/` and run `git status` so you and Jonathan both know what's uncommitted before making changes. If something looks like it's in a different location, surface it before proceeding.
 
 3. **Git is the source of truth; GitHub is the backup.** Remote: `github.com/jonathankbowden/DailyFlo-iOS-app`. Commit often. Untracked files are the only files that can truly vanish — so when you create or substantially edit Swift files, remind Jonathan to commit them (even to a WIP branch) rather than leaving them untracked.
 
@@ -21,7 +21,7 @@ On May 20, 2026 this project nearly lost untracked work because two out-of-sync 
    ```
    The goal: never end a session with hard-to-recreate work uncommitted. Worst case should be losing the current session, never days.
 
-5. **No lingering duplicate copies.** There should be exactly one working copy of this project. If a second copy appears, consolidate to `~/Developer/DailyFlo/` and archive/delete the other — don't leave two live copies that can drift.
+5. **No lingering duplicate copies.** There should be exactly one working copy of this project. If a second copy appears, consolidate to `~/Developer/Personal/DailyFlo/` and archive/delete the other — don't leave two live copies that can drift.
 
 6. **`.gitignore` must keep build artifacts and secrets out of git.** `SupabaseConfig.xcconfig` (real credentials) is gitignored; `SupabaseConfig.xcconfig.example` is committed. DerivedData, build products, and `.DS_Store` stay ignored.
 
