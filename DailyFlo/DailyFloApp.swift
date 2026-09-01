@@ -154,18 +154,28 @@ struct DailyFloApp: App {
         for await (event, session) in SupabaseClient.shared.auth.authStateChanges {
             switch event {
             case .initialSession:
+                // Link RevenueCat to the Supabase user on every cold launch
+                // with a restored session, so users who signed in before this
+                // wiring existed get identified without re-authenticating.
+                if let session {
+                    await SubscriptionManager.shared.linkUser(session.user.id)
+                }
                 if session != nil, appState == .signIn {
                     withAnimation(.easeInOut(duration: 0.5)) {
                         appState = .main
                     }
                 }
             case .signedIn:
+                if let session {
+                    await SubscriptionManager.shared.linkUser(session.user.id)
+                }
                 if appState != .main {
                     withAnimation(.easeInOut(duration: 0.5)) {
                         appState = .main
                     }
                 }
             case .signedOut, .userDeleted:
+                await SubscriptionManager.shared.unlinkUser()
                 // Route to whichever state the user belongs in given current
                 // local flags. After the in-app "Reset" wipes UserDefaults,
                 // hasCompletedOnboarding is false and we land at onboarding;

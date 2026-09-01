@@ -149,6 +149,36 @@ final class SubscriptionManager {
         return realIsPro ? .restored : .nothingToRestore
     }
 
+    // MARK: - Identity
+
+    /// Ties RevenueCat's app user id to the Supabase auth UUID so the
+    /// revenuecat-webhook edge function can key `subscriptions` on `user_id`.
+    /// Until this runs, RC reports `$RCAnonymousID:` ids and the webhook
+    /// skips the upsert. Idempotent: RC no-ops when the id is unchanged, and
+    /// merges any anonymous purchases into the identified user on first call.
+    func linkUser(_ userId: UUID) async {
+        do {
+            let (info, _) = try await Purchases.shared.logIn(userId.uuidString)
+            updateIsPro(from: info)
+        } catch {
+            // Non-fatal: entitlement gating still works off the cached
+            // CustomerInfo; the next launch retries via `.initialSession`.
+        }
+    }
+
+    /// Drops the Supabase identity from RevenueCat on sign-out so the next
+    /// person to sign in on this device doesn't inherit the previous user's
+    /// entitlement. RC throws if the current user is already anonymous;
+    /// that case is a no-op for us.
+    func unlinkUser() async {
+        do {
+            let info = try await Purchases.shared.logOut()
+            updateIsPro(from: info)
+        } catch {
+            // Already anonymous, or transient. Nothing to unwind.
+        }
+    }
+
     /// Trial/intro eligibility for a specific package. Returns `.unknown`
     /// until the offering loads and the eligibility check returns.
     func introEligibility(for package: Package) -> IntroEligibilityStatus {
