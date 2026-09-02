@@ -30,7 +30,7 @@ On May 20, 2026 this project nearly lost untracked work because two out-of-sync 
 
 A subscription iOS app for women across a wide age range (teens through women in long marriages, including post-menopause as a v1.x audience). Combines cycle tracking, daily emotion journaling, integrated meditation with music, and a partner/parent share loop. Faith-informed in tone and worldview, not explicitly evangelical. Visual identity is soft neutrals and nature tones — no pinks/purples, no body imagery.
 
-Founded May 2026 by Jonathan Bowden and his wife Brittany Bowden (50/50). Bootstrapped. **Target: public App Store launch July 1, 2026** (slip 1–2 weeks acceptable rather than cutting partner share).
+Founded May 2026 by Jonathan Bowden and his wife Brittany Bowden (50/50). Bootstrapped. **Current target: submit to App Review September 29, 2026** via the "30 for 30" cadence (30 min/day, Sept 1–30; TestFlight build at the end of each week — builds 16–19). The original July 1 target passed during a capacity crunch; the September plan is the active one.
 
 The Bowdens also operate a separate design partnership called **Kreathaus**. Keep DailyFLO IP cleanly separated from Kreathaus work.
 
@@ -44,25 +44,26 @@ The Bowdens also operate a separate design partnership called **Kreathaus**. Kee
 - **Future:** Cloudflare R2 for audio CDN (post-launch)
 - **Music for meditations:** Suno Pro generated + originals from a church musician (hybrid model)
 
-## Current build state (as of May 19, 2026)
+## Current build state (as of September 1, 2026 — build 15)
 
-### What's done
+### What's real and wired
 
-- **UI shell is polished and mostly complete.** Splash → onboarding → signIn → 5-tab main (Home, Calendar, Journal, Profile, Meditation) with custom FAB for journal entries
-- **Design system is mature.** `DesignSystem.swift` contains `FloSpacing`, `FloRadius`, `FloHaptics`, `FloAnimation`, color tokens (`floCream`, `floSage`, `floCharcoal`, `floGray`, `floMint`, phase colors), typography styles, and the custom `lunary-free.otf` font. Use these tokens; don't hardcode design values.
-- **Cycle math works.** `CycleManager` calculates phases (menstrual/follicular/ovulation/luteal), next-period prediction, day-of-cycle, month calendar generation — all currently backed by UserDefaults
-- **Journal works locally.** `JournalManager` has full CRUD with UserDefaults persistence
-- **Voice entry exists.** `VoiceEntryView` + `SpeechRecognizer` — feature flag candidate if it gets flaky
-- **`ConnectView` UI exists for partner share** across three states (not connected / pending / connected) — fully designed but **all mocked, no backend wiring**
-- **Supabase backend is complete.** 10 tables with RLS on every one (see schema section below)
+- **Auth is real.** Sign in with Apple (native button + direct ASAuthorizationController), Google, and email — email is **passwordless OTP** via `signInWithOtp` (June 10 decision; the password path is kept hidden for App Review). All sign-in methods flow through one central auth loop. Apple full name persisted; revoked/existing-account cases handled; display_name never derived from email.
+- **Cycle and journal sync to Supabase.** `CycleManager` → `profiles` + `cycles`; `JournalManager` → `emotion_entries` (one entry per day enforced). UserDefaults remains the local cache layer. Onboarding persists via deferred write on first authed launch. 13+ age gate enforced with a birth-date onboarding page.
+- **RevenueCat is live end to end.** SDK integrated, purchases work, `linkUser`/`unlinkUser` in `SubscriptionManager` tie the RevenueCat customer to the Supabase auth UUID from the central auth loop. The `revenuecat-webhook` Supabase Edge Function is **deployed and verified** (first 200 received Sept 1); webhook wired in the RevenueCat dashboard for both environments.
+- **UI shell is polished and complete.** Splash → onboarding → signIn → 5-tab main with custom FAB. Design system (`DesignSystem.swift`) is mature — use its tokens, never hardcode design values.
+- **Cycle math works.** Phases, next-period prediction, day-of-cycle, month calendar generation.
+- **Voice entry exists.** `VoiceEntryView` + `SpeechRecognizer` — feature flag candidate if it gets flaky.
+- **Supabase backend is complete.** 10 tables with RLS on every one; migrations live in `supabase/migrations/` (see schema section).
 
-### What's fake or missing
+### What's still fake or missing (the 30-for-30 punch list)
 
-- **`SignInView.signIn()` is fake.** It's `DispatchQueue.asyncAfter(1.5s) { isSignedIn = true }`. Google button just flips a flag. Apple Sign In button displays but discards the credential. **This is the first thing to replace.**
-- **No Supabase SDK added to Xcode yet.** Needs to be added via Swift Package Manager.
-- **No networking layer anywhere.** Everything reads/writes locally.
-- **No RevenueCat / Sentry / PostHog SDKs added** to the iOS project. Accounts exist; SDKs not yet integrated.
-- **`ConnectView` invitation logic is fake.** Random local codes, "Demo: Skip to Connected" button, no real send/accept.
+- **Partner share is fully mocked.** `ConnectView` UI is complete across all three states, but invitation logic is random local codes + a "Demo: Skip to Connected" button. Real backend wiring is Week 2 of the September plan.
+- **No privacy manifest** (`PrivacyInfo.xcprivacy`) — required for App Review.
+- **No Sentry, no PostHog.** Accounts exist; SDKs not integrated (Week 3).
+- **No tests.**
+- **No offline write queue** for failed Supabase writes (journal first, Week 3).
+- **Fake journal content seeds on fresh install** and dev tools aren't gated out of Release builds — both being removed early in Week 1.
 
 ## Locked product decisions (Week 1, May 18–19, 2026)
 
@@ -79,14 +80,13 @@ These are settled — don't re-litigate them in suggestions:
 - **Music approach:** Suno Pro for the library + a church musician for signature originals (hybrid). Suno Pro plan required for commercial rights.
 - **Emotion framework:** Currently scoped to Chip Dodd's 8 Core Emotions (hurt, lonely, sad, anger, fear, shame, guilt, glad). Brittany is deciding whether to ask permission or build a distinct framework — schema is framework-agnostic so the CHECK constraint can swap if needed.
 
-## Planned UI changes (locked May 26, 2026 — designed, not yet built)
+## UI decisions since May
 
-Build these honoring the locked design constraints above (no symptoms, no flow/heaviness, no pinks/purples).
+- **Journal base view (locked June): simple vertical feed, "Option B."** The omni-scroll 2D day-card calendar grid ("Option A") is **parked to v2 — do not re-pitch it.** v1 journal is a straightforward vertical feed of entries.
+- **Tab bar restructure (designed May 26):** Profile, Calendar, [+] FAB, Journal, Pause (Meditation), with Profile as the default-selected landing tab absorbing the Home dashboard. **Verify against `ContentView.swift` before assuming built or unbuilt** — don't trust this doc for its current state.
+- All UI work honors the locked design constraints: no symptoms, no flow/heaviness, no pinks/purples.
 
-- **Tab bar restructure.** New bottom nav, left→right: **Profile, Calendar, [+] FAB (new journal entry), Journal, Pause (Meditation)**. Profile becomes the far-left, **default-selected** tab on launch, and its landing view IS the current Home dashboard (`HomeView` content moves into the Profile tab). The existing account/settings (`ProfileMainView`: sign-out, stats) lives lower in the same Profile tab as a scroll/section, not a separate tab. Touches `ContentView.swift`: tab order, tag indices, default `selectedTab`, and the icon row.
-- **Journal "view all" base view (the Journal tab's base screen — NOT the cycle calendar).** A 2D day-card grid: each day is a full-screen card whose face = that day's **most-recent** entry (tap expands to all entries via `JournalEntryDetailView`); empty days show a calm empty-state. **Horizontal paging = ±1 day** (left=prev, right=next); **vertical paging = ±7 days**, same weekday (up=prev week, down=next week) — i.e. the calendar grid navigated one day at a time. Reuse `SingleDayView` (day card + `journalManager.entries(for:)`). Build with iOS-17 paging `ScrollView`s (`.scrollTargetBehavior(.paging)`), NOT nested `TabView`s. Client-side only, no schema change.
-
-## Supabase schema (live as of May 19)
+## Supabase schema (live; migrations in `supabase/migrations/`)
 
 All 10 tables exist in the live Supabase project with full RLS:
 
@@ -103,6 +103,10 @@ All 10 tables exist in the live Supabase project with full RLS:
 
 Plus a `partner_has_permission(tracker_id, supporter_id, permission_key)` SQL function used by RLS policies on cycles, cycle_entries, emotion_entries. And a trigger on `auth.users` that auto-creates a `profiles` row on signup.
 
+Since June: `subscription_webhook_events` table + five webhook columns on `subscriptions` (June 3 migration, applied to prod Sept 1). The `revenuecat-webhook` Edge Function lives in `supabase/functions/` and is deployed.
+
+**⚠️ Hard-won lesson (Sept 1):** on this Supabase project, **new tables do NOT automatically get `service_role` access.** Every migration that creates a table must include explicit `GRANT` lines for `service_role` (see `20260901_grant_service_role_subscriptions.sql`), or Edge Functions will fail with "permission denied."
+
 **Full schema spec:** `/Users/jonathanbowden/Documents/Claude/Projects/Daily flow app/dailyflo-supabase-schema.md`
 
 ## Supabase credentials
@@ -113,19 +117,20 @@ Plus a `partner_has_permission(tracker_id, supporter_id, permission_key)` SQL fu
 
 When integrating the SDK, read credentials from a `.xcconfig` file or `Info.plist` that is gitignored — never hardcode them in source files.
 
-## Next engineering work (in priority order)
+## Auth decisions (current)
 
-1. **Add Supabase Swift SDK** via Swift Package Manager: `https://github.com/supabase/supabase-swift` — add to DailyFlo target
-2. **Create `SupabaseClient.swift`** that initializes a shared client with the project URL + publishable key
-3. **Replace fake `signIn()` in `SignInView.swift`** with real Supabase Auth. v1 supports **four auth methods: Sign in with Apple, Google, Meta (Facebook Login), and email/password**. Apple Sign In is required by App Store Guideline 4.8 since other social options are offered. Phone OTP was considered but deferred to v1.x.
+- **v1 auth = Sign in with Apple, Google, and passwordless email OTP** on a unified "Continue with" screen. Apple listed first (privacy positioning + App Store Guideline 4.8).
+- **Meta (Facebook Login) is OUT for v1** (decided Sept 1, 2026). Remove or keep-hidden any Meta button stubs; don't build the provider config.
+- Email is `signInWithOtp` — no password at signup. A password path exists but stays hidden for App Review. Phone OTP deferred to v1.x.
 
-**UI design: Patreon-style social-first layout.** Social provider buttons stacked vertically at the top in this order (Apple, Google, Meta) — Apple first because of privacy positioning and App Store guideline. "OR" divider. Email + password form below as the secondary path. This is a deliberate departure from the current email-first layout — social is the primary path, email is the backup.
+## Next engineering work — the 30-for-30 plan (Sept 1–30, 2026)
 
-Build Apple Sign In + email first (highest priority), stub Google and Meta buttons with TODO comments, then layer in Google and Meta as their Supabase provider configs are completed.
-4. **Migrate `JournalManager`** from UserDefaults → `emotion_entries` table. Keep UserDefaults as an offline cache layer.
-5. **Migrate `CycleManager`** cycle data from UserDefaults → `profiles` + `cycles` tables. Onboarding answers (name, last period date, cycle length, period length) should populate `profiles` and create an initial `cycles` row (with `is_predicted = true`).
-6. **Wire `ConnectView` to the real backend.** Replace mock invitation generation with `invitations` table writes + email send (via Supabase Edge Function or Resend).
-7. **Then RevenueCat** (Week 3 calendar work)
+One finishable ~30-minute task per day; day N = September N. The authoritative day-by-day list lives in Jonathan's Cowork "dailyflo-30-for-30" tracker. Shape of the month:
+
+1. **Week 1 — clear the blockers:** rotate webhook secret + prove sandbox purchase chain (row lands in `subscriptions`), privacy manifest, remove fake journal seed + gate dev tools out of Release, this doc rewrite, **ship build 16**.
+2. **Week 2 — partner share, for real:** real invite codes → `invitations`, share sheet, accept flow → `partner_relationships`, ConnectView reads real state, supporter home reads real data, permissions + disconnect, **ship build 17** (tested on two phones).
+3. **Week 3 — instrument & finish:** Sentry, PostHog, BBT field, offline journal write queue, meditation sessions → cloud, photos → Storage, **ship build 18**.
+4. **Week 4 — submit:** remaining schema into version control, first tests, store listing, App Review prep, fresh-phone walkthrough, fix what testers hit, **ship build 19, submit for App Review Day 29**, retro Day 30.
 
 ## Conventions
 
