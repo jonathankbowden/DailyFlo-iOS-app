@@ -27,6 +27,10 @@ import SwiftUI
     SingleDayView(date: Date(), onDismiss: {})
 }
 
+#Preview("6b - Single Day (Phase-first)") {
+    DayPhaseView(date: Date(), onDismiss: {})
+}
+
 #Preview("7 - Log Cycle") {
     LogCycleView(selectedDate: Date(), onSave: { _ in }, onDismiss: {})
 }

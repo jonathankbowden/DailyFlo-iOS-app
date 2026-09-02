@@ -88,10 +88,10 @@ struct CalendarView: View {
         }
         .sheet(isPresented: $showSingleDay, onDismiss: playLogConfirmationIfNeeded) {
             if let date = selectedDate {
-                SingleDayView(
+                // Tapping any day opens the phase-first day view (numbered
+                // phase, MIND/BODY/SOUL tabs, photo card, day actions).
+                DayPhaseView(
                     date: date,
-                    phase: cycleManager.phase(for: date),
-                    dayOfCycle: cycleManager.dayOfCycle(for: date),
                     onDismiss: { showSingleDay = false },
                     onLoggedCycle: {
                         pendingLogConfirmation = true
