@@ -20,13 +20,17 @@ struct ProfileMainView: View {
     @State private var showConnect = false
     @State private var showAccountSettings = false
     @State private var showSignOutConfirm = false
+    #if DEBUG
     @State private var showResetConfirm = false
+    #endif
     @State private var showComingSoon = false
     #if DEBUG
     @State private var showSubscriptionDebug = false
     #endif
     @State private var isSigningOut = false
+    #if DEBUG
     @State private var isResetting = false
+    #endif
     @State private var signOutErrorMessage: String?
 
     @State private var profile: UserProfileRow?
@@ -126,12 +130,14 @@ struct ProfileMainView: View {
         } message: {
             Text("You'll need to sign in again to access your cycle and journal.")
         }
+        #if DEBUG
         .alert("Reset DailyFLO?", isPresented: $showResetConfirm) {
             Button("Reset", role: .destructive) { performReset() }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("You'll be signed out, all local data will be wiped, and you'll go through onboarding again. Your cloud account is preserved — sign in to restore your data.")
         }
+        #endif
         .overlay(alignment: .bottom) {
             if let message = signOutErrorMessage {
                 Text(message)
@@ -226,7 +232,8 @@ struct ProfileMainView: View {
         }
     }
 
-    // MARK: - Reset (wipe local data + sign out)
+    // MARK: - Reset (wipe local data + sign out) — DEBUG only, never ships in Release.
+    #if DEBUG
     private func performReset() {
         guard !isResetting else { return }
         FloHaptics.medium()
@@ -255,6 +262,7 @@ struct ProfileMainView: View {
             }
         }
     }
+    #endif
 
     // MARK: - Sign Out
     private func performSignOut() {
@@ -604,7 +612,8 @@ struct ProfileMainView: View {
             .accessibilityLabel("Sign out")
             .accessibilityHint("Sign out of your DailyFLO account")
 
-            // Reset app & onboarding
+            // Reset app & onboarding — DEBUG only, never ships in Release.
+            #if DEBUG
             Button(action: {
                 FloHaptics.light()
                 showResetConfirm = true
@@ -642,6 +651,7 @@ struct ProfileMainView: View {
             .fadeIn(delay: hasAppeared ? 0 : 0.55)
             .accessibilityLabel("Reset app and onboarding")
             .accessibilityHint("Signs you out and wipes local data so you can start over")
+            #endif
 
             // Version info
             Text("DailyFlo v1.0")

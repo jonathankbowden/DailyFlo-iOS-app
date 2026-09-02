@@ -401,7 +401,9 @@ struct VoiceEntryView: View {
 #Preview {
     VoiceEntryView(
         onComplete: { title, body in
+            #if DEBUG
             print("Title: \(title), Body: \(body)")
+            #endif
         },
         onDismiss: {}
     )

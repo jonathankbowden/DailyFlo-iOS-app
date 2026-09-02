@@ -92,12 +92,15 @@ struct DailyFloApp: App {
                     } else {
                         ContentView(greeting: greeting, animateFromSplash: true)
                             .transition(.opacity)
+                            #if DEBUG
                             .task {
-                                // TEMP: capture all screen screenshots - remove after use
+                                // TEMP: capture all screen screenshots - remove after use.
+                                // DEBUG only — the screenshot tooling never ships in Release.
                                 if ProcessInfo.processInfo.arguments.contains("--screenshots") {
                                     ScreenshotHelper.captureAllScreens()
                                 }
                             }
+                            #endif
                     }
                 }
             }

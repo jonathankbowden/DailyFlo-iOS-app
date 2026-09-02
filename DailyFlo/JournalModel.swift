@@ -140,6 +140,10 @@ struct JournalEntry: Identifiable, Codable {
 }
 
 // MARK: - Sample Data
+// DEBUG only — demo fixtures for SwiftUI previews. Never compiled into a
+// Release build, and never seeded into a real user's journal (a fresh install
+// starts empty; see JournalManager.loadFromCache).
+#if DEBUG
 extension JournalEntry {
     static let sampleEntries: [JournalEntry] = [
         JournalEntry(
@@ -200,3 +204,4 @@ extension JournalEntry {
         )
     ]
 }
+#endif

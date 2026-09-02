@@ -385,11 +385,15 @@ class CycleManager {
         let pendingPeriodLength = storedPeriod > 0 ? storedPeriod.clamped(to: 2...10) : 5
 
         guard let birth = pendingBirth else {
+            #if DEBUG
             print("[CycleManager] pendingOnboardingPayload: birthDate missing — refusing to upsert")
+            #endif
             return
         }
         guard !pendingName.isEmpty else {
+            #if DEBUG
             print("[CycleManager] pendingOnboardingPayload: display name missing — refusing to upsert")
+            #endif
             return
         }
 
@@ -408,7 +412,9 @@ class CycleManager {
                 .from(profilesTable)
                 .upsert(profileRow, onConflict: "user_id")
                 .execute()
+            #if DEBUG
             print("[CycleManager] profile upsert OK for user \(userId)")
+            #endif
         } catch {
             logRemoteError(operation: "profile upsert", error: error)
             // Don't clear the flag — we want to retry next launch.
@@ -429,7 +435,9 @@ class CycleManager {
                 .from(cyclesTable)
                 .insert(cycleRow)
                 .execute()
+            #if DEBUG
             print("[CycleManager] initial cycle insert OK for user \(userId)")
+            #endif
         } catch {
             logRemoteError(operation: "initial cycle insert", error: error)
             // Profile upsert already succeeded; we don't want to keep retrying
@@ -454,7 +462,9 @@ class CycleManager {
         lastPeriodDate = startDate
 
         guard let userId = SupabaseClient.shared.auth.currentSession?.user.id else {
+            #if DEBUG
             print("[CycleManager] logCycle: no signed-in session — saved locally only")
+            #endif
             return
         }
 
@@ -472,7 +482,9 @@ class CycleManager {
                 .from(cyclesTable)
                 .insert(row)
                 .execute()
+            #if DEBUG
             print("[CycleManager] logCycle insert OK for user \(userId)")
+            #endif
         } catch {
             logRemoteError(operation: "logCycle insert", error: error)
         }
@@ -547,6 +559,7 @@ class CycleManager {
     }
 
     private func logRemoteError(operation: String, error: Error) {
+        #if DEBUG
         if let pg = error as? PostgrestError {
             print("[CycleManager] \(operation) failed — PostgrestError code=\(pg.code ?? "nil") message=\"\(pg.message)\" detail=\(pg.detail ?? "nil") hint=\(pg.hint ?? "nil")")
         } else if let http = error as? HTTPError {
@@ -555,6 +568,7 @@ class CycleManager {
         } else {
             print("[CycleManager] \(operation) failed — \(type(of: error)): \(error.localizedDescription)")
         }
+        #endif
     }
 }
 

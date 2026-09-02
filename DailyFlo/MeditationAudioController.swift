@@ -29,12 +29,15 @@ final class MeditationAudioController {
             engine.play(resource: filename)
             fileEngine = engine
         } else {
+            #if DEBUG
             print("MeditationAudioController: synth start '\(session.title)' (sound: \(session.ambientSound.rawValue))")
+            #endif
             let engine = AmbientAudioEngine()
             do {
                 try engine.play(sound: session.ambientSound)
                 synthEngine = engine
             } catch {
+                #if DEBUG
                 print("""
                 MeditationAudioController: synth start FAILED for '\(session.title)'
                   sound:                  \(session.ambientSound.rawValue)
@@ -42,6 +45,7 @@ final class MeditationAudioController {
                   audio session category: \(AVAudioSession.sharedInstance().category.rawValue)
                   audio session active:   \(AVAudioSession.sharedInstance().isOtherAudioPlaying)
                 """)
+                #endif
             }
         }
         isPlaying = true
@@ -96,6 +100,7 @@ final class FileAudioEngine {
         let url = subdirURL ?? flatURL
 
         guard let url else {
+            #if DEBUG
             print("""
             FileAudioEngine: missing audio resource '\(resource)'
               base name:        \(base)
@@ -103,10 +108,13 @@ final class FileAudioEngine {
               tried Meditations/\(base).mp3: nil
               tried flat \(base).mp3:        nil
             """)
+            #endif
             return
         }
 
+        #if DEBUG
         print("FileAudioEngine: resolved '\(resource)' -> \(url.path)")
+        #endif
 
         configureAudioSession()
 
@@ -119,7 +127,9 @@ final class FileAudioEngine {
             self.player = player
             fade(to: targetVolume, duration: 2.0)
         } catch {
+            #if DEBUG
             print("FileAudioEngine: failed to start \(resource) at \(url.path): \(error)")
+            #endif
         }
     }
 
@@ -150,7 +160,9 @@ final class FileAudioEngine {
             try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
             try session.setActive(true)
         } catch {
+            #if DEBUG
             print("FileAudioEngine: audio session error: \(error)")
+            #endif
         }
     }
 

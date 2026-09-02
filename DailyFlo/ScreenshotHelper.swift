@@ -1,8 +1,10 @@
 import SwiftUI
 
 // Temporary helper - renders all screens to PNG files in the app's documents directory
-// Delete this file after capturing screenshots
+// Delete this file after capturing screenshots.
+// DEBUG only — this dev tool is compiled out of Release/TestFlight builds.
 
+#if DEBUG
 @MainActor
 struct ScreenshotHelper {
 
@@ -38,3 +40,4 @@ struct ScreenshotHelper {
         print("SCREENSHOTS_DONE: \(docsDir.path)")
     }
 }
+#endif

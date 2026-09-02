@@ -72,10 +72,14 @@ class JournalManager {
         saveToCache()
 
         guard let userId = currentUserId() else {
+            #if DEBUG
             print("[JournalManager] addEntry: no signed-in session — entry \(entry.id) saved locally only")
+            #endif
             return
         }
+        #if DEBUG
         print("[JournalManager] addEntry: queuing remote insert for \(entry.id) (user \(userId), emotion \(entry.emotion.databaseValue))")
+        #endif
         Task {
             await remoteInsert(entry, userId: userId)
         }
@@ -88,7 +92,9 @@ class JournalManager {
         }
 
         guard let userId = currentUserId() else {
+            #if DEBUG
             print("[JournalManager] updateEntry: no signed-in session — entry \(entry.id) updated locally only")
+            #endif
             return
         }
         Task {
@@ -101,7 +107,9 @@ class JournalManager {
         saveToCache()
 
         guard currentUserId() != nil else {
+            #if DEBUG
             print("[JournalManager] deleteEntry: no signed-in session — entry \(entry.id) removed locally only")
+            #endif
             return
         }
         Task {
@@ -208,7 +216,9 @@ class JournalManager {
                 deleteEntry(loser)                   // soft delete; keeps the photo file
             }
         }
+        #if DEBUG
         print("[JournalManager] collapseDuplicateDays: merged \(duplicateDays.count) day(s) with duplicate entries")
+        #endif
     }
 
     // MARK: - Remote sync
@@ -238,22 +248,28 @@ class JournalManager {
             collapseDuplicateDays()
             saveToCache()
         } catch {
+            #if DEBUG
             print("[JournalManager] refresh failed: \(error)")
+            #endif
         }
     }
 
     private func remoteInsert(_ entry: JournalEntry, userId: UUID) async {
         do {
             let row = EmotionEntryRow(from: entry, userId: userId)
+            #if DEBUG
             if let jsonData = try? JSONEncoder().encode(row),
                let jsonString = String(data: jsonData, encoding: .utf8) {
                 print("[JournalManager] insert payload: \(jsonString)")
             }
+            #endif
             try await SupabaseClient.shared
                 .from(table)
                 .insert(row)
                 .execute()
+            #if DEBUG
             print("[JournalManager] insert OK for \(entry.id)")
+            #endif
         } catch {
             logRemoteError(operation: "insert", id: entry.id, error: error)
         }
@@ -267,7 +283,9 @@ class JournalManager {
                 .update(row)
                 .eq("id", value: entry.id)
                 .execute()
+            #if DEBUG
             print("[JournalManager] update OK for \(entry.id)")
+            #endif
         } catch {
             logRemoteError(operation: "update", id: entry.id, error: error)
         }
@@ -281,7 +299,9 @@ class JournalManager {
                 .update(payload)
                 .eq("id", value: id)
                 .execute()
+            #if DEBUG
             print("[JournalManager] soft-delete OK for \(id)")
+            #endif
         } catch {
             logRemoteError(operation: "soft-delete", id: id, error: error)
         }
@@ -290,6 +310,7 @@ class JournalManager {
     /// Unwraps the structured Supabase error types so the console message names
     /// the actual cause (RLS rejection, CHECK violation, network failure, etc).
     private func logRemoteError(operation: String, id: UUID, error: Error) {
+        #if DEBUG
         if let pg = error as? PostgrestError {
             print("[JournalManager] \(operation) failed for \(id) — PostgrestError code=\(pg.code ?? "nil") message=\"\(pg.message)\" detail=\(pg.detail ?? "nil") hint=\(pg.hint ?? "nil")")
         } else if let http = error as? HTTPError {
@@ -298,6 +319,7 @@ class JournalManager {
         } else {
             print("[JournalManager] \(operation) failed for \(id) — \(type(of: error)): \(error.localizedDescription) / \(error)")
         }
+        #endif
     }
 
     // MARK: - Auth observation
@@ -335,10 +357,10 @@ class JournalManager {
         if let data = UserDefaults.standard.data(forKey: saveKey),
            let decoded = try? JSONDecoder().decode([JournalEntry].self, from: data) {
             entries = decoded
-        } else {
-            // First-launch UX only — replaced as soon as a real refresh succeeds.
-            entries = JournalEntry.sampleEntries
         }
+        // No first-launch seeding: a fresh install starts with a genuinely empty
+        // journal (calm empty state). Entries populate from Supabase once a
+        // session refreshes. JournalEntry.sampleEntries is retained for previews only.
     }
 
     private func clearCache() {
@@ -394,7 +416,9 @@ private struct EmotionEntryRow: Codable {
 
     func toJournalEntry() -> JournalEntry? {
         guard let emotion = CoreEmotion(databaseValue: primaryEmotion) else {
+            #if DEBUG
             print("[JournalManager] dropping row \(id): unknown primary_emotion '\(primaryEmotion)'")
+            #endif
             return nil
         }
         guard let date = JournalManager.mergeDateAndTime(dayString: entryDate, createdAt: createdAt) else {

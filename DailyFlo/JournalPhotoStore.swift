@@ -39,7 +39,9 @@ enum JournalPhotoStore {
             try data.write(to: url, options: .atomic)
             return name
         } catch {
+            #if DEBUG
             print("[JournalPhotoStore] save failed for \(entryID): \(error)")
+            #endif
             return nil
         }
     }

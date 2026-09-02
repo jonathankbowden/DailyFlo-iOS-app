@@ -113,7 +113,9 @@ class AmbientAudioEngine {
             isPlaying = true
             fadeVolume(to: 0.7, duration: 1.0)
         } catch {
+            #if DEBUG
             print("AmbientAudioEngine: Failed to resume: \(error)")
+            #endif
         }
     }
 

@@ -235,7 +235,8 @@ struct ConnectMainView: View {
                     .foregroundColor(.floSage)
             }
 
-            // Demo: Skip to connected
+            #if DEBUG
+            // Demo: Skip to connected — DEBUG only, never ships in Release.
             Button(action: {
                 connectionStatus = .connected
             }) {
@@ -243,6 +244,7 @@ struct ConnectMainView: View {
                     .font(.floBodySmall)
                     .foregroundColor(.floGray)
             }
+            #endif
         }
         .padding(FloSpacing.lg)
         .background(Color.white)
