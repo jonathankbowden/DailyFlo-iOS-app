@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 // MARK: - Connection Status
 enum ConnectionStatus {
@@ -27,6 +28,7 @@ struct Partner: Identifiable {
 // MARK: - Main Connect View
 struct ConnectMainView: View {
     @Environment(\.dismiss) private var dismiss
+    @State private var partnerManager = PartnerManager.shared
     @State private var connectionStatus: ConnectionStatus = .notConnected
     @State private var showInviteSheet = false
     @State private var showSyncInfo = false
@@ -78,6 +80,15 @@ struct ConnectMainView: View {
             }
             .sheet(isPresented: $showSyncInfo) {
                 CycleSyncInfoSheet()
+            }
+            .task {
+                // Pending state comes from the `invitations` table. Connected
+                // state still reads the sample partner until Day 11 wires
+                // partner_relationships.
+                await partnerManager.refresh()
+                if connectionStatus == .notConnected, partnerManager.pendingInvitation != nil {
+                    connectionStatus = .pendingInvite
+                }
             }
         }
     }
@@ -224,6 +235,10 @@ struct ConnectMainView: View {
                     .font(.floBodyMedium)
                     .foregroundColor(.floGray)
                     .multilineTextAlignment(.center)
+            }
+
+            if let invitation = partnerManager.pendingInvitation {
+                InviteCodeBadge(code: invitation.code)
             }
 
             // Resend option
@@ -414,12 +429,57 @@ struct ConnectMainView: View {
     }
 }
 
+// MARK: - Invite Code Badge
+/// The shareable code with a one-tap copy. Used in the invite sheet and in the
+/// pending state so the tracker can re-share without minting a new code.
+struct InviteCodeBadge: View {
+    let code: String
+    @State private var copied = false
+
+    var body: some View {
+        VStack(spacing: FloSpacing.sm) {
+            Text(code)
+                .font(.system(size: 28, weight: .bold, design: .monospaced))
+                .foregroundColor(.floSage)
+                .padding()
+                .frame(maxWidth: .infinity)
+                .background(Color.floSage.opacity(0.1))
+                .cornerRadius(FloRadius.md)
+                .accessibilityLabel("Invite code \(code.map(String.init).joined(separator: " "))")
+
+            Button(action: copy) {
+                HStack(spacing: FloSpacing.xs) {
+                    Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                    Text(copied ? "Copied" : "Copy Code")
+                }
+                .font(.floBodyMedium)
+                .foregroundColor(.floSage)
+            }
+            .floHitTarget()
+        }
+    }
+
+    private func copy() {
+        UIPasteboard.general.string = code
+        FloHaptics.success()
+        copied = true
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            copied = false
+        }
+    }
+}
+
 // MARK: - Invite Partner Sheet
+/// Creates (or reuses) the tracker's open invitation on appear and shows the
+/// code. Day 9 turns "Share Code" into a system share sheet; today it hands
+/// control back to ConnectMainView, which flips to the pending state.
 struct InvitePartnerSheet: View {
     let onInviteSent: () -> Void
     @Environment(\.dismiss) private var dismiss
-    @State private var partnerEmail = ""
-    @State private var selectedMethod = 0
+    @State private var invitation: PartnerInvitation?
+    @State private var errorMessage: String?
+    @State private var isCreating = false
 
     var body: some View {
         NavigationStack {
@@ -448,76 +508,22 @@ struct InvitePartnerSheet: View {
                         .padding(.horizontal, FloSpacing.lg)
                 }
 
-                // Method selector
-                Picker("Method", selection: $selectedMethod) {
-                    Text("Email").tag(0)
-                    Text("Share Link").tag(1)
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal, FloSpacing.lg)
-
-                if selectedMethod == 0 {
-                    // Email input
-                    VStack(alignment: .leading, spacing: FloSpacing.xs) {
-                        Text("PARTNER'S EMAIL")
-                            .font(.floLabel)
-                            .fontWeight(.medium)
-                            .foregroundColor(.floGray)
-                            .tracking(1)
-
-                        TextField("Enter email", text: $partnerEmail)
-                            .font(.floBodyMedium)
-                            .padding()
-                            .background(Color.white)
-                            .cornerRadius(FloRadius.md)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: FloRadius.md)
-                                    .stroke(Color.floGray.opacity(0.3), lineWidth: 1)
-                            )
-                            .keyboardType(.emailAddress)
-                            .autocapitalization(.none)
-                    }
+                codeSection
                     .padding(.horizontal, FloSpacing.lg)
-                } else {
-                    // Share link option
-                    VStack(spacing: FloSpacing.md) {
-                        Text("Your invite code:")
-                            .font(.floBodyMedium)
-                            .foregroundColor(.floGray)
-
-                        Text("FLO-\(String(format: "%04d", Int.random(in: 1000...9999)))")
-                            .font(.system(size: 28, weight: .bold, design: .monospaced))
-                            .foregroundColor(.floSage)
-                            .padding()
-                            .background(Color.floSage.opacity(0.1))
-                            .cornerRadius(FloRadius.md)
-
-                        Button(action: {
-                            // Copy to clipboard
-                        }) {
-                            HStack {
-                                Image(systemName: "doc.on.doc")
-                                Text("Copy Code")
-                            }
-                            .font(.floBodyMedium)
-                            .foregroundColor(.floSage)
-                        }
-                        .floHitTarget()
-                    }
-                }
 
                 Spacer()
 
-                // Send button
+                // Share button — enabled once a real code exists
                 Button(action: onInviteSent) {
-                    Text(selectedMethod == 0 ? "Send Invite" : "Share Code")
+                    Text("Share Code")
                         .font(.floButton)
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, FloSpacing.md)
-                        .background(Color.floSage)
+                        .background(invitation == nil ? Color.floSage.opacity(0.4) : Color.floSage)
                         .cornerRadius(FloRadius.full)
                 }
+                .disabled(invitation == nil)
                 .padding(.horizontal, FloSpacing.lg)
                 .padding(.bottom, FloSpacing.xl)
             }
@@ -531,6 +537,54 @@ struct InvitePartnerSheet: View {
                     .foregroundColor(.floGray)
                 }
             }
+            .task { await createInvitation() }
+        }
+    }
+
+    @ViewBuilder
+    private var codeSection: some View {
+        VStack(spacing: FloSpacing.md) {
+            Text("Your invite code:")
+                .font(.floBodyMedium)
+                .foregroundColor(.floGray)
+
+            if let invitation {
+                InviteCodeBadge(code: invitation.code)
+
+                Text("Expires \(invitation.expiresAt.formatted(date: .abbreviated, time: .omitted))")
+                    .font(.floBodySmall)
+                    .foregroundColor(.floGray)
+            } else if let errorMessage {
+                Text(errorMessage)
+                    .font(.floBodySmall)
+                    .foregroundColor(.floError)
+                    .multilineTextAlignment(.center)
+
+                Button("Try Again") {
+                    Task { await createInvitation() }
+                }
+                .font(.floButton)
+                .foregroundColor(.floSage)
+                .floHitTarget()
+            } else {
+                ProgressView()
+                    .tint(.floSage)
+                    .frame(height: 72)
+            }
+        }
+    }
+
+    private func createInvitation() async {
+        guard !isCreating else { return }
+        isCreating = true
+        errorMessage = nil
+        defer { isCreating = false }
+
+        do {
+            invitation = try await PartnerManager.shared.ensurePendingInvitation()
+        } catch {
+            errorMessage = (error as? PartnerError)?.errorDescription
+                ?? "Couldn't create an invite code. Check your connection and try again."
         }
     }
 }
