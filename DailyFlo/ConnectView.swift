@@ -5,6 +5,7 @@
 //  Created by Jonathan Bowden on 2/3/26.
 //
 
+import Supabase
 import SwiftUI
 import UIKit
 
@@ -25,6 +26,26 @@ struct Partner: Identifiable {
     let avatarColor: Color
 }
 
+extension Partner {
+    /// Builds the card model from a freshly accepted relationship. Phase and
+    /// countdown are placeholders until Day 12 reads the tracker's real cycle
+    /// through the permission-gated RLS path.
+    init(connection: PartnerConnection) {
+        let trimmed = connection.trackerDisplayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = trimmed.isEmpty ? "Your partner" : trimmed
+        let initials = trimmed.isEmpty
+            ? "♥"
+            : trimmed.split(separator: " ").prefix(2).compactMap { $0.first.map(String.init) }.joined().uppercased()
+        self.init(
+            name: name,
+            initials: initials,
+            currentPhase: .follicular,
+            daysUntilNextPhase: 0,
+            avatarColor: .floSage
+        )
+    }
+}
+
 // MARK: - Main Connect View
 struct ConnectMainView: View {
     @Environment(\.dismiss) private var dismiss
@@ -34,8 +55,14 @@ struct ConnectMainView: View {
     @State private var showShareSheet = false
     @State private var showSyncInfo = false
     @State private var inviteCode = ""
+    @State private var isAcceptingCode = false
+    @State private var acceptErrorMessage: String?
+    /// The partner from a code accepted in this session. Day 11 reads the
+    /// relationship from the DB on launch instead.
+    @State private var connectedPartner: Partner?
+    @FocusState private var codeFieldFocused: Bool
 
-    // Sample connected partner (would come from database)
+    // Sample connected partner — placeholder until Day 11 reads the real row.
     private let samplePartner = Partner(
         name: "Sarah",
         initials: "SB",
@@ -43,6 +70,8 @@ struct ConnectMainView: View {
         daysUntilNextPhase: 5,
         avatarColor: Color(hex: "E8B86D")
     )
+
+    private var displayedPartner: Partner { connectedPartner ?? samplePartner }
 
     var body: some View {
         NavigationStack {
@@ -106,6 +135,39 @@ struct ConnectMainView: View {
         }
     }
 
+    // MARK: - Accept a code
+
+    /// Six code characters after the prefix; the server re-validates.
+    private var canSubmitCode: Bool {
+        PartnerManager.normalizeCode(inviteCode).count == "FLO-".count + 6
+    }
+
+    /// Calls the `accept_invitation` RPC and, on success, lands on the
+    /// connected state with the tracker's real name.
+    private func acceptCode() {
+        guard canSubmitCode, !isAcceptingCode else { return }
+        isAcceptingCode = true
+        acceptErrorMessage = nil
+        codeFieldFocused = false
+
+        Task {
+            defer { isAcceptingCode = false }
+            do {
+                let connection = try await partnerManager.acceptInvitation(code: inviteCode)
+                connectedPartner = Partner(connection: connection)
+                inviteCode = ""
+                FloHaptics.success()
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    connectionStatus = .connected
+                }
+            } catch {
+                FloHaptics.error()
+                acceptErrorMessage = (error as? PartnerError)?.errorDescription
+                    ?? "Couldn't connect right now. Check your connection and try again."
+            }
+        }
+    }
+
     // MARK: - Header
     private var headerView: some View {
         VStack(alignment: .leading, spacing: FloSpacing.xs) {
@@ -118,6 +180,13 @@ struct ConnectMainView: View {
 
                 Button(action: {
                     FloHaptics.light()
+                    if connectedPartner != nil, let userId = SupabaseClient.shared.auth.currentSession?.user.id {
+                        // Accepting settled profiles.role server-side. Pull it
+                        // now, on the way out, so the root re-routes a new
+                        // supporter to their home without yanking this screen
+                        // away mid-celebration.
+                        Task { await CycleManager.shared.refresh(userId: userId) }
+                    }
                     dismiss()
                 }) {
                     Image(systemName: "xmark.circle.fill")
@@ -180,38 +249,58 @@ struct ConnectMainView: View {
                 .cornerRadius(FloRadius.full)
             }
 
-            // Enter code option
+            // Enter code option — the supporter side of the invite.
             VStack(spacing: FloSpacing.sm) {
                 Text("Or enter an invite code")
                     .font(.floBodySmall)
                     .foregroundColor(.floGray)
 
                 HStack(spacing: FloSpacing.sm) {
-                    TextField("Enter code", text: $inviteCode)
-                        .font(.floBodyMedium)
+                    TextField("FLO-A3K2M7", text: $inviteCode)
+                        .font(.system(size: 17, weight: .medium, design: .monospaced))
+                        .foregroundColor(.floCharcoal)
+                        .textInputAutocapitalization(.characters)
+                        .autocorrectionDisabled()
+                        .keyboardType(.asciiCapable)
+                        .submitLabel(.join)
+                        .focused($codeFieldFocused)
+                        .onSubmit(acceptCode)
+                        .onChange(of: inviteCode) { _, _ in acceptErrorMessage = nil }
                         .padding()
                         .background(Color.white)
                         .cornerRadius(FloRadius.md)
                         .overlay(
                             RoundedRectangle(cornerRadius: FloRadius.md)
-                                .stroke(Color.floGray.opacity(0.3), lineWidth: 1)
+                                .stroke(acceptErrorMessage == nil ? Color.floGray.opacity(0.3) : Color.floError, lineWidth: 1)
                         )
+                        .disabled(isAcceptingCode)
 
-                    Button(action: {
-                        FloHaptics.success()
-                        // Validate and connect
-                        if !inviteCode.isEmpty {
-                            connectionStatus = .connected
+                    Button(action: acceptCode) {
+                        if isAcceptingCode {
+                            ProgressView()
+                                .tint(.floSage)
+                                .frame(width: 32, height: 32)
+                        } else {
+                            Image(systemName: "arrow.right.circle.fill")
+                                .font(.system(size: 32))
+                                .foregroundColor(canSubmitCode ? .floSage : .floSage.opacity(0.4))
                         }
-                    }) {
-                        Image(systemName: "arrow.right.circle.fill")
-                            .font(.system(size: 32))
-                            .foregroundColor(.floSage)
                     }
                     .floHitTarget()
+                    .disabled(!canSubmitCode || isAcceptingCode)
+                    .accessibilityLabel("Connect with code")
+                }
+
+                if let acceptErrorMessage {
+                    Text(acceptErrorMessage)
+                        .font(.floBodySmall)
+                        .foregroundColor(.floError)
+                        .multilineTextAlignment(.center)
+                        .transition(.opacity)
                 }
             }
             .padding(.top, FloSpacing.md)
+            .animation(.easeInOut(duration: 0.2), value: acceptErrorMessage)
         }
         .padding(FloSpacing.lg)
         .background(Color.white)
@@ -294,17 +383,17 @@ struct ConnectMainView: View {
                 // Avatar
                 ZStack {
                     Circle()
-                        .fill(samplePartner.avatarColor)
+                        .fill(displayedPartner.avatarColor)
                         .frame(width: 60, height: 60)
 
-                    Text(samplePartner.initials)
+                    Text(displayedPartner.initials)
                         .font(.floDisplaySmall)
                         .foregroundColor(.white)
                 }
 
                 VStack(alignment: .leading, spacing: FloSpacing.xs) {
                     HStack {
-                        Text(samplePartner.name)
+                        Text(displayedPartner.name)
                             .font(.floBodyLarge)
                             .fontWeight(.semibold)
                             .foregroundColor(.floCharcoal)
@@ -335,7 +424,7 @@ struct ConnectMainView: View {
 
             // Your current phase (shared with partner)
             VStack(alignment: .leading, spacing: FloSpacing.md) {
-                Text("SHARING WITH \(samplePartner.name.uppercased())")
+                Text("SHARING WITH \(displayedPartner.name.uppercased())")
                     .font(.floLabel)
                     .fontWeight(.medium)
                     .foregroundColor(.floGray)
@@ -377,7 +466,7 @@ struct ConnectMainView: View {
 
             // What partner sees
             VStack(alignment: .leading, spacing: FloSpacing.sm) {
-                Text("WHAT \(samplePartner.name.uppercased()) SEES")
+                Text("WHAT \(displayedPartner.name.uppercased()) SEES")
                     .font(.floLabel)
                     .fontWeight(.medium)
                     .foregroundColor(.floGray)
