@@ -2,13 +2,24 @@
 //
 // Receives RC webhook POSTs, verifies the shared-secret Authorization header,
 // records every event in `subscription_webhook_events` for idempotency, and
-// mirrors the current subscription state into `subscriptions` for the five
-// event types we care about (INITIAL_PURCHASE, RENEWAL, CANCELLATION,
-// EXPIRATION, BILLING_ISSUE).
+// mirrors the current subscription state into `subscriptions`.
+//
+// Two write paths:
+//   1. Lifecycle events (INITIAL_PURCHASE, RENEWAL, CANCELLATION, EXPIRATION,
+//      BILLING_ISSUE) carry full transaction detail → we upsert directly from
+//      the payload, keyed on the event's `app_user_id` (must be a real UUID).
+//   2. TRANSFER events carry NO transaction detail (only transferred_from /
+//      transferred_to). They fire when an anonymous purchase is merged into an
+//      identified user (purchase-then-sign-in) or when a sub moves between
+//      accounts. Since the payload can't build a row — and the anonymous source
+//      never had one (non-UUID ids are skipped) — we fetch the destination
+//      user's CURRENT state from the RevenueCat REST API and upsert from that.
+//      This also self-heals any earlier skipped/missed lifecycle event.
 //
 // Idempotency: `subscription_webhook_events.event_id` is UNIQUE. A retried
-// webhook hits the unique-violation, returns 200, and never touches
-// `subscriptions` again.
+// webhook hits the unique-violation, returns 200, and never re-processes. The
+// TRANSFER path (fetch-then-upsert) is itself idempotent, so re-processing is
+// safe when the log row is cleared for a deliberate replay.
 //
 // Run via Supabase Edge Functions (Deno).
 // Deploy:  supabase functions deploy revenuecat-webhook --no-verify-jwt
@@ -18,6 +29,15 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 const WEBHOOK_AUTH = Deno.env.get("REVENUECAT_WEBHOOK_AUTH") ?? "";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+
+// Secret RevenueCat REST API key (sk_…). Used only for TRANSFER re-sync.
+// A secret key is required: it resolves the canonical customer + aliases,
+// where the public SDK key auto-creates empty subscribers for aliased ids.
+const RC_API_KEY = Deno.env.get("REVENUECAT_API_KEY") ?? "";
+const RC_API_BASE = "https://api.revenuecat.com/v1";
+
+// Entitlement that grants Pro — mirrors RevenueCatConfig.proEntitlementID.
+const PRO_ENTITLEMENT = "DailyFLO Pro";
 
 const HANDLED_EVENTS = new Set([
     "INITIAL_PURCHASE",
@@ -68,7 +88,7 @@ Deno.serve(async (req) => {
     }
 
     // Idempotency: insert into the event log first. A unique violation on
-    // event_id means we've already processed this webhook → 200, no upsert.
+    // event_id means we've already processed this webhook → 200, no re-write.
     const { error: logErr } = await supabase
         .from("subscription_webhook_events")
         .insert({
@@ -88,13 +108,21 @@ Deno.serve(async (req) => {
         );
     }
 
+    // TRANSFER: no transaction detail in the payload → re-sync destination(s)
+    // from the RevenueCat REST API. Handled before the HANDLED_EVENTS gate
+    // because TRANSFER is deliberately not a direct-upsert event type.
+    if (eventType === "TRANSFER") {
+        return await handleTransfer(event, eventId);
+    }
+
     if (!HANDLED_EVENTS.has(eventType)) {
         return json({ ok: true, ignored: eventType });
     }
 
     if (!appUserId || !UUID_REGEX.test(appUserId)) {
-        // Anonymous RC user or pre-login purchase. Logged for audit;
-        // can't FK to auth.users without a real UUID, so no upsert.
+        // Anonymous RC user or pre-login purchase. Logged for audit; can't FK
+        // to auth.users without a real UUID, so no upsert. A later TRANSFER
+        // (fired when this customer signs in) re-syncs the identified user.
         return json({ ok: true, skipped: "non_uuid_app_user_id" });
     }
 
@@ -142,6 +170,218 @@ Deno.serve(async (req) => {
     return json({ ok: true });
 });
 
+// ── TRANSFER handling ───────────────────────────────────────────────────────
+
+/// Re-sync every UUID touched by a TRANSFER from RevenueCat's authoritative
+/// state. Destinations (`transferred_to`) get their current entitlement upserted
+/// (falling back to re-keying a source row if the REST read yields nothing);
+/// sources (`transferred_from`) that no longer hold the entitlement are
+/// downgraded. Anonymous ids ($RCAnonymousID:…) are ignored — they can't key
+/// `subscriptions.user_id` (uuid, FK to auth.users).
+async function handleTransfer(
+    event: RcEvent,
+    eventId: string,
+): Promise<Response> {
+    if (!RC_API_KEY) {
+        // Config gap, not a client error. Logged for audit; return 200 so RC
+        // doesn't enter a retry storm. Set REVENUECAT_API_KEY to enable.
+        return json({ ok: true, transfer: "skipped_no_api_key" });
+    }
+
+    const toUuids = uuidsOnly(event.transferred_to);
+    const fromUuids = uuidsOnly(event.transferred_from);
+    const synced: Array<Record<string, unknown>> = [];
+
+    // Destinations: authoritative RC fetch → upsert; else re-key a source row.
+    for (const uuid of toUuids) {
+        const row = await syncSubscriberFromRC(uuid, eventId);
+        if (row) {
+            const { error } = await supabase
+                .from("subscriptions")
+                .upsert(row, { onConflict: "user_id" });
+            if (error) {
+                return json(
+                    { error: "transfer_upsert_failed", detail: error.message },
+                    500,
+                );
+            }
+            synced.push({ user_id: uuid, via: "rc_rest", status: row.status });
+            continue;
+        }
+        const rekeyed = await rekeyFromSource(fromUuids, uuid, eventId);
+        synced.push({ user_id: uuid, via: rekeyed ? "rekey" : "no_data" });
+    }
+
+    // Sources that gave up the entitlement: downgrade an existing row.
+    for (const uuid of fromUuids) {
+        if (toUuids.includes(uuid)) continue;
+        await downgradeSource(uuid, eventId);
+    }
+
+    return json({ ok: true, transfer: "processed", synced });
+}
+
+/// Fetch a subscriber's current state from RevenueCat and map it to a
+/// `subscriptions` row, or null when the subscriber has no entitlement data.
+async function syncSubscriberFromRC(
+    uuid: string,
+    eventId: string,
+): Promise<SubscriptionRow | null> {
+    let res: Response;
+    try {
+        res = await fetch(
+            `${RC_API_BASE}/subscribers/${encodeURIComponent(uuid)}`,
+            { headers: { Authorization: `Bearer ${RC_API_KEY}` } },
+        );
+    } catch {
+        return null;
+    }
+    if (!res.ok) return null;
+
+    let data: RcSubscriberResponse;
+    try {
+        data = await res.json();
+    } catch {
+        return null;
+    }
+    const subscriber = data?.subscriber;
+    if (!subscriber) return null;
+
+    return mapSubscriberToRow(uuid, subscriber, eventId);
+}
+
+/// Build a row from RC's subscriber payload. Prefers the Pro entitlement,
+/// falling back to any entitlement present. Returns null when there is nothing
+/// to represent (no entitlements at all).
+function mapSubscriberToRow(
+    uuid: string,
+    subscriber: RcSubscriber,
+    eventId: string,
+): SubscriptionRow | null {
+    const entitlements = subscriber.entitlements ?? {};
+    const entKey = PRO_ENTITLEMENT in entitlements
+        ? PRO_ENTITLEMENT
+        : Object.keys(entitlements)[0];
+    if (!entKey) return null;
+
+    const ent = entitlements[entKey];
+    const productId = ent.product_identifier ?? null;
+    const sub = productId
+        ? (subscriber.subscriptions ?? {})[productId]
+        : undefined;
+
+    const expiresIso = isoOrNull(ent.expires_date ?? sub?.expires_date);
+    const startsIso = isoOrNull(sub?.purchase_date ?? ent.purchase_date);
+    const periodType = sub?.period_type ?? null;
+    const status = deriveStatus(expiresIso, periodType, sub);
+    const tier = deriveTier(productId, periodType);
+
+    return {
+        user_id: uuid,
+        revenuecat_app_user_id: uuid,
+        revenuecat_subscription_id: sub?.store_transaction_id ?? null,
+        tier,
+        status,
+        product_id: productId,
+        entitlement: entKey,
+        store: sub?.store ? sub.store.toUpperCase() : null,
+        current_period_starts_at: startsIso,
+        current_period_ends_at: expiresIso,
+        trial_ends_at: periodType === "trial" ? expiresIso : null,
+        last_event_id: eventId,
+        last_event_type: "TRANSFER",
+        last_synced_at: new Date().toISOString(),
+    };
+}
+
+/// Fallback when the REST read yields nothing: move an existing row from a
+/// source UUID onto the destination. Best-effort — skipped if the destination
+/// already has a row (unique violation) or no source row exists.
+async function rekeyFromSource(
+    fromUuids: string[],
+    dest: string,
+    eventId: string,
+): Promise<boolean> {
+    for (const src of fromUuids) {
+        const { data } = await supabase
+            .from("subscriptions")
+            .select("user_id")
+            .eq("user_id", src)
+            .maybeSingle();
+        if (!data) continue;
+
+        const { error } = await supabase
+            .from("subscriptions")
+            .update({
+                user_id: dest,
+                revenuecat_app_user_id: dest,
+                last_event_id: eventId,
+                last_event_type: "TRANSFER",
+                last_synced_at: new Date().toISOString(),
+            })
+            .eq("user_id", src);
+        if (!error) return true;
+    }
+    return false;
+}
+
+/// A source UUID that lost its entitlement in a transfer. If RC still shows it
+/// active (multi-alias edge case) keep it synced; otherwise mark an existing
+/// row expired. Never creates a row for a source that never had one.
+async function downgradeSource(uuid: string, eventId: string): Promise<void> {
+    const row = await syncSubscriberFromRC(uuid, eventId);
+    if (row && (row.status === "active" || row.status === "trial")) {
+        await supabase.from("subscriptions").upsert(row, {
+            onConflict: "user_id",
+        });
+        return;
+    }
+    await supabase
+        .from("subscriptions")
+        .update({
+            status: "expired",
+            last_event_id: eventId,
+            last_event_type: "TRANSFER",
+            last_synced_at: new Date().toISOString(),
+        })
+        .eq("user_id", uuid);
+}
+
+// ── Mapping helpers ─────────────────────────────────────────────────────────
+
+function uuidsOnly(ids?: string[] | null): string[] {
+    if (!Array.isArray(ids)) return [];
+    return ids.filter((id) => typeof id === "string" && UUID_REGEX.test(id));
+}
+
+/// Status from RC subscriber fields. Mirrors the lifecycle-event mapping:
+/// still-valid + auto-renew-off or billing-issue → cancelled (has access, gated
+/// as not-paying); trial period → trial; past expiry → expired.
+function deriveStatus(
+    expiresIso: string | null,
+    periodType: string | null,
+    sub: RcSubscription | undefined,
+): string {
+    const expiresMs = expiresIso ? Date.parse(expiresIso) : NaN;
+    const active = Number.isFinite(expiresMs) && expiresMs > Date.now();
+    if (!active) return "expired";
+    if (sub?.billing_issues_detected_at) return "cancelled";
+    if (sub?.unsubscribe_detected_at) return "cancelled";
+    if (periodType === "trial") return "trial";
+    return "active";
+}
+
+function deriveTier(
+    productId: string | null,
+    periodType: string | null,
+): string {
+    if (periodType === "trial") return "trial";
+    const p = (productId ?? "").toLowerCase();
+    if (p.includes("annual") || p.includes("yearly")) return "annual";
+    if (p.includes("month")) return "monthly";
+    return "monthly";
+}
+
 function pickEntitlement(event: RcEvent): string | null {
     if (Array.isArray(event.entitlement_ids) && event.entitlement_ids.length) {
         return event.entitlement_ids[0];
@@ -188,6 +428,12 @@ function msToIso(ms: number | string | null | undefined): string | null {
     return new Date(n).toISOString();
 }
 
+function isoOrNull(s: string | null | undefined): string | null {
+    if (!s) return null;
+    const t = Date.parse(s);
+    return Number.isFinite(t) ? new Date(t).toISOString() : null;
+}
+
 function timingSafeEqual(a: string, b: string): boolean {
     if (a.length !== b.length) return false;
     let diff = 0;
@@ -219,9 +465,58 @@ interface RcEvent {
     transaction_id?: string;
     purchased_at_ms?: number;
     expiration_at_ms?: number;
+    // TRANSFER only: app user ids losing / receiving the entitlements.
+    transferred_from?: string[];
+    transferred_to?: string[];
 }
 
 interface RcWebhookBody {
     event: RcEvent;
     api_version?: string;
+}
+
+// Subset of the RevenueCat REST `GET /v1/subscribers/{id}` response we read.
+// https://www.revenuecat.com/docs/api-v1#tag/customers
+interface RcSubscriberResponse {
+    subscriber?: RcSubscriber;
+}
+
+interface RcSubscriber {
+    original_app_user_id?: string;
+    entitlements?: Record<string, RcEntitlement>;
+    subscriptions?: Record<string, RcSubscription>;
+}
+
+interface RcEntitlement {
+    expires_date?: string | null;
+    purchase_date?: string | null;
+    product_identifier?: string;
+}
+
+interface RcSubscription {
+    expires_date?: string | null;
+    purchase_date?: string | null;
+    store?: string;
+    period_type?: string;
+    unsubscribe_detected_at?: string | null;
+    billing_issues_detected_at?: string | null;
+    store_transaction_id?: string | null;
+}
+
+// Shape upserted into `public.subscriptions`.
+interface SubscriptionRow {
+    user_id: string;
+    revenuecat_app_user_id: string;
+    revenuecat_subscription_id: string | null;
+    tier: string;
+    status: string;
+    product_id: string | null;
+    entitlement: string | null;
+    store: string | null;
+    current_period_starts_at: string | null;
+    current_period_ends_at: string | null;
+    trial_ends_at: string | null;
+    last_event_id: string;
+    last_event_type: string;
+    last_synced_at: string;
 }
