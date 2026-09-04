@@ -7,8 +7,10 @@
 //  Day 8 of the 30-for-30 (Sept 2026): "Send Invite" now writes a real row to
 //  the `invitations` table instead of showing a random local number. The code
 //  is generated client-side, is unique per the table's UNIQUE constraint, and
-//  expires 30 days after creation. Accepting a code, reading the connected
-//  state, and permissions arrive on the following days.
+//  expires 30 days after creation.
+//  Day 9: the code goes out through the system share sheet as a ready-to-send
+//  message (`PartnerInvitation.shareMessage`). Accepting a code, reading the
+//  connected state, and permissions arrive on the following days.
 //
 
 import Foundation
@@ -25,6 +27,27 @@ struct PartnerInvitation: Identifiable, Equatable {
     let expiresAt: Date
 
     var isExpired: Bool { expiresAt <= Date() }
+
+    /// The text handed to the share sheet. Plain text travels everywhere
+    /// (Messages, Mail, WhatsApp, Notes) and the code is easy to type or copy
+    /// on the other end. Written in the tracker's voice since it goes out
+    /// from their phone; `senderName` becomes a sign-off, or nothing when we
+    /// only have the placeholder name.
+    func shareMessage(senderName: String) -> String {
+        let name = senderName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let expiry = expiresAt.formatted(date: .abbreviated, time: .omitted)
+        let signOff = name.isEmpty ? "" : "\n\n— \(name)"
+
+        return """
+        I'd love for you to join me on DailyFLO so you can understand my cycle and support me through each phase.
+
+        Get the DailyFLO app, tap Connect, and enter my invite code:
+
+        \(code)
+
+        The code works until \(expiry).\(signOff)
+        """
+    }
 }
 
 // MARK: - Manager

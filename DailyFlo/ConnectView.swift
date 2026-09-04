@@ -31,6 +31,7 @@ struct ConnectMainView: View {
     @State private var partnerManager = PartnerManager.shared
     @State private var connectionStatus: ConnectionStatus = .notConnected
     @State private var showInviteSheet = false
+    @State private var showShareSheet = false
     @State private var showSyncInfo = false
     @State private var inviteCode = ""
 
@@ -72,11 +73,16 @@ struct ConnectMainView: View {
                     .padding(.horizontal, FloSpacing.lg)
                 }
             }
-            .sheet(isPresented: $showInviteSheet) {
-                InvitePartnerSheet(onInviteSent: {
-                    showInviteSheet = false
-                    connectionStatus = .pendingInvite
-                })
+            .sheet(isPresented: $showInviteSheet, onDismiss: syncStatusWithInvitation) {
+                InvitePartnerSheet()
+            }
+            .sheet(isPresented: $showShareSheet) {
+                if let invitation = partnerManager.pendingInvitation {
+                    InviteShareSheet(invitation: invitation) { _ in
+                        showShareSheet = false
+                    }
+                    .presentationDetents([.medium, .large])
+                }
             }
             .sheet(isPresented: $showSyncInfo) {
                 CycleSyncInfoSheet()
@@ -86,10 +92,17 @@ struct ConnectMainView: View {
                 // state still reads the sample partner until Day 11 wires
                 // partner_relationships.
                 await partnerManager.refresh()
-                if connectionStatus == .notConnected, partnerManager.pendingInvitation != nil {
-                    connectionStatus = .pendingInvite
-                }
+                syncStatusWithInvitation()
             }
+        }
+    }
+
+    /// An open invitation row is what "pending" means, whether it was just
+    /// created in the invite sheet or found on launch. Never demotes a
+    /// connected state.
+    private func syncStatusWithInvitation() {
+        if connectionStatus == .notConnected, partnerManager.pendingInvitation != nil {
+            connectionStatus = .pendingInvite
         }
     }
 
@@ -241,14 +254,20 @@ struct ConnectMainView: View {
                 InviteCodeBadge(code: invitation.code)
             }
 
-            // Resend option
+            // Share the same code again — never mints a new one.
             Button(action: {
-                showInviteSheet = true
+                FloHaptics.light()
+                showShareSheet = true
             }) {
-                Text("Resend Invite")
-                    .font(.floButton)
-                    .foregroundColor(.floSage)
+                HStack(spacing: FloSpacing.xs) {
+                    Image(systemName: "square.and.arrow.up")
+                    Text("Share Invite Again")
+                }
+                .font(.floButton)
+                .foregroundColor(.floSage)
             }
+            .floHitTarget()
+            .disabled(partnerManager.pendingInvitation == nil)
 
             #if DEBUG
             // Demo: Skip to connected — DEBUG only, never ships in Release.
@@ -472,14 +491,16 @@ struct InviteCodeBadge: View {
 
 // MARK: - Invite Partner Sheet
 /// Creates (or reuses) the tracker's open invitation on appear and shows the
-/// code. Day 9 turns "Share Code" into a system share sheet; today it hands
-/// control back to ConnectMainView, which flips to the pending state.
+/// code. "Share Code" opens the system share sheet with a ready-to-send
+/// message; once the tracker actually sends it, this sheet closes and
+/// ConnectMainView shows the pending state. Cancelling the share sheet keeps
+/// the tracker here so they can copy the code or try another app instead.
 struct InvitePartnerSheet: View {
-    let onInviteSent: () -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var invitation: PartnerInvitation?
     @State private var errorMessage: String?
     @State private var isCreating = false
+    @State private var showShareSheet = false
 
     var body: some View {
         NavigationStack {
@@ -514,18 +535,39 @@ struct InvitePartnerSheet: View {
                 Spacer()
 
                 // Share button — enabled once a real code exists
-                Button(action: onInviteSent) {
-                    Text("Share Code")
-                        .font(.floButton)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, FloSpacing.md)
-                        .background(invitation == nil ? Color.floSage.opacity(0.4) : Color.floSage)
-                        .cornerRadius(FloRadius.full)
+                Button(action: {
+                    FloHaptics.medium()
+                    showShareSheet = true
+                }) {
+                    HStack(spacing: FloSpacing.sm) {
+                        Image(systemName: "square.and.arrow.up")
+                        Text("Share Code")
+                    }
+                    .font(.floButton)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, FloSpacing.md)
+                    .background(invitation == nil ? Color.floSage.opacity(0.4) : Color.floSage)
+                    .cornerRadius(FloRadius.full)
                 }
                 .disabled(invitation == nil)
                 .padding(.horizontal, FloSpacing.lg)
                 .padding(.bottom, FloSpacing.xl)
+            }
+            .sheet(isPresented: $showShareSheet) {
+                if let invitation {
+                    InviteShareSheet(invitation: invitation) { sent in
+                        if sent {
+                            // Closing this sheet takes the share sheet with it;
+                            // ConnectMainView then flips to the pending state.
+                            FloHaptics.success()
+                            dismiss()
+                        } else {
+                            showShareSheet = false
+                        }
+                    }
+                    .presentationDetents([.medium, .large])
+                }
             }
             .background(Color.floCream)
             .navigationBarTitleDisplayMode(.inline)
@@ -586,6 +628,44 @@ struct InvitePartnerSheet: View {
             errorMessage = (error as? PartnerError)?.errorDescription
                 ?? "Couldn't create an invite code. Check your connection and try again."
         }
+    }
+}
+
+// MARK: - Invite Share Sheet
+/// The system share sheet (Messages, Mail, WhatsApp, AirDrop, Copy…) carrying
+/// the invite message. SwiftUI's `ShareLink` gives no completion callback, and
+/// we need one to know whether the invite actually went out, so this wraps
+/// `UIActivityViewController` directly.
+struct InviteShareSheet: UIViewControllerRepresentable {
+    let invitation: PartnerInvitation
+    /// Called once with `true` when the tracker completed a share action, or
+    /// `false` when they dismissed the picker without sending. The caller
+    /// owns dismissal so nested sheets never race each other.
+    let onFinish: (Bool) -> Void
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        let message = invitation.shareMessage(senderName: Self.senderName)
+        let controller = UIActivityViewController(activityItems: [message], applicationActivities: nil)
+        controller.excludedActivityTypes = [
+            .assignToContact,
+            .addToReadingList,
+            .print,
+            .saveToCameraRoll,
+            .markupAsPDF
+        ]
+        controller.completionWithItemsHandler = { _, completed, _, _ in
+            onFinish(completed)
+        }
+        return controller
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+
+    /// The tracker's chosen name, or "" when we only have the placeholder.
+    /// Mirrors ProfileMainView: a name is never derived from an email.
+    private static var senderName: String {
+        let cached = CycleManager.shared.userName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (cached.isEmpty || cached == "Friend") ? "" : cached
     }
 }
 
