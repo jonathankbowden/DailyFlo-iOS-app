@@ -166,15 +166,42 @@ class CycleManager {
 
     /// Returns the day of cycle (1-based) for any given date
     func dayOfCycle(for date: Date) -> Int {
+        Self.dayOfCycle(on: date, lastPeriodStart: lastPeriodDate, cycleLength: cycleLength)
+    }
+
+    // MARK: - Pure cycle math
+    // Static so the supporter side can run the same arithmetic on a
+    // partner's numbers without standing up a second manager.
+
+    /// Day of cycle (1-based) on `date`, given the most recent period start.
+    static func dayOfCycle(on date: Date, lastPeriodStart: Date, cycleLength: Int) -> Int {
         let calendar = Calendar.current
-        let startOfLast = calendar.startOfDay(for: lastPeriodDate)
+        let length = max(1, cycleLength)
+        let startOfLast = calendar.startOfDay(for: lastPeriodStart)
         let startOfDate = calendar.startOfDay(for: date)
         let daysSinceStart = calendar.dateComponents([.day], from: startOfLast, to: startOfDate).day ?? 0
 
         // Normalize to cycle position (1-based)
-        let mod = daysSinceStart % cycleLength
-        let normalizedDay = mod >= 0 ? mod + 1 : cycleLength + mod + 1
-        return normalizedDay
+        let mod = daysSinceStart % length
+        return mod >= 0 ? mod + 1 : length + mod + 1
+    }
+
+    /// Phase for a cycle day, with boundaries proportional to cycle length.
+    /// Mirrors `ovulationDay` / `follicularEnd` / `ovulationEnd` above.
+    static func phase(forCycleDay day: Int, cycleLength: Int, periodLength: Int) -> CyclePhase {
+        let ovulationDay = max(cycleLength - 14, periodLength + 2)
+        let follicularEnd = ovulationDay - 2
+        let ovulationEnd = ovulationDay + 1
+
+        if day >= 1 && day <= periodLength {
+            return .menstrual
+        } else if day <= follicularEnd {
+            return .follicular
+        } else if day <= ovulationEnd {
+            return .ovulation
+        } else {
+            return .luteal
+        }
     }
 
     /// Returns the cycle phase for any given date
@@ -185,15 +212,7 @@ class CycleManager {
 
     /// Returns the cycle phase for a given day number within the cycle
     func phase(forCycleDay day: Int) -> CyclePhase {
-        if day >= 1 && day <= periodLength {
-            return .menstrual
-        } else if day <= follicularEnd {
-            return .follicular
-        } else if day <= ovulationEnd {
-            return .ovulation
-        } else {
-            return .luteal
-        }
+        Self.phase(forCycleDay: day, cycleLength: cycleLength, periodLength: periodLength)
     }
 
     // MARK: - Next Period Prediction

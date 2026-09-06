@@ -15,7 +15,10 @@
 //  `partner_relationships` row server-side.
 //  Day 11: `refresh()` loads the active relationship through the
 //  `my_partner_relationships` RPC, so Connect shows real state on launch on
-//  both phones. Permissions and disconnect arrive on the following days.
+//  both phones.
+//  Day 12: the supporter home renders from `SupporterSnapshot`, loaded
+//  through the permission-gated `supporter_snapshot` RPC. Permissions and
+//  disconnect arrive on the following days.
 //
 
 import Foundation
@@ -93,6 +96,37 @@ struct PartnerRelationship: Identifiable, Equatable {
     }
 }
 
+/// What the supporter home renders: who they support and, when permitted,
+/// the inputs for that person's current phase. Cycle fields are `nil` when
+/// the tracker hasn't shared their phase or hasn't logged a period yet.
+struct SupporterSnapshot: Equatable {
+    let relationshipId: UUID
+    let trackerUserId: UUID
+    /// "" when the tracker hasn't set a name yet.
+    let trackerDisplayName: String
+    let canViewPhase: Bool
+    let lastPeriodStart: Date?
+    let cycleLengthDays: Int?
+    let periodLengthDays: Int?
+
+    /// True when the phase can be computed: permission granted and a
+    /// period has been logged.
+    var hasPhaseData: Bool {
+        canViewPhase && lastPeriodStart != nil
+    }
+
+    /// The tracker's cycle day today, using the same math as their own app.
+    var currentCycleDay: Int? {
+        guard let start = lastPeriodStart, let length = cycleLengthDays else { return nil }
+        return CycleManager.dayOfCycle(on: Date(), lastPeriodStart: start, cycleLength: length)
+    }
+
+    var currentPhase: CyclePhase? {
+        guard let day = currentCycleDay, let length = cycleLengthDays, let period = periodLengthDays else { return nil }
+        return CycleManager.phase(forCycleDay: day, cycleLength: length, periodLength: period)
+    }
+}
+
 // MARK: - Manager
 
 @Observable
@@ -114,6 +148,7 @@ final class PartnerManager {
     private let invitationsTable = "invitations"
     private let acceptInvitationFunction = "accept_invitation"
     private let relationshipsFunction = "my_partner_relationships"
+    private let supporterSnapshotFunction = "supporter_snapshot"
 
     /// Invitations stay valid for this long; matches the schema default.
     static let invitationLifetimeDays = 30
@@ -174,6 +209,33 @@ final class PartnerManager {
             #endif
         } catch {
             logRemoteError(operation: "relationships fetch", error: error)
+        }
+    }
+
+    /// Loads the supporter home's data. Returns `nil` when the signed-in
+    /// user isn't a supporter in any active relationship. Throws on network
+    /// or decode failure so the screen can show a retry.
+    @MainActor
+    func loadSupporterSnapshot() async throws -> SupporterSnapshot? {
+        guard currentUserId() != nil else { return nil }
+
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            let rows: [SupporterSnapshotRow] = try await SupabaseClient.shared
+                .rpc(supporterSnapshotFunction)
+                .execute()
+                .value
+
+            let snapshot = rows.first.map(SupporterSnapshot.init(row:))
+            #if DEBUG
+            print("[PartnerManager] supporter snapshot OK — tracker: \(snapshot?.trackerDisplayName ?? "none"), phase visible: \(snapshot?.canViewPhase ?? false)")
+            #endif
+            return snapshot
+        } catch {
+            logRemoteError(operation: "supporter snapshot", error: error)
+            throw error
         }
     }
 
@@ -366,6 +428,20 @@ final class PartnerManager {
         return f
     }()
 
+    /// Postgres `date` columns arrive as "yyyy-MM-dd"; parsed in the
+    /// device's calendar so cycle-day math lines up with local midnight.
+    private static let dateOnlyFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .gregorian)
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
+    static func parseDate(_ raw: String) -> Date? {
+        dateOnlyFormatter.date(from: raw)
+    }
+
     /// Postgres emits up to six fractional digits; Foundation's parser only
     /// promises three. Trim before parsing so neither form is rejected.
     static func parseTimestamp(_ raw: String) -> Date? {
@@ -468,6 +544,41 @@ private struct InvitationRow: Decodable {
         case createdAt = "created_at"
         case expiresAt = "expires_at"
         case acceptedAt = "accepted_at"
+    }
+}
+
+/// One row of the `supporter_snapshot` RPC's result set.
+private struct SupporterSnapshotRow: Decodable {
+    let relationshipId: UUID
+    let trackerUserId: UUID
+    let trackerDisplayName: String?
+    let canViewPhase: Bool
+    let lastPeriodStart: String?   // "yyyy-MM-dd"
+    let cycleLengthDays: Int?
+    let periodLengthDays: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case relationshipId = "relationship_id"
+        case trackerUserId = "tracker_user_id"
+        case trackerDisplayName = "tracker_display_name"
+        case canViewPhase = "can_view_phase"
+        case lastPeriodStart = "last_period_start"
+        case cycleLengthDays = "cycle_length_days"
+        case periodLengthDays = "period_length_days"
+    }
+}
+
+private extension SupporterSnapshot {
+    init(row: SupporterSnapshotRow) {
+        self.init(
+            relationshipId: row.relationshipId,
+            trackerUserId: row.trackerUserId,
+            trackerDisplayName: row.trackerDisplayName ?? "",
+            canViewPhase: row.canViewPhase,
+            lastPeriodStart: row.lastPeriodStart.flatMap(PartnerManager.parseDate),
+            cycleLengthDays: row.cycleLengthDays,
+            periodLengthDays: row.periodLengthDays
+        )
     }
 }
 
