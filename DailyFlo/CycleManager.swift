@@ -397,28 +397,26 @@ class CycleManager {
 
         let pendingName = (UserDefaults.standard.string(forKey: "userName") ?? "").trimmingCharacters(in: .whitespaces)
         let pendingBirth = UserDefaults.standard.object(forKey: "birthDate") as? Date
-        let pendingLastPeriod = UserDefaults.standard.object(forKey: "lastPeriodDate") as? Date ?? Date()
+        let pendingLastPeriod = UserDefaults.standard.object(forKey: "lastPeriodDate") as? Date
         let storedCycle = UserDefaults.standard.integer(forKey: "cycleLength")
         let storedPeriod = UserDefaults.standard.integer(forKey: "periodLength")
         let pendingCycleLength = storedCycle > 0 ? storedCycle.clamped(to: 21...45) : 28
         let pendingPeriodLength = storedPeriod > 0 ? storedPeriod.clamped(to: 2...10) : 5
 
+        // Birth date is the 13+ gate, so it's the one hard requirement. A
+        // missing name used to abort the whole push — which also silently
+        // dropped the initial cycle for Sign in with Apple users whose name
+        // never arrived. The name is optional; the cycle is not.
         guard let birth = pendingBirth else {
             #if DEBUG
             print("[CycleManager] pendingOnboardingPayload: birthDate missing — refusing to upsert")
             #endif
             return
         }
-        guard !pendingName.isEmpty else {
-            #if DEBUG
-            print("[CycleManager] pendingOnboardingPayload: display name missing — refusing to upsert")
-            #endif
-            return
-        }
 
         let profileRow = ProfileUpsertRow(
             userId: userId,
-            displayName: pendingName,
+            displayName: pendingName.isEmpty ? nil : pendingName,
             birthDate: Self.dbDateFormatter.string(from: birth),
             timezone: TimeZone.current.identifier,
             defaultCycleLengthDays: pendingCycleLength,
@@ -440,12 +438,32 @@ class CycleManager {
             return
         }
 
-        let predictedEnd = Calendar.current.date(byAdding: .day, value: pendingCycleLength, to: pendingLastPeriod) ?? pendingLastPeriod
+        // Only a real, user-entered period date becomes a cycle row. With
+        // none, there's nothing truthful to insert; `refresh` backfills the
+        // moment one exists locally.
+        if let pendingLastPeriod {
+            _ = await insertInitialCycle(
+                userId: userId,
+                startDate: pendingLastPeriod,
+                cycleLength: pendingCycleLength,
+                periodLength: pendingPeriodLength
+            )
+        }
+
+        UserDefaults.standard.set(false, forKey: "pendingOnboardingPayload")
+    }
+
+    /// Inserts the onboarding-era cycle from a locally known period start.
+    /// Shared by the one-shot push and by `refresh`, which uses it to heal
+    /// accounts whose push never landed. Returns whether the insert succeeded.
+    @MainActor
+    private func insertInitialCycle(userId: UUID, startDate: Date, cycleLength: Int, periodLength: Int) async -> Bool {
+        let predictedEnd = Calendar.current.date(byAdding: .day, value: cycleLength, to: startDate) ?? startDate
         let cycleRow = CycleInsertRow(
             userId: userId,
-            startDate: Self.dbDateFormatter.string(from: pendingLastPeriod),
+            startDate: Self.dbDateFormatter.string(from: startDate),
             predictedEndDate: Self.dbDateFormatter.string(from: predictedEnd),
-            periodLengthDays: pendingPeriodLength,
+            periodLengthDays: periodLength,
             isPredicted: true
         )
 
@@ -455,16 +473,13 @@ class CycleManager {
                 .insert(cycleRow)
                 .execute()
             #if DEBUG
-            print("[CycleManager] initial cycle insert OK for user \(userId)")
+            print("[CycleManager] initial cycle insert OK for user \(userId) (start \(cycleRow.startDate))")
             #endif
+            return true
         } catch {
             logRemoteError(operation: "initial cycle insert", error: error)
-            // Profile upsert already succeeded; we don't want to keep retrying
-            // the upsert. Clear the flag anyway and let the user log a cycle
-            // manually if needed.
+            return false
         }
-
-        UserDefaults.standard.set(false, forKey: "pendingOnboardingPayload")
     }
 
     // MARK: - Log a confirmed cycle start (post-onboarding)
@@ -543,6 +558,18 @@ class CycleManager {
             if let mostRecent = cycles.first,
                let date = Self.dbDateFormatter.date(from: mostRecent.startDate) {
                 lastPeriodDate = date
+            } else if cycles.isEmpty,
+                      let localStart = UserDefaults.standard.object(forKey: "lastPeriodDate") as? Date {
+                // The device knows a period start the server never received
+                // (an onboarding push that was refused, or a write that
+                // failed). Backfill it so partner share and any other device
+                // see the same cycle this phone has been showing.
+                _ = await insertInitialCycle(
+                    userId: userId,
+                    startDate: localStart,
+                    cycleLength: cycleLength,
+                    periodLength: periodLength
+                )
             }
         } catch {
             logRemoteError(operation: "latest cycle fetch", error: error)
@@ -595,7 +622,10 @@ class CycleManager {
 
 private struct ProfileUpsertRow: Encodable {
     let userId: UUID
-    let displayName: String
+    /// Optional on purpose: a name is never required (the app greets
+    /// neutrally without one). When nil the key is omitted entirely, so an
+    /// upsert never overwrites a name the server already has with null.
+    let displayName: String?
     let birthDate: String              // "yyyy-MM-dd"
     let timezone: String
     let defaultCycleLengthDays: Int
@@ -610,6 +640,17 @@ private struct ProfileUpsertRow: Encodable {
         case defaultCycleLengthDays = "default_cycle_length_days"
         case defaultPeriodLengthDays = "default_period_length_days"
         case onboardingCompletedAt = "onboarding_completed_at"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(userId, forKey: .userId)
+        try c.encodeIfPresent(displayName, forKey: .displayName)
+        try c.encode(birthDate, forKey: .birthDate)
+        try c.encode(timezone, forKey: .timezone)
+        try c.encode(defaultCycleLengthDays, forKey: .defaultCycleLengthDays)
+        try c.encode(defaultPeriodLengthDays, forKey: .defaultPeriodLengthDays)
+        try c.encode(onboardingCompletedAt, forKey: .onboardingCompletedAt)
     }
 }
 
