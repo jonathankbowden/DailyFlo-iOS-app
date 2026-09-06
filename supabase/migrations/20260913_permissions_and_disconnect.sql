@@ -26,12 +26,12 @@ alter table public.partner_relationships
   add column if not exists ended_at timestamptz;
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 2. The permission gate the RLS policies use. Unnamed parameters on purpose:
---    CREATE OR REPLACE forbids renaming parameters, and the original names
---    aren't in version control.
+-- 2. The permission gate the RLS policies use. Parameter names must match
+--    the live function exactly (CREATE OR REPLACE refuses to rename them);
+--    these are the names documented in CLAUDE.md.
 -- ──────────────────────────────────────────────────────────────────────────
 
-create or replace function public.partner_has_permission(uuid, uuid, text)
+create or replace function public.partner_has_permission(tracker_id uuid, supporter_id uuid, permission_key text)
 returns boolean
 language sql
 security definer
@@ -41,20 +41,20 @@ as $$
   select exists (
     select 1
     from partner_relationships pr
-    where pr.tracker_user_id = $1
-      and pr.supporter_user_id = $2
+    where pr.tracker_user_id = tracker_id
+      and pr.supporter_user_id = supporter_id
       and pr.status = 'active'
       and pr.ended_at is null
       and coalesce(
         (pr.permissions ->> (
-          case $3
+          case permission_key
             when 'view_phase'         then 'show_current_phase'
             when 'view_predictions'   then 'show_phase_predictions'
             when 'view_cycle_details' then 'show_period_dates'
             when 'view_emotions'      then 'show_journal_summary'
             when 'view_journal'       then 'show_journal_full'
             when 'view_basal_temp'    then 'show_basal_temp'
-            else $3
+            else permission_key
           end
         ))::boolean,
         false
