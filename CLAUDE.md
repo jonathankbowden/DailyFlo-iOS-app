@@ -44,27 +44,56 @@ The Bowdens also operate a separate design partnership called **Kreathaus**. Kee
 - **Future:** Cloudflare R2 for audio CDN (post-launch)
 - **Music for meditations:** Suno Pro generated + originals from a church musician (hybrid model)
 
-## Current build state (as of September 1, 2026 — build 15)
+## Current build state (as of September 6, 2026 — build 16 on TestFlight, build 17 in progress on branch `claude/30-for-30-list-muvjsh`)
 
 ### What's real and wired
 
+- **Partner share is real end to end (Week 2, Days 8–13).** The whole loop is wired to Supabase and verified on the simulator with two accounts:
+  - **Invite:** `PartnerManager.ensurePendingInvitation()` writes an `invitations` row with a client-minted `FLO-XXXXXX` code (unambiguous alphabet, 30-day expiry). "Share Code" opens the system share sheet (`InviteShareSheet` wraps `UIActivityViewController`; SwiftUI's `ShareLink` has no completion callback) with a first-person message and the code.
+  - **Accept:** the supporter types the code; `acceptInvitation(code:)` calls the `accept_invitation` RPC, which validates, inserts `partner_relationships`, stamps `invitations.accepted_at`, and settles `profiles.role` (tracker → supporter if no cycles, tracker → both if some). Errors are named (`invitation_not_found`, `invitation_expired`, `invitation_already_accepted`, `own_invitation`) and mapped to copy in `PartnerError`.
+  - **Read:** `ConnectView` derives its state from the DB on every open (`syncStatus`): active relationship → connected, open invitation → pending, else not connected. The sample "Sarah" partner and the DEBUG "Demo: Show Connected" button are gone. `SupporterHomeView` renders from `SupporterSnapshot` (tracker name, permission-gated phase inputs); the phase is computed with `CycleManager`'s static math so both phones agree.
+  - **Permissions + disconnect:** the "…" on the connected card opens `PartnerOptionsSheet`. v1 exposes exactly one switch, "Share my current phase" (`show_current_phase`), because it is the only permission anything renders yet; the other eight keys stay stored. Either side can disconnect; it's a soft end (`ended_at`), never a delete.
+  - **Server functions** (all SECURITY DEFINER, granted to `authenticated` only, in `supabase/migrations/2026091[0-3]_*.sql`): `accept_invitation`, `my_partner_relationships`, `supporter_snapshot`, `update_partner_permissions`, `disconnect_partner`. Client code never reads `invitations` or `profiles` across users directly — RLS only exposes your own rows, so any cross-user read goes through one of these.
+  - **Permission keys are settled** on the app's `show_*` / `notify_*` names (see `PartnerManager.defaultPermissions`). `partner_has_permission` was redefined (Sept 13 migration) to read those and to alias the older `view_*` spellings the July RLS verification script assumed, so existing policies keep working. Its parameter names `(tracker_id, supporter_id, permission_key)` cannot change — `CREATE OR REPLACE` refuses.
+  - **Not yet:** the tracker's phone hasn't run the Week 2 code (no cable/phone during Days 11–13); build 17 to TestFlight is Day 14. Notifications (`notify_*` keys) are stored but nothing sends them. The support-tip copy for menstrual/ovulation/luteal in `SupporterTips` is a draft for Brittany to edit.
+
 - **Auth is real.** Sign in with Apple (native button + direct ASAuthorizationController), Google, and email — email is **passwordless OTP** via `signInWithOtp` (June 10 decision; the password path is kept hidden for App Review). All sign-in methods flow through one central auth loop. Apple full name persisted; revoked/existing-account cases handled; display_name never derived from email.
-- **Cycle and journal sync to Supabase.** `CycleManager` → `profiles` + `cycles`; `JournalManager` → `emotion_entries` (one entry per day enforced). UserDefaults remains the local cache layer. Onboarding persists via deferred write on first authed launch. 13+ age gate enforced with a birth-date onboarding page.
+- **Cycle and journal sync to Supabase.** `CycleManager` → `profiles` + `cycles`; `JournalManager` → `emotion_entries` (one entry per day enforced). UserDefaults remains the local cache layer. Onboarding persists via deferred write on first authed launch; the birth date (13+ gate) is the only hard requirement for that push — **a missing display name must never block it** (Sept 6 fix: it used to, which silently dropped the initial `cycles` row for Sign in with Apple users whose name never arrived). `refresh(userId:)` backfills the initial cycle when the server has none but the device has a period date.
 - **RevenueCat is live end to end.** SDK integrated, purchases work, `linkUser`/`unlinkUser` in `SubscriptionManager` tie the RevenueCat customer to the Supabase auth UUID from the central auth loop. The `revenuecat-webhook` Supabase Edge Function is **deployed and verified** (first 200 received Sept 1); webhook wired in the RevenueCat dashboard for both environments.
 - **RevenueCat Transfer behavior is deliberately "Keep with original App User ID."** Subscriptions do NOT follow identified→identified account switches — this is a shared-device safety decision for our couple and parent-teen audiences (one person's sub shouldn't unlock for whoever signs in next on the same phone). The `revenuecat-webhook` `TRANSFER` handler (Day 3, Sept 3) exists for the **anonymous→identified merge** case (purchase-then-sign-in, and the `linkUser` race that dropped early sandbox purchases), which RevenueCat always transfers regardless of this setting. It re-syncs the identified user's state from the RC REST API (`REVENUECAT_API_KEY` secret). Do not "fix" account switches by flipping this setting — the current behavior is intended.
 - **UI shell is polished and complete.** Splash → onboarding → signIn → 5-tab main with custom FAB. Design system (`DesignSystem.swift`) is mature — use its tokens, never hardcode design values.
 - **Cycle math works.** Phases, next-period prediction, day-of-cycle, month calendar generation.
 - **Voice entry exists.** `VoiceEntryView` + `SpeechRecognizer` — feature flag candidate if it gets flaky.
 - **Supabase backend is complete.** 10 tables with RLS on every one; migrations live in `supabase/migrations/` (see schema section).
+- **Privacy manifest** (`PrivacyInfo.xcprivacy`) is in the target (Week 1). **Fake journal seed removed; dev tools gated behind `#if DEBUG`** (Week 1).
 
-### What's still fake or missing (the 30-for-30 punch list)
+### What's still missing (the 30-for-30 punch list)
 
-- **Partner share is fully mocked.** `ConnectView` UI is complete across all three states, but invitation logic is random local codes + a "Demo: Skip to Connected" button. Real backend wiring is Week 2 of the September plan.
-- **No privacy manifest** (`PrivacyInfo.xcprivacy`) — required for App Review.
+- **Build 17 not yet on TestFlight** — Day 14. Needs the phone in hand (cable or Wi-Fi pairing). Run the test-data cleanup (below) before Brittany's first real accept.
 - **No Sentry, no PostHog.** Accounts exist; SDKs not integrated (Week 3).
 - **No tests.**
 - **No offline write queue** for failed Supabase writes (journal first, Week 3).
-- **Fake journal content seeds on fresh install** and dev tools aren't gated out of Release builds — both being removed early in Week 1.
+- **Partner notifications** (`notify_*` permission keys) are stored but nothing sends them.
+
+### Test data in production Supabase (as of Sept 6)
+
+Three Jonathan-ish accounts exist and are fine to leave: the Apple one on the phone (display_name "Jonathan", set by hand in SQL on Sept 5), an email OTP one ("Jo", `jonathan.k.bowden@gmail.com` — Apple's private relay means the two never linked), and the supporter `jonathan.k.bowden+test@gmail.com` (Gmail plus-address; Supabase treats it as a separate user, role = supporter). Before build 17 goes to Brittany, end the test relationships and free the codes:
+
+```sql
+update partner_relationships set ended_at = now() where ended_at is null;
+update invitations set accepted_at = null where accepted_at is not null;
+```
+
+To act as a specific user in the SQL editor (e.g. to accept a code without a second device), look the id up **before** switching role — `authenticated` can't read `auth.users`:
+
+```sql
+begin;
+select set_config('request.jwt.claims',
+  json_build_object('sub', (select id::text from auth.users where email = '<email>'), 'role', 'authenticated')::text, true);
+set local role authenticated;
+select * from accept_invitation('FLO-XXXXXX');
+commit;
+```
 
 ## Locked product decisions (Week 1, May 18–19, 2026)
 
@@ -97,14 +126,18 @@ All 10 tables exist in the live Supabase project with full RLS:
 - `emotion_entries` — daily Chip Dodd journal entries (primary_emotion, intensity 1–5, voice_note_url)
 - `meditations` — admin-managed catalog (composer, license_type for hybrid music model)
 - `meditation_sessions` — playback history
-- `partner_relationships` — tracker ↔ supporter with JSONB permissions
-- `invitations` — pending invites with short codes
+- `partner_relationships` — tracker ↔ supporter with JSONB permissions; **`ended_at` (Sept 13)** marks a disconnect. "Active" = `status = 'active' and ended_at is null` — every partner function checks both.
+- `invitations` — pending invites with short codes (`tracker_user_id`, `invitation_code`, `relationship_type`, `proposed_permissions`, `expires_at`, `accepted_at`)
 - `subscriptions` — local mirror of RevenueCat data
 - `auth.users` — Supabase-managed
 
-Plus a `partner_has_permission(tracker_id, supporter_id, permission_key)` SQL function used by RLS policies on cycles, cycle_entries, emotion_entries. And a trigger on `auth.users` that auto-creates a `profiles` row on signup.
+Plus a `partner_has_permission(tracker_id, supporter_id, permission_key)` SQL function used by RLS policies on cycles, cycle_entries, emotion_entries (redefined Sept 13 to read the app's `show_*` keys and alias the older `view_*` names). And a trigger on `auth.users` that auto-creates a `profiles` row on signup.
 
-Since June: `subscription_webhook_events` table + five webhook columns on `subscriptions` (June 3 migration, applied to prod Sept 1). The `revenuecat-webhook` Edge Function lives in `supabase/functions/` and is deployed.
+Partner-share RPCs (Sept 10–13 migrations, all SECURITY DEFINER, `authenticated` only): `accept_invitation(p_code)`, `my_partner_relationships()`, `supporter_snapshot()`, `update_partner_permissions(p_relationship_id, p_permissions jsonb)`, `disconnect_partner(p_relationship_id)`. Named errors are raised with `raise exception '<snake_case>'` and mapped in `PartnerError(rpcMessage:)`.
+
+Since June: `subscription_webhook_events` table + five webhook columns on `subscriptions` (June 3 migration, applied to prod Sept 1). The `revenuecat-webhook` Edge Function lives in `supabase/functions/` and is deployed. The `REVENUECAT_API_KEY` secret it reads is a **V1** RevenueCat secret key (the function calls `/v1/subscribers`); it was rotated Sept 5 after the old one appeared in a screenshot.
+
+**Applying migrations:** paste the file into the Supabase SQL editor and Run (the editor runs the whole file as one transaction, so a failure applies nothing). Every migration in this repo is re-runnable.
 
 **⚠️ Hard-won lesson (Sept 1):** on this Supabase project, **new tables do NOT automatically get `service_role` access.** Every migration that creates a table must include explicit `GRANT` lines for `service_role` (see `20260901_grant_service_role_subscriptions.sql`), or Edge Functions will fail with "permission denied."
 
@@ -128,14 +161,16 @@ When integrating the SDK, read credentials from a `.xcconfig` file or `Info.plis
 
 One finishable ~30-minute task per day; day N = September N. The authoritative day-by-day list lives in Jonathan's Cowork "dailyflo-30-for-30" tracker. Shape of the month:
 
-1. **Week 1 — clear the blockers:** rotate webhook secret + prove sandbox purchase chain (row lands in `subscriptions`), privacy manifest, remove fake journal seed + gate dev tools out of Release, this doc rewrite, **ship build 16**.
-2. **Week 2 — partner share, for real:** real invite codes → `invitations`, share sheet, accept flow → `partner_relationships`, ConnectView reads real state, supporter home reads real data, permissions + disconnect, **ship build 17** (tested on two phones).
+1. **Week 1 — clear the blockers (done):** rotate webhook secret + prove sandbox purchase chain (row lands in `subscriptions`), privacy manifest, remove fake journal seed + gate dev tools out of Release, this doc rewrite, **build 16 shipped**.
+2. **Week 2 — partner share, for real (Days 8–13 done, verified on simulator):** real invite codes → `invitations` (Day 8), share sheet (9), accept flow → `partner_relationships` (10), ConnectView reads real state (11), supporter home reads real data (12), permissions + disconnect (13). **Day 14: ship build 17** (tested on two phones) — pending the phone.
 3. **Week 3 — instrument & finish:** Sentry, PostHog, BBT field, offline journal write queue, meditation sessions → cloud, photos → Storage, **ship build 18**.
 4. **Week 4 — submit:** remaining schema into version control, first tests, store listing, App Review prep, fresh-phone walkthrough, fix what testers hit, **ship build 19, submit for App Review Day 29**, retro Day 30.
 
 ## Conventions
 
-- **SwiftUI everywhere.** No UIKit unless absolutely necessary.
+- **SwiftUI everywhere.** No UIKit unless absolutely necessary. (Current exception: `InviteShareSheet` wraps `UIActivityViewController` because `ShareLink` gives no completion callback.)
+- **Cross-user reads go through a SECURITY DEFINER RPC**, never a client-side select. RLS exposes only your own `profiles` / `invitations` rows; the partner functions above are the pattern. Grant to `authenticated`, revoke from `public` and `anon`, and `set search_path = public`.
+- **Never derive a display name from an email**, and never require a name: the app greets neutrally without one, and no sync path may refuse to run because it's empty.
 - **`@Observable` for ViewModels** (iOS 17+ pattern, not the older `ObservableObject`).
 - **Use design tokens** from `DesignSystem.swift`. Never hardcode spacing, radius, colors, or animation values.
 - **Custom font:** Display text uses `lunary-free.otf` — exposed via `Font.floSerif(size:)` helpers in DesignSystem.
