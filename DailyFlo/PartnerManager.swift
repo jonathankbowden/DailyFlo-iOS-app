@@ -17,8 +17,11 @@
 //  `my_partner_relationships` RPC, so Connect shows real state on launch on
 //  both phones.
 //  Day 12: the supporter home renders from `SupporterSnapshot`, loaded
-//  through the permission-gated `supporter_snapshot` RPC. Permissions and
-//  disconnect arrive on the following days.
+//  through the permission-gated `supporter_snapshot` RPC.
+//  Day 13: the tracker toggles phase sharing (`update_partner_permissions`)
+//  and either side can disconnect (`disconnect_partner`, a soft end via
+//  `ended_at`). Permission keys are settled on the `show_*` / `notify_*`
+//  names below; the RLS gate aliases the older `view_*` spellings.
 //
 
 import Foundation
@@ -94,6 +97,12 @@ struct PartnerRelationship: Identifiable, Equatable {
     func partnerDisplayName(viewedBy userId: UUID?) -> String {
         isTracker(userId) ? supporterDisplayName : trackerDisplayName
     }
+
+    /// Whether the supporter may see the tracker's current phase. Missing
+    /// key reads as off; the server gates on the same key.
+    var sharesCurrentPhase: Bool {
+        permissions[PartnerManager.currentPhasePermissionKey] ?? false
+    }
 }
 
 /// What the supporter home renders: who they support and, when permitted,
@@ -149,6 +158,12 @@ final class PartnerManager {
     private let acceptInvitationFunction = "accept_invitation"
     private let relationshipsFunction = "my_partner_relationships"
     private let supporterSnapshotFunction = "supporter_snapshot"
+    private let updatePermissionsFunction = "update_partner_permissions"
+    private let disconnectFunction = "disconnect_partner"
+
+    /// The one permission v1 exposes as a switch. The other keys in
+    /// `defaultPermissions` stay stored for features that don't exist yet.
+    static let currentPhasePermissionKey = "show_current_phase"
 
     /// Invitations stay valid for this long; matches the schema default.
     static let invitationLifetimeDays = 30
@@ -332,6 +347,68 @@ final class PartnerManager {
         }
     }
 
+    /// Tracker turns phase sharing on or off. The server merges the key into
+    /// the stored JSON and the relationship is re-read so the card and the
+    /// supporter's next refresh agree.
+    @MainActor
+    func setSharesCurrentPhase(_ enabled: Bool, for relationship: PartnerRelationship) async throws {
+        guard currentUserId() != nil else { throw PartnerError.notSignedIn }
+
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            let params = UpdatePermissionsParams(
+                relationshipId: relationship.id,
+                permissions: [Self.currentPhasePermissionKey: enabled]
+            )
+            _ = try await SupabaseClient.shared
+                .rpc(updatePermissionsFunction, params: params)
+                .execute()
+            #if DEBUG
+            print("[PartnerManager] permissions update OK — \(Self.currentPhasePermissionKey)=\(enabled)")
+            #endif
+        } catch let error as PostgrestError {
+            logRemoteError(operation: "permissions update", error: error)
+            if let mapped = PartnerError(rpcMessage: error.message) { throw mapped }
+            throw error
+        } catch {
+            logRemoteError(operation: "permissions update", error: error)
+            throw error
+        }
+
+        await loadActiveRelationship()
+    }
+
+    /// Ends the relationship from either side. A soft end: the row stays for
+    /// history, `ended_at` is set, and both parties' screens drop it on
+    /// their next refresh.
+    @MainActor
+    func disconnect(_ relationship: PartnerRelationship) async throws {
+        guard currentUserId() != nil else { throw PartnerError.notSignedIn }
+
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            _ = try await SupabaseClient.shared
+                .rpc(disconnectFunction, params: ["p_relationship_id": relationship.id])
+                .execute()
+            #if DEBUG
+            print("[PartnerManager] disconnect OK — relationship \(relationship.id)")
+            #endif
+        } catch let error as PostgrestError {
+            logRemoteError(operation: "disconnect", error: error)
+            if let mapped = PartnerError(rpcMessage: error.message) { throw mapped }
+            throw error
+        } catch {
+            logRemoteError(operation: "disconnect", error: error)
+            throw error
+        }
+
+        await refresh()
+    }
+
     /// Inserts a new `invitations` row. The code is random, so on the rare
     /// UNIQUE collision (Postgres 23505) a fresh code is tried, up to three
     /// times, before the error surfaces.
@@ -483,8 +560,9 @@ enum PartnerError: LocalizedError, Equatable {
     case invitationExpired
     case invitationAlreadyAccepted
     case ownInvitation
+    case relationshipNotFound
 
-    /// Maps the exact messages `accept_invitation` raises to cases. Returns
+    /// Maps the exact messages the partner RPCs raise to cases. Returns
     /// `nil` for anything else so unexpected failures surface unchanged.
     init?(rpcMessage: String) {
         switch rpcMessage.trimmingCharacters(in: .whitespacesAndNewlines) {
@@ -493,6 +571,7 @@ enum PartnerError: LocalizedError, Equatable {
         case "invitation_expired": self = .invitationExpired
         case "invitation_already_accepted": self = .invitationAlreadyAccepted
         case "own_invitation": self = .ownInvitation
+        case "relationship_not_found": self = .relationshipNotFound
         default: return nil
         }
     }
@@ -507,11 +586,22 @@ enum PartnerError: LocalizedError, Equatable {
         case .invitationExpired: return "That code has expired. Ask your partner to send a new one."
         case .invitationAlreadyAccepted: return "That code has already been used."
         case .ownInvitation: return "That's your own code — share it with your partner instead."
+        case .relationshipNotFound: return "This connection has already ended. Pull down to refresh."
         }
     }
 }
 
 // MARK: - DB row representations
+
+private struct UpdatePermissionsParams: Encodable {
+    let relationshipId: UUID
+    let permissions: [String: Bool]
+
+    enum CodingKeys: String, CodingKey {
+        case relationshipId = "p_relationship_id"
+        case permissions = "p_permissions"
+    }
+}
 
 private struct InvitationInsertRow: Encodable {
     let trackerUserId: UUID

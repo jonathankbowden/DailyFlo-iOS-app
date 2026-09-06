@@ -24,6 +24,9 @@ struct Partner: Identifiable {
     let currentPhase: CyclePhase
     let daysUntilNextPhase: Int
     let avatarColor: Color
+    /// False when `name` is the "Your partner" fallback, so sentence copy
+    /// can lowercase it.
+    var hasName: Bool = true
 }
 
 extension Partner {
@@ -44,7 +47,8 @@ extension Partner {
             initials: initials,
             currentPhase: .follicular,
             daysUntilNextPhase: 0,
-            avatarColor: .floSage
+            avatarColor: .floSage,
+            hasName: !trimmed.isEmpty
         )
     }
 }
@@ -56,6 +60,7 @@ struct ConnectMainView: View {
     @State private var connectionStatus: ConnectionStatus = .notConnected
     @State private var showInviteSheet = false
     @State private var showShareSheet = false
+    @State private var showPartnerOptions = false
     @State private var showSyncInfo = false
     @State private var inviteCode = ""
     @State private var isAcceptingCode = false
@@ -125,6 +130,16 @@ struct ConnectMainView: View {
                     InviteShareSheet(invitation: invitation) { _ in
                         showShareSheet = false
                     }
+                    .presentationDetents([.medium, .large])
+                }
+            }
+            .sheet(isPresented: $showPartnerOptions, onDismiss: syncStatus) {
+                if let relationship = partnerManager.activeRelationship {
+                    PartnerOptionsSheet(
+                        relationship: relationship,
+                        isTracker: isViewerTracker,
+                        partnerName: connectedPartner.map { $0.hasName ? $0.name : "your partner" } ?? "your partner"
+                    )
                     .presentationDetents([.medium, .large])
                 }
             }
@@ -421,8 +436,11 @@ struct ConnectMainView: View {
 
                 Spacer()
 
-                // More options — permissions + disconnect land on Day 13.
-                Button(action: {}) {
+                // Sharing switch + disconnect
+                Button(action: {
+                    FloHaptics.light()
+                    showPartnerOptions = true
+                }) {
                     Image(systemName: "ellipsis")
                         .font(.system(size: 20))
                         .foregroundColor(.floGray)
@@ -456,8 +474,12 @@ struct ConnectMainView: View {
                         .tracking(1)
 
                     VStack(spacing: FloSpacing.xs) {
-                        infoRow(icon: "calendar", text: "Your current phase and duration")
-                        infoRow(icon: "heart", text: "How to best support you")
+                        if partnerManager.activeRelationship?.sharesCurrentPhase ?? false {
+                            infoRow(icon: "calendar", text: "Your current phase and duration")
+                            infoRow(icon: "heart", text: "How to best support you")
+                        } else {
+                            infoRow(icon: "eye.slash", text: "Your phase is hidden right now")
+                        }
                         infoRow(icon: "bell", text: "Phase change notifications")
                     }
                 }
@@ -754,6 +776,180 @@ struct InvitePartnerSheet: View {
         } catch {
             errorMessage = (error as? PartnerError)?.errorDescription
                 ?? "Couldn't create an invite code. Check your connection and try again."
+        }
+    }
+}
+
+// MARK: - Partner Options Sheet
+/// Behind the "…" on the connected card. A tracker can switch phase sharing
+/// off and on; either side can disconnect. Every change goes to the server
+/// first and the card re-reads the row, so nothing here is local-only.
+struct PartnerOptionsSheet: View {
+    let relationship: PartnerRelationship
+    let isTracker: Bool
+    let partnerName: String
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var sharesPhase: Bool
+    /// What the server currently holds. A revert after a failed save sets
+    /// the switch back to this, and `onChange` ignores that revert.
+    @State private var savedSharesPhase: Bool
+    @State private var isSaving = false
+    @State private var showDisconnectConfirm = false
+    @State private var isDisconnecting = false
+    @State private var errorMessage: String?
+
+    init(relationship: PartnerRelationship, isTracker: Bool, partnerName: String) {
+        self.relationship = relationship
+        self.isTracker = isTracker
+        self.partnerName = partnerName
+        _sharesPhase = State(initialValue: relationship.sharesCurrentPhase)
+        _savedSharesPhase = State(initialValue: relationship.sharesCurrentPhase)
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: FloSpacing.lg) {
+                if isTracker {
+                    sharingCard
+                }
+
+                if let errorMessage {
+                    Text(errorMessage)
+                        .font(.floBodySmall)
+                        .foregroundColor(.floError)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, FloSpacing.lg)
+                }
+
+                Spacer()
+
+                disconnectButton
+            }
+            .padding(.top, FloSpacing.lg)
+            .padding(.bottom, FloSpacing.xl)
+            .background(Color.floCream)
+            .navigationTitle(isTracker ? "Sharing" : "Supporting")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") { dismiss() }
+                        .foregroundColor(.floSage)
+                }
+            }
+            .alert(disconnectTitle, isPresented: $showDisconnectConfirm) {
+                Button("Disconnect", role: .destructive) { performDisconnect() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(disconnectMessage)
+            }
+        }
+    }
+
+    // MARK: Sharing
+
+    private var sharingCard: some View {
+        VStack(alignment: .leading, spacing: FloSpacing.sm) {
+            Toggle(isOn: $sharesPhase) {
+                VStack(alignment: .leading, spacing: FloSpacing.xs) {
+                    Text("Share my current phase")
+                        .font(.floBodyLarge)
+                        .fontWeight(.medium)
+                        .foregroundColor(.floCharcoal)
+
+                    Text(sharesPhase
+                         ? "\(partnerName) can see which phase you're in and how to support you."
+                         : "\(partnerName) sees that you're connected, but not your phase.")
+                        .font(.floBodySmall)
+                        .foregroundColor(.floGray)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .tint(.floSage)
+            .disabled(isSaving || isDisconnecting)
+            .onChange(of: sharesPhase) { _, new in
+                guard new != savedSharesPhase, !isSaving else { return }
+                save(new)
+            }
+        }
+        .padding(FloSpacing.lg)
+        .background(Color.white)
+        .cornerRadius(FloRadius.lg)
+        .padding(.horizontal, FloSpacing.lg)
+    }
+
+    private func save(_ enabled: Bool) {
+        isSaving = true
+        errorMessage = nil
+        Task {
+            defer { isSaving = false }
+            do {
+                try await PartnerManager.shared.setSharesCurrentPhase(enabled, for: relationship)
+                savedSharesPhase = enabled
+                FloHaptics.selection()
+            } catch {
+                FloHaptics.error()
+                sharesPhase = savedSharesPhase
+                errorMessage = (error as? PartnerError)?.errorDescription
+                    ?? "Couldn't save that right now. Check your connection and try again."
+            }
+        }
+    }
+
+    // MARK: Disconnect
+
+    private var disconnectTitle: String {
+        isTracker ? "Disconnect from \(partnerName)?" : "Stop supporting \(partnerName)?"
+    }
+
+    private var disconnectMessage: String {
+        isTracker
+            ? "\(partnerName) will no longer see your cycle. You can send a new invite any time."
+            : "You'll no longer see \(partnerName)'s cycle. You can reconnect with a new invite code."
+    }
+
+    private var disconnectButton: some View {
+        Button(action: {
+            FloHaptics.medium()
+            showDisconnectConfirm = true
+        }) {
+            HStack(spacing: FloSpacing.sm) {
+                if isDisconnecting {
+                    ProgressView().tint(.floError)
+                } else {
+                    Image(systemName: "person.crop.circle.badge.xmark")
+                }
+                Text(isTracker ? "Disconnect" : "Stop Supporting")
+                    .font(.floButton)
+            }
+            .foregroundColor(.floError)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, FloSpacing.md)
+            .background(Color.white)
+            .cornerRadius(FloRadius.full)
+            .overlay(
+                RoundedRectangle(cornerRadius: FloRadius.full)
+                    .stroke(Color.floError.opacity(0.3), lineWidth: 1)
+            )
+        }
+        .disabled(isDisconnecting || isSaving)
+        .padding(.horizontal, FloSpacing.lg)
+    }
+
+    private func performDisconnect() {
+        isDisconnecting = true
+        errorMessage = nil
+        Task {
+            defer { isDisconnecting = false }
+            do {
+                try await PartnerManager.shared.disconnect(relationship)
+                FloHaptics.success()
+                dismiss()
+            } catch {
+                FloHaptics.error()
+                errorMessage = (error as? PartnerError)?.errorDescription
+                    ?? "Couldn't disconnect right now. Check your connection and try again."
+            }
         }
     }
 }
