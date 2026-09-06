@@ -12,8 +12,10 @@
 //  message (`PartnerInvitation.shareMessage`).
 //  Day 10: a supporter accepts a code through the `accept_invitation` RPC
 //  (supabase/migrations/20260910_accept_invitation.sql), which creates the
-//  `partner_relationships` row server-side. Reading the connected state and
-//  permissions arrive on the following days.
+//  `partner_relationships` row server-side.
+//  Day 11: `refresh()` loads the active relationship through the
+//  `my_partner_relationships` RPC, so Connect shows real state on launch on
+//  both phones. Permissions and disconnect arrive on the following days.
 //
 
 import Foundation
@@ -66,6 +68,31 @@ struct PartnerConnection: Identifiable, Equatable {
     let acceptedAt: Date
 }
 
+/// An active `partner_relationships` row as seen from either side, with both
+/// display names attached. The source of truth for "connected".
+struct PartnerRelationship: Identifiable, Equatable {
+    let id: UUID
+    let trackerUserId: UUID
+    let supporterUserId: UUID
+    /// "" when that person hasn't set a name yet.
+    let trackerDisplayName: String
+    let supporterDisplayName: String
+    let relationshipType: String
+    let status: String
+    let permissions: [String: Bool]
+    let acceptedAt: Date?
+
+    /// True when `userId` is the person sharing their cycle.
+    func isTracker(_ userId: UUID?) -> Bool {
+        userId == trackerUserId
+    }
+
+    /// The other party's display name from `userId`'s point of view.
+    func partnerDisplayName(viewedBy userId: UUID?) -> String {
+        isTracker(userId) ? supporterDisplayName : trackerDisplayName
+    }
+}
+
 // MARK: - Manager
 
 @Observable
@@ -76,15 +103,17 @@ final class PartnerManager {
     /// `nil` until `refresh()` has run, or when there is nothing outstanding.
     private(set) var pendingInvitation: PartnerInvitation?
 
-    /// The relationship created by the most recent successful accept in this
-    /// process. Day 11 replaces this with the relationship read from the DB.
-    private(set) var acceptedConnection: PartnerConnection?
+    /// The signed-in user's active relationship, from either side. `nil`
+    /// until `refresh()` has run, or when there is none. v1 supports one
+    /// partner; the newest active row wins if more ever exist.
+    private(set) var activeRelationship: PartnerRelationship?
 
     /// True while a network read or write is in flight.
     private(set) var isLoading = false
 
     private let invitationsTable = "invitations"
     private let acceptInvitationFunction = "accept_invitation"
+    private let relationshipsFunction = "my_partner_relationships"
 
     /// Invitations stay valid for this long; matches the schema default.
     static let invitationLifetimeDays = 30
@@ -111,11 +140,13 @@ final class PartnerManager {
 
     // MARK: - Reads
 
-    /// Loads the newest open invitation for the signed-in user into
-    /// `pendingInvitation`. Signed-out users simply see `nil`.
+    /// Loads what Connect needs to pick a state: the active relationship
+    /// (either side) and, for trackers, the newest open invitation.
+    /// Signed-out users simply see `nil` for both.
     @MainActor
     func refresh() async {
         guard let userId = currentUserId() else {
+            activeRelationship = nil
             pendingInvitation = nil
             return
         }
@@ -123,6 +154,31 @@ final class PartnerManager {
         isLoading = true
         defer { isLoading = false }
 
+        await loadActiveRelationship()
+        await loadPendingInvitation(userId: userId)
+    }
+
+    /// Reads the active relationship through the RPC. Both parties can call
+    /// it; the server decides which rows are theirs.
+    @MainActor
+    func loadActiveRelationship() async {
+        do {
+            let rows: [RelationshipRow] = try await SupabaseClient.shared
+                .rpc(relationshipsFunction)
+                .execute()
+                .value
+
+            activeRelationship = rows.first.flatMap(PartnerRelationship.init(row:))
+            #if DEBUG
+            print("[PartnerManager] relationships OK — active: \(activeRelationship?.id.uuidString ?? "none")")
+            #endif
+        } catch {
+            logRemoteError(operation: "relationships fetch", error: error)
+        }
+    }
+
+    @MainActor
+    private func loadPendingInvitation(userId: UUID) async {
         do {
             let rows: [InvitationRow] = try await SupabaseClient.shared
                 .from(invitationsTable)
@@ -195,10 +251,12 @@ final class PartnerManager {
             guard let connection = PartnerConnection(row: row) else {
                 throw PartnerError.malformedRow
             }
-            acceptedConnection = connection
             #if DEBUG
             print("[PartnerManager] accept OK — relationship \(connection.id) with tracker \(connection.trackerUserId)")
             #endif
+            // The row now exists; read it back so Connect renders from the
+            // same source it uses on launch.
+            await loadActiveRelationship()
             return connection
         } catch let error as PostgrestError {
             logRemoteError(operation: "accept invitation", error: error)
@@ -410,6 +468,61 @@ private struct InvitationRow: Decodable {
         case createdAt = "created_at"
         case expiresAt = "expires_at"
         case acceptedAt = "accepted_at"
+    }
+}
+
+/// One row of the `my_partner_relationships` RPC's result set.
+private struct RelationshipRow: Decodable {
+    let relationshipId: UUID
+    let trackerUserId: UUID
+    let supporterUserId: UUID
+    let trackerDisplayName: String?
+    let supporterDisplayName: String?
+    let relationshipType: String
+    let status: String
+    let permissions: [String: Bool]?
+    let acceptedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case relationshipId = "relationship_id"
+        case trackerUserId = "tracker_user_id"
+        case supporterUserId = "supporter_user_id"
+        case trackerDisplayName = "tracker_display_name"
+        case supporterDisplayName = "supporter_display_name"
+        case relationshipType = "relationship_type"
+        case status
+        case permissions
+        case acceptedAt = "accepted_at"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        relationshipId = try c.decode(UUID.self, forKey: .relationshipId)
+        trackerUserId = try c.decode(UUID.self, forKey: .trackerUserId)
+        supporterUserId = try c.decode(UUID.self, forKey: .supporterUserId)
+        trackerDisplayName = try c.decodeIfPresent(String.self, forKey: .trackerDisplayName)
+        supporterDisplayName = try c.decodeIfPresent(String.self, forKey: .supporterDisplayName)
+        relationshipType = try c.decode(String.self, forKey: .relationshipType)
+        status = try c.decode(String.self, forKey: .status)
+        acceptedAt = try c.decodeIfPresent(String.self, forKey: .acceptedAt)
+        // Tolerant on purpose; Day 13 owns the permissions model.
+        permissions = try? c.decodeIfPresent([String: Bool].self, forKey: .permissions)
+    }
+}
+
+private extension PartnerRelationship {
+    init?(row: RelationshipRow) {
+        self.init(
+            id: row.relationshipId,
+            trackerUserId: row.trackerUserId,
+            supporterUserId: row.supporterUserId,
+            trackerDisplayName: row.trackerDisplayName ?? "",
+            supporterDisplayName: row.supporterDisplayName ?? "",
+            relationshipType: row.relationshipType,
+            status: row.status,
+            permissions: row.permissions ?? [:],
+            acceptedAt: row.acceptedAt.flatMap(PartnerManager.parseTimestamp)
+        )
     }
 }
 

@@ -27,11 +27,12 @@ struct Partner: Identifiable {
 }
 
 extension Partner {
-    /// Builds the card model from a freshly accepted relationship. Phase and
-    /// countdown are placeholders until Day 12 reads the tracker's real cycle
-    /// through the permission-gated RLS path.
-    init(connection: PartnerConnection) {
-        let trimmed = connection.trackerDisplayName.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// Builds the card model for the other party of a live relationship.
+    /// Phase and countdown are placeholders until Day 12 reads the tracker's
+    /// real cycle through the permission-gated RLS path.
+    init(relationship: PartnerRelationship, viewerId: UUID?) {
+        let trimmed = relationship.partnerDisplayName(viewedBy: viewerId)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         let name = trimmed.isEmpty ? "Your partner" : trimmed
         // U+FE0E forces the text-style glyph so the heart takes the white
         // foreground like initials do, instead of rendering as a red emoji.
@@ -59,21 +60,29 @@ struct ConnectMainView: View {
     @State private var inviteCode = ""
     @State private var isAcceptingCode = false
     @State private var acceptErrorMessage: String?
-    /// The partner from a code accepted in this session. Day 11 reads the
-    /// relationship from the DB on launch instead.
-    @State private var connectedPartner: Partner?
+    /// Set when this session accepted a code, so closing Connect refreshes
+    /// the profile role and the root can re-route a new supporter.
+    @State private var didAcceptThisSession = false
     @FocusState private var codeFieldFocused: Bool
 
-    // Sample connected partner — placeholder until Day 11 reads the real row.
-    private let samplePartner = Partner(
-        name: "Sarah",
-        initials: "SB",
-        currentPhase: .follicular,
-        daysUntilNextPhase: 5,
-        avatarColor: Color(hex: "E8B86D")
-    )
+    private let cycleManager = CycleManager.shared
 
-    private var displayedPartner: Partner { connectedPartner ?? samplePartner }
+    private var currentUserId: UUID? {
+        SupabaseClient.shared.auth.currentSession?.user.id
+    }
+
+    /// The other party of the active relationship, from the signed-in user's
+    /// point of view. `nil` until `PartnerManager.refresh()` finds a row.
+    private var connectedPartner: Partner? {
+        partnerManager.activeRelationship.map { Partner(relationship: $0, viewerId: currentUserId) }
+    }
+
+    /// True when the signed-in user is the one sharing their cycle. A
+    /// supporter who opens Connect sees the relationship from their side.
+    private var isViewerTracker: Bool {
+        guard let relationship = partnerManager.activeRelationship else { return true }
+        return relationship.isTracker(currentUserId)
+    }
 
     var body: some View {
         NavigationStack {
@@ -92,7 +101,11 @@ struct ConnectMainView: View {
                         case .pendingInvite:
                             pendingInviteView
                         case .connected:
-                            connectedView
+                            if let partner = connectedPartner {
+                                connectedView(for: partner)
+                            } else {
+                                notConnectedView
+                            }
                         }
 
                         // Cycle sync info
@@ -104,7 +117,7 @@ struct ConnectMainView: View {
                     .padding(.horizontal, FloSpacing.lg)
                 }
             }
-            .sheet(isPresented: $showInviteSheet, onDismiss: syncStatusWithInvitation) {
+            .sheet(isPresented: $showInviteSheet, onDismiss: syncStatus) {
                 InvitePartnerSheet()
             }
             .sheet(isPresented: $showShareSheet) {
@@ -119,21 +132,28 @@ struct ConnectMainView: View {
                 CycleSyncInfoSheet()
             }
             .task {
-                // Pending state comes from the `invitations` table. Connected
-                // state still reads the sample partner until Day 11 wires
-                // partner_relationships.
+                // Both states come from the DB: `partner_relationships` for
+                // connected, `invitations` for pending.
                 await partnerManager.refresh()
-                syncStatusWithInvitation()
+                syncStatus()
             }
         }
     }
 
-    /// An open invitation row is what "pending" means, whether it was just
-    /// created in the invite sheet or found on launch. Never demotes a
-    /// connected state.
-    private func syncStatusWithInvitation() {
-        if connectionStatus == .notConnected, partnerManager.pendingInvitation != nil {
-            connectionStatus = .pendingInvite
+    /// The DB decides the state: an active relationship means connected, an
+    /// open invitation means pending, otherwise not connected.
+    private func syncStatus() {
+        let next: ConnectionStatus
+        if partnerManager.activeRelationship != nil {
+            next = .connected
+        } else if partnerManager.pendingInvitation != nil {
+            next = .pendingInvite
+        } else {
+            next = .notConnected
+        }
+        guard next != connectionStatus else { return }
+        withAnimation(.easeInOut(duration: 0.3)) {
+            connectionStatus = next
         }
     }
 
@@ -155,13 +175,11 @@ struct ConnectMainView: View {
         Task {
             defer { isAcceptingCode = false }
             do {
-                let connection = try await partnerManager.acceptInvitation(code: inviteCode)
-                connectedPartner = Partner(connection: connection)
+                _ = try await partnerManager.acceptInvitation(code: inviteCode)
+                didAcceptThisSession = true
                 inviteCode = ""
                 FloHaptics.success()
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    connectionStatus = .connected
-                }
+                syncStatus()
             } catch {
                 FloHaptics.error()
                 acceptErrorMessage = (error as? PartnerError)?.errorDescription
@@ -182,7 +200,7 @@ struct ConnectMainView: View {
 
                 Button(action: {
                     FloHaptics.light()
-                    if connectedPartner != nil, let userId = SupabaseClient.shared.auth.currentSession?.user.id {
+                    if didAcceptThisSession, let userId = currentUserId {
                         // Accepting settled profiles.role server-side. Pull it
                         // now, on the way out, so the root re-routes a new
                         // supporter to their home without yanking this screen
@@ -359,17 +377,6 @@ struct ConnectMainView: View {
             }
             .floHitTarget()
             .disabled(partnerManager.pendingInvitation == nil)
-
-            #if DEBUG
-            // Demo: Skip to connected — DEBUG only, never ships in Release.
-            Button(action: {
-                connectionStatus = .connected
-            }) {
-                Text("(Demo: Show Connected)")
-                    .font(.floBodySmall)
-                    .foregroundColor(.floGray)
-            }
-            #endif
         }
         .padding(FloSpacing.lg)
         .background(Color.white)
@@ -378,24 +385,26 @@ struct ConnectMainView: View {
     }
 
     // MARK: - Connected View
-    private var connectedView: some View {
+    /// Renders the live relationship. A tracker sees what they're sharing;
+    /// a supporter sees whose cycle they're following.
+    private func connectedView(for partner: Partner) -> some View {
         VStack(spacing: FloSpacing.lg) {
             // Partner card
             HStack(spacing: FloSpacing.md) {
                 // Avatar
                 ZStack {
                     Circle()
-                        .fill(displayedPartner.avatarColor)
+                        .fill(partner.avatarColor)
                         .frame(width: 60, height: 60)
 
-                    Text(displayedPartner.initials)
+                    Text(partner.initials)
                         .font(.floDisplaySmall)
                         .foregroundColor(.white)
                 }
 
                 VStack(alignment: .leading, spacing: FloSpacing.xs) {
                     HStack {
-                        Text(displayedPartner.name)
+                        Text(partner.name)
                             .font(.floBodyLarge)
                             .fontWeight(.semibold)
                             .foregroundColor(.floCharcoal)
@@ -412,72 +421,60 @@ struct ConnectMainView: View {
 
                 Spacer()
 
-                // More options
+                // More options — permissions + disconnect land on Day 13.
                 Button(action: {}) {
                     Image(systemName: "ellipsis")
                         .font(.system(size: 20))
                         .foregroundColor(.floGray)
                 }
                 .floHitTarget()
+                .accessibilityLabel("Partner options")
             }
             .padding(FloSpacing.md)
             .background(Color.white)
             .cornerRadius(FloRadius.lg)
 
-            // Your current phase (shared with partner)
-            VStack(alignment: .leading, spacing: FloSpacing.md) {
-                Text("SHARING WITH \(displayedPartner.name.uppercased())")
-                    .font(.floLabel)
-                    .fontWeight(.medium)
-                    .foregroundColor(.floGray)
-                    .tracking(1)
+            if isViewerTracker {
+                // Your current phase (shared with partner) — the tracker's own
+                // cycle math, the same numbers the Calendar tab shows.
+                VStack(alignment: .leading, spacing: FloSpacing.md) {
+                    Text("SHARING WITH \(partner.name.uppercased())")
+                        .font(.floLabel)
+                        .fontWeight(.medium)
+                        .foregroundColor(.floGray)
+                        .tracking(1)
 
-                // Current phase card
-                HStack {
-                    VStack(alignment: .leading, spacing: FloSpacing.xs) {
-                        Text("Your Current Phase")
-                            .font(.floBodySmall)
-                            .foregroundColor(.floGray)
+                    currentPhaseCard
+                }
 
-                        Text("Follicular Phase")
-                            .font(.floDisplaySmall)
-                            .foregroundColor(.floCharcoal)
+                // What partner sees
+                VStack(alignment: .leading, spacing: FloSpacing.sm) {
+                    Text("WHAT \(partner.name.uppercased()) SEES")
+                        .font(.floLabel)
+                        .fontWeight(.medium)
+                        .foregroundColor(.floGray)
+                        .tracking(1)
 
-                        Text("High energy • Days 6-13")
-                            .font(.floBodySmall)
-                            .foregroundColor(.floSage)
-                    }
-
-                    Spacer()
-
-                    // Phase indicator
-                    ZStack {
-                        Circle()
-                            .fill(Color.phaseFollicular.opacity(0.2))
-                            .frame(width: 64, height: 64)
-
-                        Text("02")
-                            .font(.floDisplaySmall)
-                            .foregroundColor(.phaseFollicular)
+                    VStack(spacing: FloSpacing.xs) {
+                        infoRow(icon: "calendar", text: "Your current phase and duration")
+                        infoRow(icon: "heart", text: "How to best support you")
+                        infoRow(icon: "bell", text: "Phase change notifications")
                     }
                 }
-                .padding(FloSpacing.md)
-                .background(Color.floMint.opacity(0.3))
-                .cornerRadius(FloRadius.lg)
-            }
+            } else {
+                // Supporter's view of the same relationship.
+                VStack(alignment: .leading, spacing: FloSpacing.sm) {
+                    Text("WHAT YOU SEE")
+                        .font(.floLabel)
+                        .fontWeight(.medium)
+                        .foregroundColor(.floGray)
+                        .tracking(1)
 
-            // What partner sees
-            VStack(alignment: .leading, spacing: FloSpacing.sm) {
-                Text("WHAT \(displayedPartner.name.uppercased()) SEES")
-                    .font(.floLabel)
-                    .fontWeight(.medium)
-                    .foregroundColor(.floGray)
-                    .tracking(1)
-
-                VStack(spacing: FloSpacing.xs) {
-                    infoRow(icon: "calendar", text: "Your current phase and duration")
-                    infoRow(icon: "heart", text: "How to best support you")
-                    infoRow(icon: "bell", text: "Phase change notifications")
+                    VStack(spacing: FloSpacing.xs) {
+                        infoRow(icon: "calendar", text: "\(partner.name)'s current phase and duration")
+                        infoRow(icon: "heart", text: "How to best support \(partner.name)")
+                        infoRow(icon: "bell", text: "Phase change notifications")
+                    }
                 }
             }
         }
@@ -485,6 +482,45 @@ struct ConnectMainView: View {
         .background(Color.white)
         .cornerRadius(FloRadius.xl)
         .shadow(color: .black.opacity(0.05), radius: 10, x: 0, y: 4)
+    }
+
+    /// The tracker's current phase, from `CycleManager`.
+    private var currentPhaseCard: some View {
+        let phase = cycleManager.currentPhase
+        let day = cycleManager.currentDayOfCycle
+        let energy = phase.subtitle.lowercased().replacingOccurrences(of: "your ", with: "")
+
+        return HStack {
+            VStack(alignment: .leading, spacing: FloSpacing.xs) {
+                Text("Your Current Phase")
+                    .font(.floBodySmall)
+                    .foregroundColor(.floGray)
+
+                Text(phase.name)
+                    .font(.floDisplaySmall)
+                    .foregroundColor(.floCharcoal)
+
+                Text("\(energy.prefix(1).uppercased() + energy.dropFirst()) • Day \(day)")
+                    .font(.floBodySmall)
+                    .foregroundColor(.floSage)
+            }
+
+            Spacer()
+
+            // Phase indicator
+            ZStack {
+                Circle()
+                    .fill(phase.color.opacity(0.2))
+                    .frame(width: 64, height: 64)
+
+                Text(phase.number)
+                    .font(.floDisplaySmall)
+                    .foregroundColor(phase.color)
+            }
+        }
+        .padding(FloSpacing.md)
+        .background(Color.floMint.opacity(0.3))
+        .cornerRadius(FloRadius.lg)
     }
 
     private func infoRow(icon: String, text: String) -> some View {
