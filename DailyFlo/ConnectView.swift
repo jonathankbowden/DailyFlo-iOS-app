@@ -33,8 +33,10 @@ extension Partner {
     init(connection: PartnerConnection) {
         let trimmed = connection.trackerDisplayName.trimmingCharacters(in: .whitespacesAndNewlines)
         let name = trimmed.isEmpty ? "Your partner" : trimmed
+        // U+FE0E forces the text-style glyph so the heart takes the white
+        // foreground like initials do, instead of rendering as a red emoji.
         let initials = trimmed.isEmpty
-            ? "♥"
+            ? "♥\u{FE0E}"
             : trimmed.split(separator: " ").prefix(2).compactMap { $0.first.map(String.init) }.joined().uppercased()
         self.init(
             name: name,
