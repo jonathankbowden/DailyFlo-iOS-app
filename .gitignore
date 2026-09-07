@@ -8,7 +8,8 @@ xcuserdata/
 .DS_Store
 
 # Tooling
-.claude/
+.claude/*
+!.claude/skills/
 
 # Secrets / local config
 SupabaseConfig.xcconfig
