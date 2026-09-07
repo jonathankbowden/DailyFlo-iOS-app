@@ -21,6 +21,8 @@ On May 20, 2026 this project nearly lost untracked work because two out-of-sync 
    ```
    The goal: never end a session with hard-to-recreate work uncommitted. Worst case should be losing the current session, never days.
 
+   **Then sync the Trello board (standing instruction from Jonathan, Sept 7, 2026).** The DailyFLO board (`https://trello.com/b/…/dailyflo`, lists Backlog → Up Next → In Progress → Blocked → Done) is the live execution tracker again. At the end of every session: move each finished card to Done with a dated one-line comment naming the commit or verification; move the next day's card into In Progress; add a card for any new gap or decision surfaced, with a "DECISION NEEDED" comment when it's Jonathan's or Brittany's call; and update due dates if the 30-for-30 schedule slipped. Use the Trello MCP tools (`trelloReadCard list_by_board`, `trelloWriteCard move/add_comment/create`). Never delete cards; archive duplicates. CLAUDE.md stays the source of truth for *state*; Trello is the source of truth for *what's next*.
+
 5. **No lingering duplicate copies.** There should be exactly one working copy of this project. If a second copy appears, consolidate to `~/Developer/Personal/DailyFlo/` and archive/delete the other — don't leave two live copies that can drift.
 
 6. **`.gitignore` must keep build artifacts and secrets out of git.** `SupabaseConfig.xcconfig` (real credentials) is gitignored; `SupabaseConfig.xcconfig.example` is committed. DerivedData, build products, and `.DS_Store` stay ignored.
