@@ -12,8 +12,8 @@ struct PhaseDetailView: View {
     let phase: CyclePhase
     let onDismiss: () -> Void
     /// Non-nil only when presented from the calendar: the tapped day. Drives the
-    /// day line under the title and the bottom bar (today/past: Log day + journal;
-    /// future: no actions). Nil = today's phase overview from Home.
+    /// bottom bar (today/past: Log day + journal; future: no actions) and which
+    /// day the log/journal sheets target. Nil = today's phase overview from Home.
     var date: Date? = nil
     /// Non-nil only when presented from the calendar: called after a successful
     /// log so the calendar can collapse this sheet and confirm the change.
@@ -26,7 +26,6 @@ struct PhaseDetailView: View {
     @State private var journalManager = JournalManager.shared
 
     private let calendar = Calendar.current
-    private let cycleManager = CycleManager.shared
 
     /// The day this sheet is about. Home passes no date, which means today.
     private var targetDate: Date { calendar.startOfDay(for: date ?? Date()) }
@@ -37,12 +36,6 @@ struct PhaseDetailView: View {
     private var showsActions: Bool { !isFutureDay }
 
     private var hasJournalEntry: Bool { !journalManager.entries(for: targetDate).isEmpty }
-
-    private var dayLineFormatter: DateFormatter {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEEE, MMMM d"
-        return formatter
-    }
 
     var body: some View {
         ZStack {
@@ -141,14 +134,6 @@ struct PhaseDetailView: View {
                     .fontWeight(.medium)
                     .foregroundColor(.floSage)
                     .tracking(1.5)
-
-                // Day line: only when opened for a specific calendar day
-                if date != nil {
-                    Text("\(dayLineFormatter.string(from: targetDate)) · Day \(cycleManager.dayOfCycle(for: targetDate))")
-                        .font(.floBodySmall)
-                        .foregroundColor(.floGray)
-                        .padding(.top, 2)
-                }
             }
 
             Spacer()
