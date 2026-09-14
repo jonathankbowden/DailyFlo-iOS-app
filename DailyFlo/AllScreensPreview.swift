@@ -23,10 +23,6 @@ import SwiftUI
     CalendarView()
 }
 
-#Preview("6 - Single Day") {
-    SingleDayView(date: Date(), onDismiss: {})
-}
-
 #Preview("7 - Log Cycle") {
     LogCycleView(selectedDate: Date(), onSave: { _ in }, onDismiss: {})
 }

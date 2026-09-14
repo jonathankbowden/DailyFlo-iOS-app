@@ -7,11 +7,18 @@
 
 import SwiftUI
 
+/// The day the calendar is presenting. Driving the sheet with an item (not an
+/// isPresented flag plus loose state) guarantees the sheet is built from the
+/// tapped day's values, never from a stale default.
+struct PresentedDay: Identifiable {
+    let date: Date
+    let phase: CyclePhase
+    var id: Date { date }
+}
+
 struct CalendarView: View {
     @State private var selectedDate: Date? = nil
-    @State private var showPhaseDetail = false
-    @State private var showSingleDay = false
-    @State private var selectedPhase: CyclePhase = .menstrual
+    @State private var presentedDay: PresentedDay? = nil
 
     // Drives scrollPosition anchoring; starts on the current month (offset 0).
     @State private var scrolledMonth: Int? = 0
@@ -76,32 +83,18 @@ struct CalendarView: View {
                 .scrollPosition(id: $scrolledMonth, anchor: .top)
             }
         }
-        .sheet(isPresented: $showPhaseDetail, onDismiss: playLogConfirmationIfNeeded) {
+        // Every tap on a day opens the phase view for that day. Today and the past
+        // get Log day + journal actions; future days are read-only.
+        .sheet(item: $presentedDay, onDismiss: playLogConfirmationIfNeeded) { day in
             PhaseDetailView(
-                phase: selectedPhase,
-                onDismiss: { showPhaseDetail = false },
+                phase: day.phase,
+                onDismiss: { presentedDay = nil },
+                date: day.date,
                 onLoggedCycle: {
                     pendingLogConfirmation = true
-                    showPhaseDetail = false
+                    presentedDay = nil
                 }
             )
-        }
-        .sheet(isPresented: $showSingleDay, onDismiss: playLogConfirmationIfNeeded) {
-            if let date = selectedDate {
-                SingleDayView(
-                    date: date,
-                    phase: cycleManager.phase(for: date),
-                    dayOfCycle: cycleManager.dayOfCycle(for: date),
-                    onDismiss: { showSingleDay = false },
-                    onLoggedCycle: {
-                        pendingLogConfirmation = true
-                        showSingleDay = false
-                    }
-                )
-                .presentationDetents([.large])
-                .presentationDragIndicator(.hidden)
-                .presentationCornerRadius(28)
-            }
         }
     }
 
@@ -206,7 +199,7 @@ struct CalendarView: View {
                             selectDay(day, in: monthDate, cycleData: cycleData)
                         },
                         onTapPhase: {
-                            showPhaseForDay(day, cycleData: cycleData)
+                            selectDay(day, in: monthDate, cycleData: cycleData)
                         }
                     )
                 } else {
@@ -313,6 +306,7 @@ struct CalendarView: View {
         return dayDate > Date()
     }
 
+    /// Opens the phase view for the tapped day (day number or cell, same result).
     private func selectDay(_ day: Int, in monthDate: Date, cycleData: CycleData) {
         FloHaptics.selection()
         var components = calendar.dateComponents([.year, .month], from: monthDate)
@@ -321,17 +315,8 @@ struct CalendarView: View {
         withAnimation(FloAnimation.springSnappy) {
             selectedDate = date
         }
-        showSingleDay = true
-    }
-
-    private func showPhaseForDay(_ day: Int, cycleData: CycleData) {
-        FloHaptics.light()
-        selectedPhase = phaseForDay(day, cycleData: cycleData)
-        showPhaseDetail = true
-    }
-
-    private func phaseForDay(_ day: Int, cycleData: CycleData) -> CyclePhase {
-        return cycleData.phase(for: day)
+        // Same source the calendar bands are drawn from, so the sheet always agrees.
+        presentedDay = PresentedDay(date: date, phase: cycleManager.phase(for: date))
     }
 
     // MARK: - Cycle Data (from CycleManager using real onboarding data)

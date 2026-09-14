@@ -11,13 +11,38 @@ import UIKit
 struct PhaseDetailView: View {
     let phase: CyclePhase
     let onDismiss: () -> Void
+    /// Non-nil only when presented from the calendar: the tapped day. Drives the
+    /// day line under the title and the bottom bar (today/past: Log day + journal;
+    /// future: no actions). Nil = today's phase overview from Home.
+    var date: Date? = nil
     /// Non-nil only when presented from the calendar: called after a successful
     /// log so the calendar can collapse this sheet and confirm the change.
     var onLoggedCycle: (() -> Void)? = nil
 
     @State private var selectedTab: PhaseContentTab = .body
     @State private var showLogCycle = false
+    @State private var showJournalEntry = false
     @State private var didLogCycle = false
+    @State private var journalManager = JournalManager.shared
+
+    private let calendar = Calendar.current
+    private let cycleManager = CycleManager.shared
+
+    /// The day this sheet is about. Home passes no date, which means today.
+    private var targetDate: Date { calendar.startOfDay(for: date ?? Date()) }
+
+    private var isFutureDay: Bool { targetDate > calendar.startOfDay(for: Date()) }
+
+    /// Future days are read-only: nothing has happened yet to log or journal.
+    private var showsActions: Bool { !isFutureDay }
+
+    private var hasJournalEntry: Bool { !journalManager.entries(for: targetDate).isEmpty }
+
+    private var dayLineFormatter: DateFormatter {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEEE, MMMM d"
+        return formatter
+    }
 
     var body: some View {
         ZStack {
@@ -59,12 +84,14 @@ struct PhaseDetailView: View {
                 .animation(FloAnimation.springSnappy, value: selectedTab)
             }
 
-            // Floating log cycle button
-            VStack {
-                Spacer()
-                logCycleButton
+            // Floating actions (none for a future day)
+            if showsActions {
+                VStack {
+                    Spacer()
+                    actionBar
+                }
+                .ignoresSafeArea(.container, edges: .bottom)
             }
-            .ignoresSafeArea(.container, edges: .bottom)
         }
         .sheet(isPresented: $showLogCycle, onDismiss: {
             // Fires after the LogCycle sheet finishes dismissing. If the user
@@ -76,12 +103,21 @@ struct PhaseDetailView: View {
             }
         }) {
             LogCycleView(
-                selectedDate: Date(),
+                selectedDate: targetDate,
                 onSave: { startDate in
                     didLogCycle = true
                     Task { await CycleManager.shared.logCycle(startDate: startDate) }
                 },
                 onDismiss: { showLogCycle = false }
+            )
+        }
+        .sheet(isPresented: $showJournalEntry) {
+            // Target the day being viewed so the one-entry-per-day resolver opens
+            // that day's existing entry for editing instead of creating a duplicate.
+            JournalEntryView(
+                date: targetDate,
+                journalManager: JournalManager.shared,
+                onDismiss: { showJournalEntry = false }
             )
         }
     }
@@ -105,6 +141,14 @@ struct PhaseDetailView: View {
                     .fontWeight(.medium)
                     .foregroundColor(.floSage)
                     .tracking(1.5)
+
+                // Day line: only when opened for a specific calendar day
+                if date != nil {
+                    Text("\(dayLineFormatter.string(from: targetDate)) · Day \(cycleManager.dayOfCycle(for: targetDate))")
+                        .font(.floBodySmall)
+                        .foregroundColor(.floGray)
+                        .padding(.top, 2)
+                }
             }
 
             Spacer()
@@ -163,7 +207,7 @@ struct PhaseDetailView: View {
             }
             .padding(.horizontal, FloSpacing.lg)
             .padding(.top, FloSpacing.md + 2)
-            .padding(.bottom, 100)
+            .padding(.bottom, showsActions ? 100 : FloSpacing.xl)
         }
     }
 
@@ -341,27 +385,35 @@ struct PhaseDetailView: View {
         }
     }
 
-    // MARK: - Log Cycle Button
-    private var logCycleButton: some View {
+    // MARK: - Action Bar
+    /// Today or a past day: log the day, and add or view that day's journal entry.
+    /// Hidden entirely for future days (see `showsActions`).
+    private var actionBar: some View {
         VStack(spacing: 0) {
-            Button(action: {
-                FloHaptics.medium()
-                showLogCycle = true
-            }) {
-                HStack(spacing: FloSpacing.sm) {
-                    Image(systemName: "checkmark.circle")
-                        .font(.system(size: 16))
-                    Text("LOG CYCLE")
-                        .font(.floLabel)
-                        .fontWeight(.semibold)
-                        .tracking(1)
+            HStack(spacing: FloSpacing.md) {
+                Button(action: {
+                    FloHaptics.medium()
+                    showLogCycle = true
+                }) {
+                    HStack(spacing: FloSpacing.sm) {
+                        Image(systemName: "checkmark.circle")
+                        Text("Log day")
+                    }
                 }
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, FloSpacing.md)
-                .background(Color.floSage)
-                .cornerRadius(FloRadius.full)
-                .shadow(color: Color.black.opacity(0.15), radius: 8, x: 0, y: 4)
+                .buttonStyle(.floPrimary)
+                .shadow(color: FloShadow.medium.color, radius: FloShadow.medium.radius, x: FloShadow.medium.x, y: FloShadow.medium.y)
+
+                Button(action: {
+                    FloHaptics.light()
+                    showJournalEntry = true
+                }) {
+                    HStack(spacing: FloSpacing.sm) {
+                        Image(systemName: hasJournalEntry ? "book" : "square.and.pencil")
+                        Text(hasJournalEntry ? "View journal" : "Add journal")
+                    }
+                }
+                .buttonStyle(.floSecondary)
+                .shadow(color: FloShadow.medium.color, radius: FloShadow.medium.radius, x: FloShadow.medium.x, y: FloShadow.medium.y)
             }
             .padding(.horizontal, FloSpacing.lg)
         }
@@ -395,6 +447,14 @@ struct PhaseDetailView: View {
     }
 }
 
-#Preview {
+#Preview("Today's phase (from Home)") {
     PhaseDetailView(phase: .menstrual, onDismiss: {})
+}
+
+#Preview("Calendar day, past") {
+    PhaseDetailView(phase: .follicular, onDismiss: {}, date: Calendar.current.date(byAdding: .day, value: -3, to: Date()))
+}
+
+#Preview("Calendar day, future (no actions)") {
+    PhaseDetailView(phase: .luteal, onDismiss: {}, date: Calendar.current.date(byAdding: .day, value: 5, to: Date()))
 }
