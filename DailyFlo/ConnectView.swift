@@ -5,6 +5,7 @@
 //  Created by Jonathan Bowden on 2/3/26.
 //
 
+import Supabase
 import SwiftUI
 import UIKit
 
@@ -23,6 +24,33 @@ struct Partner: Identifiable {
     let currentPhase: CyclePhase
     let daysUntilNextPhase: Int
     let avatarColor: Color
+    /// False when `name` is the "Your partner" fallback, so sentence copy
+    /// can lowercase it.
+    var hasName: Bool = true
+}
+
+extension Partner {
+    /// Builds the card model for the other party of a live relationship.
+    /// Phase and countdown are placeholders until Day 12 reads the tracker's
+    /// real cycle through the permission-gated RLS path.
+    init(relationship: PartnerRelationship, viewerId: UUID?) {
+        let trimmed = relationship.partnerDisplayName(viewedBy: viewerId)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = trimmed.isEmpty ? "Your partner" : trimmed
+        // U+FE0E forces the text-style glyph so the heart takes the white
+        // foreground like initials do, instead of rendering as a red emoji.
+        let initials = trimmed.isEmpty
+            ? "♥\u{FE0E}"
+            : trimmed.split(separator: " ").prefix(2).compactMap { $0.first.map(String.init) }.joined().uppercased()
+        self.init(
+            name: name,
+            initials: initials,
+            currentPhase: .follicular,
+            daysUntilNextPhase: 0,
+            avatarColor: .floSage,
+            hasName: !trimmed.isEmpty
+        )
+    }
 }
 
 // MARK: - Main Connect View
@@ -31,17 +59,35 @@ struct ConnectMainView: View {
     @State private var partnerManager = PartnerManager.shared
     @State private var connectionStatus: ConnectionStatus = .notConnected
     @State private var showInviteSheet = false
+    @State private var showShareSheet = false
+    @State private var showPartnerOptions = false
     @State private var showSyncInfo = false
     @State private var inviteCode = ""
+    @State private var isAcceptingCode = false
+    @State private var acceptErrorMessage: String?
+    /// Set when this session accepted a code, so closing Connect refreshes
+    /// the profile role and the root can re-route a new supporter.
+    @State private var didAcceptThisSession = false
+    @FocusState private var codeFieldFocused: Bool
 
-    // Sample connected partner (would come from database)
-    private let samplePartner = Partner(
-        name: "Sarah",
-        initials: "SB",
-        currentPhase: .follicular,
-        daysUntilNextPhase: 5,
-        avatarColor: Color(hex: "E8B86D")
-    )
+    private let cycleManager = CycleManager.shared
+
+    private var currentUserId: UUID? {
+        SupabaseClient.shared.auth.currentSession?.user.id
+    }
+
+    /// The other party of the active relationship, from the signed-in user's
+    /// point of view. `nil` until `PartnerManager.refresh()` finds a row.
+    private var connectedPartner: Partner? {
+        partnerManager.activeRelationship.map { Partner(relationship: $0, viewerId: currentUserId) }
+    }
+
+    /// True when the signed-in user is the one sharing their cycle. A
+    /// supporter who opens Connect sees the relationship from their side.
+    private var isViewerTracker: Bool {
+        guard let relationship = partnerManager.activeRelationship else { return true }
+        return relationship.isTracker(currentUserId)
+    }
 
     var body: some View {
         NavigationStack {
@@ -60,7 +106,11 @@ struct ConnectMainView: View {
                         case .pendingInvite:
                             pendingInviteView
                         case .connected:
-                            connectedView
+                            if let partner = connectedPartner {
+                                connectedView(for: partner)
+                            } else {
+                                notConnectedView
+                            }
                         }
 
                         // Cycle sync info
@@ -72,23 +122,83 @@ struct ConnectMainView: View {
                     .padding(.horizontal, FloSpacing.lg)
                 }
             }
-            .sheet(isPresented: $showInviteSheet) {
-                InvitePartnerSheet(onInviteSent: {
-                    showInviteSheet = false
-                    connectionStatus = .pendingInvite
-                })
+            .sheet(isPresented: $showInviteSheet, onDismiss: syncStatus) {
+                InvitePartnerSheet()
+            }
+            .sheet(isPresented: $showShareSheet) {
+                if let invitation = partnerManager.pendingInvitation {
+                    InviteShareSheet(invitation: invitation) { _ in
+                        showShareSheet = false
+                    }
+                    .presentationDetents([.medium, .large])
+                }
+            }
+            .sheet(isPresented: $showPartnerOptions, onDismiss: syncStatus) {
+                if let relationship = partnerManager.activeRelationship {
+                    PartnerOptionsSheet(
+                        relationship: relationship,
+                        isTracker: isViewerTracker,
+                        partnerName: connectedPartner.map { $0.hasName ? $0.name : "your partner" } ?? "your partner"
+                    )
+                    .presentationDetents([.medium, .large])
+                }
             }
             .sheet(isPresented: $showSyncInfo) {
                 CycleSyncInfoSheet()
             }
             .task {
-                // Pending state comes from the `invitations` table. Connected
-                // state still reads the sample partner until Day 11 wires
-                // partner_relationships.
+                // Both states come from the DB: `partner_relationships` for
+                // connected, `invitations` for pending.
                 await partnerManager.refresh()
-                if connectionStatus == .notConnected, partnerManager.pendingInvitation != nil {
-                    connectionStatus = .pendingInvite
-                }
+                syncStatus()
+            }
+        }
+    }
+
+    /// The DB decides the state: an active relationship means connected, an
+    /// open invitation means pending, otherwise not connected.
+    private func syncStatus() {
+        let next: ConnectionStatus
+        if partnerManager.activeRelationship != nil {
+            next = .connected
+        } else if partnerManager.pendingInvitation != nil {
+            next = .pendingInvite
+        } else {
+            next = .notConnected
+        }
+        guard next != connectionStatus else { return }
+        withAnimation(.easeInOut(duration: 0.3)) {
+            connectionStatus = next
+        }
+    }
+
+    // MARK: - Accept a code
+
+    /// Six code characters after the prefix; the server re-validates.
+    private var canSubmitCode: Bool {
+        PartnerManager.normalizeCode(inviteCode).count == "FLO-".count + 6
+    }
+
+    /// Calls the `accept_invitation` RPC and, on success, lands on the
+    /// connected state with the tracker's real name.
+    private func acceptCode() {
+        guard canSubmitCode, !isAcceptingCode else { return }
+        isAcceptingCode = true
+        acceptErrorMessage = nil
+        codeFieldFocused = false
+
+        Task {
+            defer { isAcceptingCode = false }
+            do {
+                _ = try await partnerManager.acceptInvitation(code: inviteCode)
+                didAcceptThisSession = true
+                inviteCode = ""
+                FloHaptics.success()
+                syncStatus()
+            } catch {
+                FloHaptics.error()
+                acceptErrorMessage = (error as? PartnerError)?.errorDescription
+                    ?? "Couldn't connect right now. Check your connection and try again."
             }
         }
     }
@@ -105,6 +215,13 @@ struct ConnectMainView: View {
 
                 Button(action: {
                     FloHaptics.light()
+                    if didAcceptThisSession, let userId = currentUserId {
+                        // Accepting settled profiles.role server-side. Pull it
+                        // now, on the way out, so the root re-routes a new
+                        // supporter to their home without yanking this screen
+                        // away mid-celebration.
+                        Task { await CycleManager.shared.refresh(userId: userId) }
+                    }
                     dismiss()
                 }) {
                     Image(systemName: "xmark.circle.fill")
@@ -167,38 +284,58 @@ struct ConnectMainView: View {
                 .cornerRadius(FloRadius.full)
             }
 
-            // Enter code option
+            // Enter code option — the supporter side of the invite.
             VStack(spacing: FloSpacing.sm) {
                 Text("Or enter an invite code")
                     .font(.floBodySmall)
                     .foregroundColor(.floGray)
 
                 HStack(spacing: FloSpacing.sm) {
-                    TextField("Enter code", text: $inviteCode)
-                        .font(.floBodyMedium)
+                    TextField("FLO-A3K2M7", text: $inviteCode)
+                        .font(.system(size: 17, weight: .medium, design: .monospaced))
+                        .foregroundColor(.floCharcoal)
+                        .textInputAutocapitalization(.characters)
+                        .autocorrectionDisabled()
+                        .keyboardType(.asciiCapable)
+                        .submitLabel(.join)
+                        .focused($codeFieldFocused)
+                        .onSubmit(acceptCode)
+                        .onChange(of: inviteCode) { _, _ in acceptErrorMessage = nil }
                         .padding()
                         .background(Color.white)
                         .cornerRadius(FloRadius.md)
                         .overlay(
                             RoundedRectangle(cornerRadius: FloRadius.md)
-                                .stroke(Color.floGray.opacity(0.3), lineWidth: 1)
+                                .stroke(acceptErrorMessage == nil ? Color.floGray.opacity(0.3) : Color.floError, lineWidth: 1)
                         )
+                        .disabled(isAcceptingCode)
 
-                    Button(action: {
-                        FloHaptics.success()
-                        // Validate and connect
-                        if !inviteCode.isEmpty {
-                            connectionStatus = .connected
+                    Button(action: acceptCode) {
+                        if isAcceptingCode {
+                            ProgressView()
+                                .tint(.floSage)
+                                .frame(width: 32, height: 32)
+                        } else {
+                            Image(systemName: "arrow.right.circle.fill")
+                                .font(.system(size: 32))
+                                .foregroundColor(canSubmitCode ? .floSage : .floSage.opacity(0.4))
                         }
-                    }) {
-                        Image(systemName: "arrow.right.circle.fill")
-                            .font(.system(size: 32))
-                            .foregroundColor(.floSage)
                     }
                     .floHitTarget()
+                    .disabled(!canSubmitCode || isAcceptingCode)
+                    .accessibilityLabel("Connect with code")
+                }
+
+                if let acceptErrorMessage {
+                    Text(acceptErrorMessage)
+                        .font(.floBodySmall)
+                        .foregroundColor(.floError)
+                        .multilineTextAlignment(.center)
+                        .transition(.opacity)
                 }
             }
             .padding(.top, FloSpacing.md)
+            .animation(.easeInOut(duration: 0.2), value: acceptErrorMessage)
         }
         .padding(FloSpacing.lg)
         .background(Color.white)
@@ -241,25 +378,20 @@ struct ConnectMainView: View {
                 InviteCodeBadge(code: invitation.code)
             }
 
-            // Resend option
+            // Share the same code again — never mints a new one.
             Button(action: {
-                showInviteSheet = true
+                FloHaptics.light()
+                showShareSheet = true
             }) {
-                Text("Resend Invite")
-                    .font(.floButton)
-                    .foregroundColor(.floSage)
+                HStack(spacing: FloSpacing.xs) {
+                    Image(systemName: "square.and.arrow.up")
+                    Text("Share Invite Again")
+                }
+                .font(.floButton)
+                .foregroundColor(.floSage)
             }
-
-            #if DEBUG
-            // Demo: Skip to connected — DEBUG only, never ships in Release.
-            Button(action: {
-                connectionStatus = .connected
-            }) {
-                Text("(Demo: Show Connected)")
-                    .font(.floBodySmall)
-                    .foregroundColor(.floGray)
-            }
-            #endif
+            .floHitTarget()
+            .disabled(partnerManager.pendingInvitation == nil)
         }
         .padding(FloSpacing.lg)
         .background(Color.white)
@@ -268,24 +400,26 @@ struct ConnectMainView: View {
     }
 
     // MARK: - Connected View
-    private var connectedView: some View {
+    /// Renders the live relationship. A tracker sees what they're sharing;
+    /// a supporter sees whose cycle they're following.
+    private func connectedView(for partner: Partner) -> some View {
         VStack(spacing: FloSpacing.lg) {
             // Partner card
             HStack(spacing: FloSpacing.md) {
                 // Avatar
                 ZStack {
                     Circle()
-                        .fill(samplePartner.avatarColor)
+                        .fill(partner.avatarColor)
                         .frame(width: 60, height: 60)
 
-                    Text(samplePartner.initials)
+                    Text(partner.initials)
                         .font(.floDisplaySmall)
                         .foregroundColor(.white)
                 }
 
                 VStack(alignment: .leading, spacing: FloSpacing.xs) {
                     HStack {
-                        Text(samplePartner.name)
+                        Text(partner.name)
                             .font(.floBodyLarge)
                             .fontWeight(.semibold)
                             .foregroundColor(.floCharcoal)
@@ -302,72 +436,67 @@ struct ConnectMainView: View {
 
                 Spacer()
 
-                // More options
-                Button(action: {}) {
+                // Sharing switch + disconnect
+                Button(action: {
+                    FloHaptics.light()
+                    showPartnerOptions = true
+                }) {
                     Image(systemName: "ellipsis")
                         .font(.system(size: 20))
                         .foregroundColor(.floGray)
                 }
                 .floHitTarget()
+                .accessibilityLabel("Partner options")
             }
             .padding(FloSpacing.md)
             .background(Color.white)
             .cornerRadius(FloRadius.lg)
 
-            // Your current phase (shared with partner)
-            VStack(alignment: .leading, spacing: FloSpacing.md) {
-                Text("SHARING WITH \(samplePartner.name.uppercased())")
-                    .font(.floLabel)
-                    .fontWeight(.medium)
-                    .foregroundColor(.floGray)
-                    .tracking(1)
+            if isViewerTracker {
+                // Your current phase (shared with partner) — the tracker's own
+                // cycle math, the same numbers the Calendar tab shows.
+                VStack(alignment: .leading, spacing: FloSpacing.md) {
+                    Text("SHARING WITH \(partner.name.uppercased())")
+                        .font(.floLabel)
+                        .fontWeight(.medium)
+                        .foregroundColor(.floGray)
+                        .tracking(1)
 
-                // Current phase card
-                HStack {
-                    VStack(alignment: .leading, spacing: FloSpacing.xs) {
-                        Text("Your Current Phase")
-                            .font(.floBodySmall)
-                            .foregroundColor(.floGray)
+                    currentPhaseCard
+                }
 
-                        Text("Follicular Phase")
-                            .font(.floDisplaySmall)
-                            .foregroundColor(.floCharcoal)
+                // What partner sees
+                VStack(alignment: .leading, spacing: FloSpacing.sm) {
+                    Text("WHAT \(partner.name.uppercased()) SEES")
+                        .font(.floLabel)
+                        .fontWeight(.medium)
+                        .foregroundColor(.floGray)
+                        .tracking(1)
 
-                        Text("High energy • Days 6-13")
-                            .font(.floBodySmall)
-                            .foregroundColor(.floSage)
-                    }
-
-                    Spacer()
-
-                    // Phase indicator
-                    ZStack {
-                        Circle()
-                            .fill(Color.phaseFollicular.opacity(0.2))
-                            .frame(width: 64, height: 64)
-
-                        Text("02")
-                            .font(.floDisplaySmall)
-                            .foregroundColor(.phaseFollicular)
+                    VStack(spacing: FloSpacing.xs) {
+                        if partnerManager.activeRelationship?.sharesCurrentPhase ?? false {
+                            infoRow(icon: "calendar", text: "Your current phase and duration")
+                            infoRow(icon: "heart", text: "How to best support you")
+                        } else {
+                            infoRow(icon: "eye.slash", text: "Your phase is hidden right now")
+                        }
+                        infoRow(icon: "bell", text: "Phase change notifications")
                     }
                 }
-                .padding(FloSpacing.md)
-                .background(Color.floMint.opacity(0.3))
-                .cornerRadius(FloRadius.lg)
-            }
+            } else {
+                // Supporter's view of the same relationship.
+                VStack(alignment: .leading, spacing: FloSpacing.sm) {
+                    Text("WHAT YOU SEE")
+                        .font(.floLabel)
+                        .fontWeight(.medium)
+                        .foregroundColor(.floGray)
+                        .tracking(1)
 
-            // What partner sees
-            VStack(alignment: .leading, spacing: FloSpacing.sm) {
-                Text("WHAT \(samplePartner.name.uppercased()) SEES")
-                    .font(.floLabel)
-                    .fontWeight(.medium)
-                    .foregroundColor(.floGray)
-                    .tracking(1)
-
-                VStack(spacing: FloSpacing.xs) {
-                    infoRow(icon: "calendar", text: "Your current phase and duration")
-                    infoRow(icon: "heart", text: "How to best support you")
-                    infoRow(icon: "bell", text: "Phase change notifications")
+                    VStack(spacing: FloSpacing.xs) {
+                        infoRow(icon: "calendar", text: "\(partner.name)'s current phase and duration")
+                        infoRow(icon: "heart", text: "How to best support \(partner.name)")
+                        infoRow(icon: "bell", text: "Phase change notifications")
+                    }
                 }
             }
         }
@@ -375,6 +504,45 @@ struct ConnectMainView: View {
         .background(Color.white)
         .cornerRadius(FloRadius.xl)
         .shadow(color: .black.opacity(0.05), radius: 10, x: 0, y: 4)
+    }
+
+    /// The tracker's current phase, from `CycleManager`.
+    private var currentPhaseCard: some View {
+        let phase = cycleManager.currentPhase
+        let day = cycleManager.currentDayOfCycle
+        let energy = phase.subtitle.lowercased().replacingOccurrences(of: "your ", with: "")
+
+        return HStack {
+            VStack(alignment: .leading, spacing: FloSpacing.xs) {
+                Text("Your Current Phase")
+                    .font(.floBodySmall)
+                    .foregroundColor(.floGray)
+
+                Text(phase.name)
+                    .font(.floDisplaySmall)
+                    .foregroundColor(.floCharcoal)
+
+                Text("\(energy.prefix(1).uppercased() + energy.dropFirst()) • Day \(day)")
+                    .font(.floBodySmall)
+                    .foregroundColor(.floSage)
+            }
+
+            Spacer()
+
+            // Phase indicator
+            ZStack {
+                Circle()
+                    .fill(phase.color.opacity(0.2))
+                    .frame(width: 64, height: 64)
+
+                Text(phase.number)
+                    .font(.floDisplaySmall)
+                    .foregroundColor(phase.color)
+            }
+        }
+        .padding(FloSpacing.md)
+        .background(Color.floMint.opacity(0.3))
+        .cornerRadius(FloRadius.lg)
     }
 
     private func infoRow(icon: String, text: String) -> some View {
@@ -472,14 +640,16 @@ struct InviteCodeBadge: View {
 
 // MARK: - Invite Partner Sheet
 /// Creates (or reuses) the tracker's open invitation on appear and shows the
-/// code. Day 9 turns "Share Code" into a system share sheet; today it hands
-/// control back to ConnectMainView, which flips to the pending state.
+/// code. "Share Code" opens the system share sheet with a ready-to-send
+/// message; once the tracker actually sends it, this sheet closes and
+/// ConnectMainView shows the pending state. Cancelling the share sheet keeps
+/// the tracker here so they can copy the code or try another app instead.
 struct InvitePartnerSheet: View {
-    let onInviteSent: () -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var invitation: PartnerInvitation?
     @State private var errorMessage: String?
     @State private var isCreating = false
+    @State private var showShareSheet = false
 
     var body: some View {
         NavigationStack {
@@ -514,18 +684,39 @@ struct InvitePartnerSheet: View {
                 Spacer()
 
                 // Share button — enabled once a real code exists
-                Button(action: onInviteSent) {
-                    Text("Share Code")
-                        .font(.floButton)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, FloSpacing.md)
-                        .background(invitation == nil ? Color.floSage.opacity(0.4) : Color.floSage)
-                        .cornerRadius(FloRadius.full)
+                Button(action: {
+                    FloHaptics.medium()
+                    showShareSheet = true
+                }) {
+                    HStack(spacing: FloSpacing.sm) {
+                        Image(systemName: "square.and.arrow.up")
+                        Text("Share Code")
+                    }
+                    .font(.floButton)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, FloSpacing.md)
+                    .background(invitation == nil ? Color.floSage.opacity(0.4) : Color.floSage)
+                    .cornerRadius(FloRadius.full)
                 }
                 .disabled(invitation == nil)
                 .padding(.horizontal, FloSpacing.lg)
                 .padding(.bottom, FloSpacing.xl)
+            }
+            .sheet(isPresented: $showShareSheet) {
+                if let invitation {
+                    InviteShareSheet(invitation: invitation) { sent in
+                        if sent {
+                            // Closing this sheet takes the share sheet with it;
+                            // ConnectMainView then flips to the pending state.
+                            FloHaptics.success()
+                            dismiss()
+                        } else {
+                            showShareSheet = false
+                        }
+                    }
+                    .presentationDetents([.medium, .large])
+                }
             }
             .background(Color.floCream)
             .navigationBarTitleDisplayMode(.inline)
@@ -586,6 +777,218 @@ struct InvitePartnerSheet: View {
             errorMessage = (error as? PartnerError)?.errorDescription
                 ?? "Couldn't create an invite code. Check your connection and try again."
         }
+    }
+}
+
+// MARK: - Partner Options Sheet
+/// Behind the "…" on the connected card. A tracker can switch phase sharing
+/// off and on; either side can disconnect. Every change goes to the server
+/// first and the card re-reads the row, so nothing here is local-only.
+struct PartnerOptionsSheet: View {
+    let relationship: PartnerRelationship
+    let isTracker: Bool
+    let partnerName: String
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var sharesPhase: Bool
+    /// What the server currently holds. A revert after a failed save sets
+    /// the switch back to this, and `onChange` ignores that revert.
+    @State private var savedSharesPhase: Bool
+    @State private var isSaving = false
+    @State private var showDisconnectConfirm = false
+    @State private var isDisconnecting = false
+    @State private var errorMessage: String?
+
+    init(relationship: PartnerRelationship, isTracker: Bool, partnerName: String) {
+        self.relationship = relationship
+        self.isTracker = isTracker
+        self.partnerName = partnerName
+        _sharesPhase = State(initialValue: relationship.sharesCurrentPhase)
+        _savedSharesPhase = State(initialValue: relationship.sharesCurrentPhase)
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: FloSpacing.lg) {
+                if isTracker {
+                    sharingCard
+                }
+
+                if let errorMessage {
+                    Text(errorMessage)
+                        .font(.floBodySmall)
+                        .foregroundColor(.floError)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, FloSpacing.lg)
+                }
+
+                Spacer()
+
+                disconnectButton
+            }
+            .padding(.top, FloSpacing.lg)
+            .padding(.bottom, FloSpacing.xl)
+            .background(Color.floCream)
+            .navigationTitle(isTracker ? "Sharing" : "Supporting")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") { dismiss() }
+                        .foregroundColor(.floSage)
+                }
+            }
+            .alert(disconnectTitle, isPresented: $showDisconnectConfirm) {
+                Button("Disconnect", role: .destructive) { performDisconnect() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(disconnectMessage)
+            }
+        }
+    }
+
+    // MARK: Sharing
+
+    private var sharingCard: some View {
+        VStack(alignment: .leading, spacing: FloSpacing.sm) {
+            Toggle(isOn: $sharesPhase) {
+                VStack(alignment: .leading, spacing: FloSpacing.xs) {
+                    Text("Share my current phase")
+                        .font(.floBodyLarge)
+                        .fontWeight(.medium)
+                        .foregroundColor(.floCharcoal)
+
+                    Text(sharesPhase
+                         ? "\(partnerName) can see which phase you're in and how to support you."
+                         : "\(partnerName) sees that you're connected, but not your phase.")
+                        .font(.floBodySmall)
+                        .foregroundColor(.floGray)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .tint(.floSage)
+            .disabled(isSaving || isDisconnecting)
+            .onChange(of: sharesPhase) { _, new in
+                guard new != savedSharesPhase, !isSaving else { return }
+                save(new)
+            }
+        }
+        .padding(FloSpacing.lg)
+        .background(Color.white)
+        .cornerRadius(FloRadius.lg)
+        .padding(.horizontal, FloSpacing.lg)
+    }
+
+    private func save(_ enabled: Bool) {
+        isSaving = true
+        errorMessage = nil
+        Task {
+            defer { isSaving = false }
+            do {
+                try await PartnerManager.shared.setSharesCurrentPhase(enabled, for: relationship)
+                savedSharesPhase = enabled
+                FloHaptics.selection()
+            } catch {
+                FloHaptics.error()
+                sharesPhase = savedSharesPhase
+                errorMessage = (error as? PartnerError)?.errorDescription
+                    ?? "Couldn't save that right now. Check your connection and try again."
+            }
+        }
+    }
+
+    // MARK: Disconnect
+
+    private var disconnectTitle: String {
+        isTracker ? "Disconnect from \(partnerName)?" : "Stop supporting \(partnerName)?"
+    }
+
+    private var disconnectMessage: String {
+        isTracker
+            ? "\(partnerName) will no longer see your cycle. You can send a new invite any time."
+            : "You'll no longer see \(partnerName)'s cycle. You can reconnect with a new invite code."
+    }
+
+    private var disconnectButton: some View {
+        Button(action: {
+            FloHaptics.medium()
+            showDisconnectConfirm = true
+        }) {
+            HStack(spacing: FloSpacing.sm) {
+                if isDisconnecting {
+                    ProgressView().tint(.floError)
+                } else {
+                    Image(systemName: "person.crop.circle.badge.xmark")
+                }
+                Text(isTracker ? "Disconnect" : "Stop Supporting")
+                    .font(.floButton)
+            }
+            .foregroundColor(.floError)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, FloSpacing.md)
+            .background(Color.white)
+            .cornerRadius(FloRadius.full)
+            .overlay(
+                RoundedRectangle(cornerRadius: FloRadius.full)
+                    .stroke(Color.floError.opacity(0.3), lineWidth: 1)
+            )
+        }
+        .disabled(isDisconnecting || isSaving)
+        .padding(.horizontal, FloSpacing.lg)
+    }
+
+    private func performDisconnect() {
+        isDisconnecting = true
+        errorMessage = nil
+        Task {
+            defer { isDisconnecting = false }
+            do {
+                try await PartnerManager.shared.disconnect(relationship)
+                FloHaptics.success()
+                dismiss()
+            } catch {
+                FloHaptics.error()
+                errorMessage = (error as? PartnerError)?.errorDescription
+                    ?? "Couldn't disconnect right now. Check your connection and try again."
+            }
+        }
+    }
+}
+
+// MARK: - Invite Share Sheet
+/// The system share sheet (Messages, Mail, WhatsApp, AirDrop, Copy…) carrying
+/// the invite message. SwiftUI's `ShareLink` gives no completion callback, and
+/// we need one to know whether the invite actually went out, so this wraps
+/// `UIActivityViewController` directly.
+struct InviteShareSheet: UIViewControllerRepresentable {
+    let invitation: PartnerInvitation
+    /// Called once with `true` when the tracker completed a share action, or
+    /// `false` when they dismissed the picker without sending. The caller
+    /// owns dismissal so nested sheets never race each other.
+    let onFinish: (Bool) -> Void
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        let message = invitation.shareMessage(senderName: Self.senderName)
+        let controller = UIActivityViewController(activityItems: [message], applicationActivities: nil)
+        controller.excludedActivityTypes = [
+            .assignToContact,
+            .addToReadingList,
+            .print,
+            .saveToCameraRoll,
+            .markupAsPDF
+        ]
+        controller.completionWithItemsHandler = { _, completed, _, _ in
+            onFinish(completed)
+        }
+        return controller
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+
+    /// The tracker's chosen name, or "" when we only have the placeholder.
+    /// Mirrors ProfileMainView: a name is never derived from an email.
+    private static var senderName: String {
+        let cached = CycleManager.shared.userName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (cached.isEmpty || cached == "Friend") ? "" : cached
     }
 }
 

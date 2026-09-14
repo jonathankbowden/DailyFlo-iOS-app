@@ -20,6 +20,8 @@
 	<string>$(SUPABASE_PUBLISHABLE_KEY)</string>
 	<key>GIDClientID</key>
 	<string>954188535649-rc6k2rrlooutp0i3irpj247f4517lok0.apps.googleusercontent.com</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
