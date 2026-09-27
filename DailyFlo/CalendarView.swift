@@ -9,9 +9,7 @@ import SwiftUI
 
 struct CalendarView: View {
     @State private var selectedDate: Date? = nil
-    @State private var showPhaseDetail = false
     @State private var showSingleDay = false
-    @State private var selectedPhase: CyclePhase = .menstrual
 
     // Drives scrollPosition anchoring; starts on the current month (offset 0).
     @State private var scrolledMonth: Int? = 0
@@ -75,16 +73,6 @@ struct CalendarView: View {
                 }
                 .scrollPosition(id: $scrolledMonth, anchor: .top)
             }
-        }
-        .sheet(isPresented: $showPhaseDetail, onDismiss: playLogConfirmationIfNeeded) {
-            PhaseDetailView(
-                phase: selectedPhase,
-                onDismiss: { showPhaseDetail = false },
-                onLoggedCycle: {
-                    pendingLogConfirmation = true
-                    showPhaseDetail = false
-                }
-            )
         }
         .sheet(isPresented: $showSingleDay, onDismiss: playLogConfirmationIfNeeded) {
             if let date = selectedDate {
@@ -204,9 +192,6 @@ struct CalendarView: View {
                         emphasizeAsNewStart: emphasizeLoggedStart && isLoggedCycleStart(day, in: monthDate),
                         onTapDay: {
                             selectDay(day, in: monthDate, cycleData: cycleData)
-                        },
-                        onTapPhase: {
-                            showPhaseForDay(day, cycleData: cycleData)
                         }
                     )
                 } else {
@@ -324,16 +309,6 @@ struct CalendarView: View {
         showSingleDay = true
     }
 
-    private func showPhaseForDay(_ day: Int, cycleData: CycleData) {
-        FloHaptics.light()
-        selectedPhase = phaseForDay(day, cycleData: cycleData)
-        showPhaseDetail = true
-    }
-
-    private func phaseForDay(_ day: Int, cycleData: CycleData) -> CyclePhase {
-        return cycleData.phase(for: day)
-    }
-
     // MARK: - Cycle Data (from CycleManager using real onboarding data)
     private func getCycleData(for monthDate: Date) -> CycleData {
         return cycleManager.cycleData(for: monthDate)
@@ -425,12 +400,21 @@ struct DayCellWithPhase: View {
     let monthLabel: String? // Shows month abbreviation on day 1
     let columnIndex: Int // 0-6, which column this day is in
     var emphasizeAsNewStart: Bool = false // transient soft ring after logging a cycle
+    /// Any tap in the cell opens the day sheet.
     let onTapDay: () -> Void
-    let onTapPhase: () -> Void
 
     /// Opacity applied to phase tints in estimated (past) months. Muting is done
     /// via opacity on the existing phase tokens — no new colors introduced.
     private static let estimatedPhaseOpacity: Double = 0.45
+
+    /// Phase band height; its ends round fully (radius = half the height).
+    private static let bandHeight: CGFloat = 32
+    /// Today ring diameter.
+    private static let todayRingSize: CGFloat = 46
+    /// The number sits above the dots in a 41pt stack (32 number + 4 gap +
+    /// 5 dots) centered in the 56pt cell, so its center is 4.5pt above the
+    /// cell's. The band is shifted by the same amount to center on it.
+    private static let numberCenterOffset: CGFloat = -4.5
 
     private var phase: CyclePhase { cycleData.phase(for: day) }
     private var isOvulation: Bool { day == cycleData.ovulationDay }
@@ -444,36 +428,37 @@ struct DayCellWithPhase: View {
 
     var body: some View {
         ZStack {
-            // Phase background bar - 22px tall, vertically centered on day number.
+            // Phase background bar - 32pt tall, vertically centered on day number.
             // Rounded corners on outside edges of phase blocks AND grid edges.
             // Only drawn when there's real cycle data to anchor to (honest
             // degradation); estimated past months are muted via reduced opacity
             // on the same phase tokens.
             if cycleData.hasPhaseData {
                 phaseBackgroundColor
-                    .frame(height: 22)
+                    .frame(height: Self.bandHeight)
                     .frame(maxWidth: .infinity)
                     .clipShape(PhaseBarShape(
                         roundLeft: shouldRoundLeft,
                         roundRight: shouldRoundRight,
-                        cornerRadius: 11
+                        cornerRadius: Self.bandHeight / 2
                     ))
                     .padding(.leading, isPhaseStart && day != 1 ? 4 : 0)
                     .padding(.trailing, isPhaseEnd && day != cycleData.daysInMonth ? 4 : 0)
                     .opacity(cycleData.isEstimated ? Self.estimatedPhaseOpacity : 1)
-                    .offset(y: -4)
+                    .offset(y: Self.numberCenterOffset)
                     .animation(FloAnimation.easeOutQuick, value: isSelected)
             }
 
             VStack(spacing: 2) {
                 ZStack {
-                    // Current date: charcoal outline only — phase tint shows
-                    // through. Takes priority over the selected-fill so today
-                    // stays an outline even when it's also the selected day.
+                    // Current date: a 46pt black hairline ring, no fill — the
+                    // phase band shows through. It overflows the 32pt number
+                    // frame on purpose so the grid layout doesn't shift. Takes
+                    // priority over the selected fill.
                     if isToday {
                         Circle()
-                            .stroke(Color.floCharcoal, lineWidth: 1.5)
-                            .frame(width: 32, height: 32)
+                            .stroke(Color.black, lineWidth: 1)
+                            .frame(width: Self.todayRingSize, height: Self.todayRingSize)
                     } else if isSelected {
                         // Selected state (non-today) with subtle scale animation
                         Circle()
@@ -493,13 +478,11 @@ struct DayCellWithPhase: View {
                     }
 
                     Text("\(day)")
-                        .font(.floBodyMedium)
-                        .fontWeight(isToday || isSelected ? .semibold : .regular)
-                        .foregroundColor(isSelected && !isToday ? .white : .floCharcoal)
+                        .font(isToday ? .system(size: 16, weight: .bold) : .floBodyMedium)
+                        .fontWeight(isToday ? .bold : (isSelected ? .semibold : .regular))
+                        .foregroundColor(isSelected && !isToday ? .white : (isToday ? .black : .floCharcoal))
                 }
                 .frame(width: 32, height: 32)
-                .contentShape(Circle())
-                .onTapGesture { onTapDay() }
                 .scaleEffect(isSelected ? 1.05 : 1.0)
                 .animation(FloAnimation.springSnappy, value: isSelected)
 
@@ -520,7 +503,7 @@ struct DayCellWithPhase: View {
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
         .onTapGesture {
-            onTapPhase()
+            onTapDay()
         }
     }
 
