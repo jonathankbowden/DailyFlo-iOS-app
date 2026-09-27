@@ -27,10 +27,16 @@ struct HomeView: View {
     @State private var showMeditation = false
     @State private var showPhaseDetail = false
     @State private var selectedPhoto: PhotosPickerItem? = nil
-    @State private var photoImage: UIImage? = nil
-    @State private var showPhotoJournal = false
+    @State private var todayPhoto: UIImage? = nil
+    @State private var showFeelingSheet = false
 
     private let cycleManager = CycleManager.shared
+    private let journalManager = JournalManager.shared
+
+    /// Today's journal entry, if any (at most one per day).
+    private var todayEntry: JournalEntry? {
+        journalManager.entry(for: Date())
+    }
 
     var body: some View {
         Group {
@@ -62,6 +68,14 @@ struct HomeView: View {
         }
         .onAppear {
             hasAppeared = true
+            loadTodayPhoto()
+        }
+        .onChange(of: todayEntry?.userPhotoURL) { _, _ in
+            loadTodayPhoto()
+        }
+        .onChange(of: selectedPhoto) { _, newItem in
+            guard let newItem else { return }
+            Task { await importPhoto(newItem) }
         }
         .sheet(isPresented: $showJournalEntry) {
             JournalEntryView(
@@ -75,11 +89,8 @@ struct HomeView: View {
                 onDismiss: { showPhaseDetail = false }
             )
         }
-        .sheet(isPresented: $showPhotoJournal) {
-            JournalEntryView(
-                journalManager: JournalManager.shared,
-                onDismiss: { showPhotoJournal = false }
-            )
+        .sheet(isPresented: $showFeelingSheet) {
+            FeelingSheet(onDismiss: { showFeelingSheet = false })
         }
     }
 
@@ -299,37 +310,42 @@ struct HomeView: View {
             VStack(spacing: FloSpacing.md) {
                 // Row 1: Two half-width cards
                 HStack(spacing: FloSpacing.md) {
-                    // Add a Photo
+                    // Add a Photo — single-photo picker; the pick fills the card.
                     PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                        ActionCard(
-                            icon: "camera.fill",
-                            title: "Add a Photo",
-                            subtitle: "Capture your day",
-                            color: Color.phaseLuteal,
-                            isHalf: true
-                        )
-                    }
-                    .buttonStyle(.floPressed)
-                    .onChange(of: selectedPhoto) { _, newItem in
-                        if newItem != nil {
-                            showPhotoJournal = true
+                        if let todayPhoto {
+                            TodayPhotoCard(image: todayPhoto)
+                        } else {
+                            ActionCard(
+                                icon: "camera.fill",
+                                title: "Add a Photo",
+                                subtitle: "Capture your day",
+                                color: Color.phaseLuteal,
+                                isHalf: true
+                            )
                         }
                     }
+                    .buttonStyle(.floPressed)
+                    .accessibilityLabel(todayPhoto == nil ? "Add a photo" : "Change today's photo")
 
-                    // Add a Feeling
+                    // Add a Feeling — quick sheet, not the full journal flow.
                     Button {
                         FloHaptics.medium()
-                        showJournalEntry = true
+                        showFeelingSheet = true
                     } label: {
-                        ActionCard(
-                            icon: "heart.fill",
-                            title: "Add a Feeling",
-                            subtitle: "How are you?",
-                            color: Color.phaseMenstrual,
-                            isHalf: true
-                        )
+                        if let emotion = todayEntry?.emotion {
+                            TodayFeelingCard(emotion: emotion)
+                        } else {
+                            ActionCard(
+                                icon: "heart.fill",
+                                title: "Add a Feeling",
+                                subtitle: "How are you?",
+                                color: Color.phaseMenstrual,
+                                isHalf: true
+                            )
+                        }
                     }
                     .buttonStyle(.floPressed)
+                    .accessibilityLabel(todayEntry == nil ? "Add a feeling" : "Change today's feeling")
                 }
                 .padding(.horizontal, FloSpacing.lg)
 
@@ -385,6 +401,32 @@ struct HomeView: View {
         }
     }
 
+    // MARK: - Today's photo
+
+    private func loadTodayPhoto() {
+        todayPhoto = JournalPhotoStore.image(forStoredPath: todayEntry?.userPhotoURL)
+            ?? JournalPhotoStore.pendingImage(for: Date())
+    }
+
+    /// Loads the picked photo and stores it for today: on today's entry if
+    /// there is one, else as the day's pending photo, which the first entry
+    /// saved today adopts.
+    @MainActor
+    private func importPhoto(_ item: PhotosPickerItem) async {
+        defer { selectedPhoto = nil }
+        guard let data = try? await item.loadTransferable(type: Data.self),
+              let image = UIImage(data: data) else { return }
+
+        if let entry = todayEntry {
+            guard let name = JournalPhotoStore.save(image, for: entry.id) else { return }
+            journalManager.updateEntry(entry.updating(userPhotoURL: .some(name)))
+        } else {
+            guard JournalPhotoStore.savePending(image, for: Date()) else { return }
+        }
+        todayPhoto = image
+        FloHaptics.success()
+    }
+
     // MARK: - Helpers
 
     private var todayDateString: String {
@@ -404,6 +446,79 @@ struct HomeView: View {
         case .luteal:
             return "You may feel more detail-oriented. A good time to finish projects and organize."
         }
+    }
+}
+
+// MARK: - Filled Home cards
+
+/// Home's photo card once today has a photo: the photo edge to edge with a
+/// bottom scrim and a check badge.
+struct TodayPhotoCard: View {
+    let image: UIImage
+
+    var body: some View {
+        Color.clear
+            .frame(maxWidth: .infinity)
+            .frame(height: 140)
+            .overlay {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            }
+            .overlay(alignment: .bottom) {
+                LinearGradient(
+                    colors: [Color.black.opacity(0), Color.black.opacity(0.55)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: 70)
+            }
+            .overlay(alignment: .bottomLeading) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Today's photo")
+                        .font(.floBodyMedium.weight(.semibold))
+                        .foregroundStyle(Color.white)
+                    Text("Tap to change")
+                        .font(.floCaption)
+                        .foregroundStyle(Color.white.opacity(0.85))
+                }
+                .padding(FloSpacing.md)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: FloRadius.lg, style: .continuous))
+            .overlay(alignment: .topTrailing) {
+                CheckBadge().padding(10)
+            }
+            .floShadow(FloShadow.small)
+    }
+}
+
+/// Home's feeling card once today has a feeling.
+struct TodayFeelingCard: View {
+    let emotion: CoreEmotion
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Spacer(minLength: 0)
+            Text(emotion.rawValue)
+                .font(.floLunary(size: 26))
+                .foregroundStyle(Color.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text("Tap to change")
+                .font(.floCaption)
+                .foregroundStyle(Color.white.opacity(0.85))
+        }
+        .padding(FloSpacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: 140)
+        .background(
+            RoundedRectangle(cornerRadius: FloRadius.lg, style: .continuous)
+                .fill(Color.floTeal)
+        )
+        .overlay(alignment: .topTrailing) {
+            CheckBadge().padding(10)
+        }
+        .floShadow(FloShadow.small)
     }
 }
 

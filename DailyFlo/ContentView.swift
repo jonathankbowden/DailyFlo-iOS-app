@@ -256,11 +256,11 @@ struct ProfileTabView: View {
                     mySettingsButton
                         .padding(.horizontal, FloSpacing.lg)
                         .padding(.top, FloSpacing.xl)
-
-                    // Space for the tab bar
-                    Spacer(minLength: 140)
                 }
             }
+            // Keep the last cards fully above the tab bar and the FAB that
+            // pokes up out of it (bar 88 + FAB overhang + breathing room).
+            .contentMargins(.bottom, 160, for: .scrollContent)
             .scrollIndicators(.hidden)
             .ignoresSafeArea(edges: .top)
         }

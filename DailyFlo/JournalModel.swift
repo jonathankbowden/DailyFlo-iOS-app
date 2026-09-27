@@ -126,6 +126,20 @@ struct JournalEntry: Identifiable, Codable {
         CyclePhase(rawValue: cyclePhase) ?? .menstrual
     }
 
+    /// A copy with the given fields changed; identity and date are kept so
+    /// `JournalManager.updateEntry` updates the same row.
+    func updating(emotion: CoreEmotion? = nil, note: String? = nil, userPhotoURL: String?? = nil) -> JournalEntry {
+        JournalEntry(
+            id: id,
+            date: date,
+            emotion: emotion ?? self.emotion,
+            intensity: intensity,
+            note: note ?? self.note,
+            cyclePhase: phase,
+            userPhotoURL: userPhotoURL ?? self.userPhotoURL
+        )
+    }
+
     var formattedDate: String {
         let formatter = DateFormatter()
         formatter.dateFormat = "EEEE, MMMM d"
