@@ -10,7 +10,7 @@ import SwiftUI
 // MARK: - Meditation Duration
 enum MeditationDuration: Int, CaseIterable, Identifiable {
     case five = 5
-    case fifteen = 15
+    case ten = 10
     case sixty = 60
 
     var id: Int { rawValue }
@@ -28,7 +28,7 @@ enum MeditationDuration: Int, CaseIterable, Identifiable {
 //
 // A theme. Each session ships ONE looping audio track (its `_05min` MP3 or
 // a synth fallback). Duration is no longer a per-session property — the
-// user picks the session length at runtime via the 5/15/60 tab on the
+// user picks the session length at runtime via the 5/10/60 tab on the
 // main view, and the player times out and fades the loop at that mark.
 struct MeditationSession: Identifiable {
     let id = UUID()
@@ -71,16 +71,16 @@ struct MeditationMainView: View {
     @State private var playerRequest: PlayerRequest?
     @State private var hasAppeared = false
 
-    private var userName: String { CycleManager.shared.userName }
-
     // MARK: - Carousel geometry (Summer-2026-Build Figma node 3:4144, 414pt frame)
     //
     // Each column shows ~9pt of the neighbouring column at its edge,
     // separated by a 24pt gutter. Side margin = peek + gutter so the
     // middle column peeks symmetrically on both sides; first/last
     // columns show empty margin on the outer side instead.
-    private let columnPeek: CGFloat = 9
-    private let columnGutter: CGFloat = 24
+    // Restyle (Meditations grid 15:6926): 338pt cards on a 393pt screen,
+    // so side margin ≈ 27 = 11 peek + 16 gutter.
+    private let columnPeek: CGFloat = 11
+    private let columnGutter: CGFloat = 16
     private var columnSideMargin: CGFloat { columnPeek + columnGutter }
     /// Opacity for non-centered columns. Driven by .scrollTransition so
     /// the dim animates smoothly with the swipe gesture rather than
@@ -207,26 +207,27 @@ struct MeditationMainView: View {
                 headerView
                     .fadeIn(delay: hasAppeared ? 0 : 0.1)
 
-                // Greeting section
-                greetingSection
+                // Title
+                Text("Let's take a pause")
+                    .font(.floLunary(size: 40))
+                    .foregroundStyle(Color.black)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, FloSpacing.lg)
+                    .padding(.top, FloSpacing.sm)
+                    .padding(.bottom, FloSpacing.lg)
+                    .accessibilityAddTraits(.isHeader)
                     .fadeIn(delay: hasAppeared ? 0 : 0.15)
 
-                // Top divider line
-                Rectangle()
-                    .fill(Color(hex: "E5E5E5"))
-                    .frame(height: 1)
-                    .padding(.top, FloSpacing.lg)
+                // Duration tabs (hairline above, rule below)
+                SegmentedCapsTabs(
+                    options: MeditationDuration.allCases,
+                    selection: $selectedDuration,
+                    title: { $0.displayText },
+                    highlight: .floStone
+                )
+                .fadeIn(delay: hasAppeared ? 0 : 0.2)
 
-                // Duration filter tabs
-                durationTabs
-                    .fadeIn(delay: hasAppeared ? 0 : 0.2)
-
-                // Bottom divider line
-                Rectangle()
-                    .fill(Color(hex: "707070"))
-                    .frame(height: 1)
-
-                // Three columns (5/15/60) as a peeking horizontal carousel:
+                // Three columns (5/10/60) as a peeking horizontal carousel:
                 // each column snaps to a leading-aligned position with the
                 // adjacent column showing ~9pt at the edge and a 24pt gutter
                 // between columns. Sized with containerRelativeFrame so the
@@ -332,68 +333,6 @@ struct MeditationMainView: View {
         .padding(.vertical, FloSpacing.md)
     }
 
-    // MARK: - Greeting Section
-    private var greetingSection: some View {
-        VStack(alignment: .leading, spacing: FloSpacing.md) {
-            // Large greeting in Lunary font
-            Text("Hello, \(userName)!")
-                .font(.custom("LUNARY free", size: 36))
-                .foregroundColor(.floCharcoal)
-                .accessibilityAddTraits(.isHeader)
-
-            // Subtitle
-            Text("LET'S TAKE A PAUSE")
-                .font(.floLabel)
-                .fontWeight(.bold)
-                .foregroundColor(.floCharcoal)
-                .tracking(2)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, FloSpacing.lg)
-        .padding(.top, FloSpacing.sm)
-        .padding(.bottom, FloSpacing.sm)
-    }
-
-    // MARK: - Duration Tabs
-    private var durationTabs: some View {
-        let allDurations = MeditationDuration.allCases
-        return HStack(spacing: 0) {
-            ForEach(Array(allDurations.enumerated()), id: \.element.id) { index, duration in
-                Button(action: {
-                    FloHaptics.selection()
-                    withAnimation(FloAnimation.springSnappy) {
-                        selectedDuration = duration
-                    }
-                }) {
-                    Text(duration.displayText)
-                        .font(.floLabel)
-                        .fontWeight(.medium)
-                        .foregroundColor(.floCharcoal)
-                        .tracking(1)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, FloSpacing.sm)
-                        .background(selectedDuration == duration ? Color.floMint.opacity(0.5) : Color.clear)
-                        .cornerRadius(FloRadius.sm)
-                }
-                .buttonStyle(PlainButtonStyle())
-                .accessibilityLabel("\(duration.rawValue) minute meditations")
-                .accessibilityAddTraits(selectedDuration == duration ? [.isSelected] : [])
-
-                // Divider between tabs - hide when adjacent tab is selected
-                if index < allDurations.count - 1 {
-                    let nextDuration = allDurations[index + 1]
-                    if selectedDuration != duration && selectedDuration != nextDuration {
-                        Rectangle()
-                            .fill(Color.floGray.opacity(0.3))
-                            .frame(width: 1, height: 20)
-                    }
-                }
-            }
-        }
-        .padding(.horizontal, FloSpacing.lg)
-        .padding(.vertical, FloSpacing.sm)
-    }
-
     private func toggleFavorite(_ session: MeditationSession) {
         if let index = sessions.firstIndex(where: { $0.id == session.id }) {
             withAnimation(FloAnimation.springSnappy) {
@@ -461,7 +400,7 @@ private struct MeditationColumn: View {
 // MARK: - Meditation Card
 //
 // Width-driven card sized from the column it sits inside; height
-// follows from a 347:435 (≈4:5) aspect ratio per the Summer-2026-Build
+// follows from a 338:422 (≈4:5) aspect ratio per the Summer-2026-Build
 // Figma. No fixed heights anywhere — the column geometry alone decides
 // how tall a card is.
 //
@@ -471,7 +410,7 @@ private struct MeditationColumn: View {
 // underline / numeral overlay sits in `.overlay(alignment: .topLeading)`,
 // and the centered play glyph sits in a separate `.overlay`. Wrapping
 // the whole thing in `.clipShape` rounds the corners; `.shadow` paints
-// FloShadow.large underneath — a faint, even drop applied uniformly to
+// FloShadow.deep underneath — the same float applied uniformly to
 // every card. Active vs peeking dimming happens at the column level via
 // .scrollTransition, NOT by varying the shadow.
 //
@@ -489,14 +428,20 @@ struct MeditationCard: View {
     let onPlay: () -> Void
     let onFavorite: () -> Void
 
-    /// Width:height ratio for the card frame — locked to the Figma
-    /// design's 347:435 reference. Card height = card width × 435/347.
-    private static let aspectWidth: CGFloat = 347
-    private static let aspectHeight: CGFloat = 435
+    /// Width:height ratio for the card frame — the restyle canvas's
+    /// 338 × 422 card. Card height = card width × 422/338.
+    private static let aspectWidth: CGFloat = 338
+    private static let aspectHeight: CGFloat = 422
+    private static let cornerRadius: CGFloat = 18
+    /// Play button fill: #6FA090 at 88%.
+    private static let playFill = Color.floSageX.opacity(0.88)
 
     private var displayedImageName: String {
         imageVariant(for: displayDuration, in: session)
     }
+
+    /// Favorites live on the 60 MIN column only.
+    private var showsFavorite: Bool { displayDuration == .sixty }
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -513,10 +458,10 @@ struct MeditationCard: View {
                                 .scaledToFill()
                             LinearGradient(
                                 stops: [
-                                    .init(color: .black.opacity(0.5), location: 0.0),
-                                    .init(color: .clear,              location: 0.4),
-                                    .init(color: .clear,              location: 0.75),
-                                    .init(color: .black.opacity(0.2), location: 1.0)
+                                    .init(color: .black.opacity(0.45), location: 0.0),
+                                    .init(color: .clear,               location: 0.35),
+                                    .init(color: .clear,               location: 0.8),
+                                    .init(color: .black.opacity(0.15), location: 1.0)
                                 ],
                                 startPoint: .top,
                                 endPoint: .bottom
@@ -524,47 +469,39 @@ struct MeditationCard: View {
                         }
                     )
                     .overlay(alignment: .topLeading) {
-                        VStack(alignment: .leading, spacing: FloSpacing.sm) {
+                        VStack(alignment: .leading, spacing: 10) {
                             Text(session.title)
-                                .font(.floTitle)
+                                .font(.system(size: 15, weight: .heavy))
+                                .tracking(2.5)
                                 .foregroundColor(.white)
-                                .tracking(1)
-                                .shadow(color: .black.opacity(0.45), radius: 4, y: 1)
 
                             Rectangle()
-                                .fill(Color.white.opacity(0.85))
-                                .frame(width: 40, height: 1)
+                                .fill(Color.white)
+                                .frame(width: 54, height: 1)
 
                             HStack(alignment: .firstTextBaseline, spacing: 4) {
                                 Text("\(displayDuration.rawValue)")
-                                    .font(.floLunary(size: 44))
-                                    .fontWeight(.bold)
+                                    .font(.floLunary(size: 36))
                                     .foregroundColor(.white)
                                 Text("mins")
-                                    .font(.floLunary(size: 18))
-                                    .fontWeight(.bold)
-                                    .foregroundColor(.white.opacity(0.9))
+                                    .font(.floLunary(size: 14))
+                                    .foregroundColor(.white)
                             }
-                            .shadow(color: .black.opacity(0.45), radius: 4, y: 1)
                         }
-                        .padding(FloSpacing.lg)
+                        .shadow(color: .black.opacity(0.35), radius: 4, y: 1)
+                        .padding(22)
                     }
                     .overlay(
                         Image(systemName: "play.fill")
                             .font(.system(size: 24))
                             .foregroundStyle(.white)
-                            .frame(width: 64, height: 64)
-                            .background(.white.opacity(0.15), in: Circle())
-                            .overlay(Circle().stroke(.white, lineWidth: 1))
+                            .offset(x: 2) // optical centering of the triangle
+                            .frame(width: 70, height: 70)
+                            .background(Self.playFill, in: Circle())
                             .accessibilityHidden(true)
                     )
-                    .clipShape(RoundedRectangle(cornerRadius: FloRadius.lg))
-                    .shadow(
-                        color: FloShadow.large.color,
-                        radius: FloShadow.large.radius,
-                        x: FloShadow.large.x,
-                        y: FloShadow.large.y
-                    )
+                    .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
+                    .floShadow(FloShadow.deep)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.floPressed)
@@ -573,18 +510,20 @@ struct MeditationCard: View {
             // SIBLING LAYER — heart sits on top, NOT inside the play Button.
             // Its tap is captured by SwiftUI's hit-testing before falling
             // through to the card button below.
-            Button(action: onFavorite) {
-                Image(systemName: session.isFavorite ? "heart.fill" : "heart")
-                    .font(.system(size: 22))
-                    .foregroundColor(session.isFavorite ? .phaseMenstrual : .white)
-                    .scaleEffect(session.isFavorite ? 1.1 : 1.0)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
+            if showsFavorite {
+                Button(action: onFavorite) {
+                    Image(systemName: session.isFavorite ? "heart.fill" : "heart")
+                        .font(.system(size: 20))
+                        .foregroundColor(.white)
+                        .scaleEffect(session.isFavorite ? 1.1 : 1.0)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.floPressed)
+                .padding(10)
+                .animation(FloAnimation.springBouncy, value: session.isFavorite)
+                .accessibilityLabel(session.isFavorite ? "Remove from favorites" : "Add to favorites")
             }
-            .buttonStyle(.floPressed)
-            .padding(FloSpacing.md)
-            .animation(FloAnimation.springBouncy, value: session.isFavorite)
-            .accessibilityLabel(session.isFavorite ? "Remove from favorites" : "Add to favorites")
         }
     }
 }
@@ -596,7 +535,7 @@ private func imageVariant(for duration: MeditationDuration, in session: Meditati
     let index: Int
     switch duration {
     case .five: index = 0
-    case .fifteen: index = 1
+    case .ten: index = 1
     case .sixty: index = 2
     }
     if session.collectibleImages.indices.contains(index) {
@@ -884,7 +823,7 @@ struct MeditationPlayerView: View {
             collectibleImages: ["medbg_mist_a", "medbg_mist_b", "medbg_mist_c"],
             audioFileName: "mist_05min"
         ),
-        duration: .fifteen,
+        duration: .ten,
         onDismiss: {},
         onFavorite: {}
     )
