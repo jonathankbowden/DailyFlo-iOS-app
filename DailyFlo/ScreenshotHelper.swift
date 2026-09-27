@@ -16,7 +16,7 @@ struct ScreenshotHelper {
             ("04_meditation", AnyView(MeditationMainView())),
             ("05_connect", AnyView(ConnectMainView())),
             ("06_profile", AnyView(ProfileMainView())),
-            ("07_phase_detail", AnyView(PhaseDetailView(phase: CyclePhase.follicular, onDismiss: {}))),
+            ("07_phase_detail", AnyView(SingleDayView(date: Date(), onDismiss: {}))),
             ("08_log_cycle", AnyView(LogCycleView(selectedDate: Date(), onSave: { _ in }, onDismiss: {}))),
             ("09_onboarding", AnyView(OnboardingView(isOnboardingComplete: .constant(false)))),
             ("10_signin", AnyView(SignInView(isSignedIn: .constant(false)))),

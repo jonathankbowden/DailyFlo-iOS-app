@@ -84,10 +84,13 @@ struct HomeView: View {
             )
         }
         .sheet(isPresented: $showPhaseDetail) {
-            PhaseDetailView(
-                phase: cycleManager.currentPhase,
+            SingleDayView(
+                date: Date(),
                 onDismiss: { showPhaseDetail = false }
             )
+            .presentationDetents([.large])
+            .presentationDragIndicator(.hidden)
+            .presentationCornerRadius(28)
         }
         .sheet(isPresented: $showFeelingSheet) {
             FeelingSheet(onDismiss: { showFeelingSheet = false })

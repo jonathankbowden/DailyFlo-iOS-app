@@ -4,130 +4,80 @@
 //
 //  Created by Jonathan Bowden on 2/3/26.
 //
+//  The day sheet: opened from a calendar day (and from Home's phase cards
+//  for today). Phase header, MIND | BODY | SOUL tabs over a swipeable card
+//  carousel, and LOG CYCLE + ADD/EDIT ENTRY at the bottom.
+//
 
 import SwiftUI
 
-// MARK: - Day Log Data
-struct DayLogData {
-    let date: Date
-    let phase: CyclePhase
-    let dayOfCycle: Int
-    let isPeriodDay: Bool
-    let journalEntry: String?
-    let meditatedMinutes: Int?
-    let mood: String?
-}
-
-// MARK: - Single Day View
 struct SingleDayView: View {
     let date: Date
-    var phase: CyclePhase = .follicular
-    var dayOfCycle: Int = 1
     let onDismiss: () -> Void
     /// Non-nil only when presented from the calendar: called after a successful
     /// log so the calendar can collapse this sheet and confirm the change.
     let onLoggedCycle: (() -> Void)?
 
-    @State private var currentDate: Date
+    @State private var selectedTab: PhaseContentTab = .body
     @State private var showLogCycle = false
     @State private var showJournalEntry = false
     @State private var didLogCycle = false
-    @State private var journalManager = JournalManager.shared
 
     private let cycleManager = CycleManager.shared
-    private let calendar = Calendar.current
+    private let journalManager = JournalManager.shared
 
-    // Number of days to allow swiping in each direction
-    private let swipeRange = 60
+    // Carousel geometry (Figma "Phases" 15:4208, 393pt frame).
+    private let cardWidth: CGFloat = 332
+    private let cardSpacing: CGFloat = 16
 
-    init(date: Date, phase: CyclePhase = .follicular, dayOfCycle: Int = 1, onDismiss: @escaping () -> Void, onLoggedCycle: (() -> Void)? = nil) {
-        self.date = date
-        self.phase = phase
-        self.dayOfCycle = dayOfCycle
+    init(date: Date, onDismiss: @escaping () -> Void, onLoggedCycle: (() -> Void)? = nil) {
+        self.date = Calendar.current.startOfDay(for: date)
         self.onDismiss = onDismiss
         self.onLoggedCycle = onLoggedCycle
-        self._currentDate = State(initialValue: Calendar.current.startOfDay(for: date))
     }
 
-    // The paged TabView's selection is `currentDate`, which is initialized
-    // to startOfDay(date). For TabView(selection:) to land on the tapped
-    // day, the page array must contain a tag that is hash-equal to that
-    // selection — same Calendar, same startOfDay normalization.
-    //
-    // The previous implementation anchored the window on TODAY, so any
-    // tap on a date outside today−swipeRange…today (e.g. a future day, or
-    // any day after a normalization mismatch) had no matching tag and
-    // TabView silently fell back to its first page, which was always
-    // today−swipeRange ≈ "April 9".
-    //
-    // Anchoring on the tapped `date` instead, with a symmetric window on
-    // both sides, guarantees the tapped day is always in the array and
-    // becomes the centered opening page. Swiping then moves day-by-day
-    // from there in either direction.
-    private var datePages: [Date] {
-        let anchor = calendar.startOfDay(for: date)
-        return (-swipeRange...swipeRange).compactMap { offset in
-            calendar.date(byAdding: .day, value: offset, to: anchor)
-        }
-    }
+    private var phase: CyclePhase { cycleManager.phase(for: date) }
+    private var dayOfCycle: Int { cycleManager.dayOfCycle(for: date) }
+    private var entry: JournalEntry? { journalManager.entry(for: date) }
 
-    private func dayData(for pageDate: Date) -> DayLogData {
-        let entries = journalManager.entries(for: pageDate)
-        let journalText = entries.first?.note
-        let mood = entries.first?.emotion.rawValue
-        let pagePhase = cycleManager.phase(for: pageDate)
-
-        return DayLogData(
-            date: pageDate,
-            phase: pagePhase,
-            dayOfCycle: cycleManager.dayOfCycle(for: pageDate),
-            isPeriodDay: pagePhase == .menstrual,
-            journalEntry: journalText,
-            meditatedMinutes: nil,
-            mood: mood
+    /// Two-way binding for `.scrollPosition(id:)` over the same state the tab
+    /// row drives, so a tab tap scrolls the carousel and a swipe moves the tab.
+    private var tabScrollBinding: Binding<PhaseContentTab?> {
+        Binding(
+            get: { selectedTab },
+            set: { newValue in
+                guard let newValue, newValue != selectedTab else { return }
+                FloHaptics.selection()
+                selectedTab = newValue
+            }
         )
     }
 
-    private var dateFormatter: DateFormatter {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEEE"
-        return formatter
-    }
-
-    private var dayFormatter: DateFormatter {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMMM d, yyyy"
-        return formatter
-    }
-
     var body: some View {
-        ZStack {
-            Color.floBackground.ignoresSafeArea()
+        VStack(spacing: 0) {
+            SheetGrabber()
 
-            VStack(spacing: 0) {
-                // Drag indicator
-                Capsule()
-                    .fill(Color.floGray.opacity(0.3))
-                    .frame(width: 36, height: 5)
-                    .padding(.top, FloSpacing.sm)
-                    .padding(.bottom, FloSpacing.md)
+            header
+                .padding(.horizontal, 30)
+                .padding(.top, FloSpacing.md)
+                .padding(.bottom, 18)
 
-                TabView(selection: $currentDate) {
-                    ForEach(datePages, id: \.self) { pageDate in
-                        dayPageContent(for: pageDate)
-                            .tag(pageDate)
-                    }
-                }
-                .tabViewStyle(.page(indexDisplayMode: .never))
-            }
+            SegmentedCapsTabs(
+                options: PhaseContentTab.allCases,
+                selection: $selectedTab,
+                title: { $0.rawValue },
+                highlight: .floPhaseTab
+            )
 
-            // Floating action buttons
-            VStack {
-                Spacer()
-                floatingActionButtons
-            }
-            .ignoresSafeArea(.container, edges: .bottom)
+            carousel
+                .padding(.top, 28)
+
+            actionRow
+                .padding(.horizontal, 30)
+                .padding(.top, 20)
+                .padding(.bottom, FloSpacing.md)
         }
+        .background(Color.floBackground.ignoresSafeArea())
         .sheet(isPresented: $showLogCycle, onDismiss: {
             // Fires after the LogCycle sheet finishes dismissing. If the user
             // actually logged (not cancelled) and we were presented from the
@@ -138,7 +88,7 @@ struct SingleDayView: View {
             }
         }) {
             LogCycleView(
-                selectedDate: currentDate,
+                selectedDate: date,
                 onSave: { startDate in
                     didLogCycle = true
                     Task { await CycleManager.shared.logCycle(startDate: startDate) }
@@ -147,347 +97,198 @@ struct SingleDayView: View {
             )
         }
         .sheet(isPresented: $showJournalEntry) {
-            // Pass the page's date so the composer targets the day being viewed
-            // (not today), and so the one-entry-per-day resolver opens this day's
-            // existing entry for in-place editing instead of creating a duplicate.
+            // The one-entry-per-day resolver in JournalEntryView opens this
+            // day's existing entry when there is one, else composes a new one.
             JournalEntryView(
-                date: currentDate,
-                journalManager: JournalManager.shared,
+                date: date,
+                journalManager: journalManager,
                 onDismiss: { showJournalEntry = false }
             )
         }
     }
 
-    // MARK: - Day Page Content
-    private func dayPageContent(for pageDate: Date) -> some View {
-        let data = dayData(for: pageDate)
+    // MARK: - Header
 
-        return ZStack {
-            Color.floBackground.ignoresSafeArea()
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: 14) {
+                Text(phase.number)
+                    .font(.floLunary(size: 54))
+                    .foregroundStyle(Color.black)
 
-            ScrollView {
-                VStack(spacing: FloSpacing.lg) {
-                    // Header with date
-                    headerSection(for: pageDate)
-
-                    // Phase info card
-                    phaseInfoCard(for: data)
-
-                    // Activity summary
-                    activitySummary(for: data)
-
-                    // Journal snippet
-                    if data.journalEntry != nil {
-                        journalSnippet(for: data)
-                    }
-
-                    // Tips for the day
-                    tipsSection(for: data)
-
-                    Spacer()
-                        .frame(height: 80)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(phase.name)
+                        .font(.floLunary(size: 24))
+                        .foregroundStyle(Color.black)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                    Text(phase.subtitle.uppercased())
+                        .font(.system(size: 11, weight: .heavy))
+                        .tracking(1.2)
+                        .foregroundStyle(Color.floDeepTeal)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                 }
-                .padding(.horizontal, FloSpacing.lg)
+
+                Spacer(minLength: FloSpacing.sm)
+
+                SageCloseButton(action: onDismiss)
+            }
+
+            Text(statusLine)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Color.floGray)
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private var statusLine: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEEE, MMMM d"
+        let logged = entry == nil ? "Nothing logged" : "Entry logged ✓"
+        return "\(formatter.string(from: date)) · Day \(dayOfCycle) · \(logged)"
+    }
+
+    // MARK: - Carousel
+
+    private var carousel: some View {
+        GeometryReader { geo in
+            let sideMargin = max(FloSpacing.md, (geo.size.width - cardWidth) / 2)
+            ScrollView(.horizontal) {
+                LazyHStack(spacing: cardSpacing) {
+                    ForEach(PhaseContentTab.allCases, id: \.self) { tab in
+                        PhaseTabCard(phase: phase, tab: tab)
+                            .frame(width: min(cardWidth, geo.size.width - 2 * FloSpacing.md))
+                            // Leave room under the card for its deep shadow.
+                            .padding(.bottom, 30)
+                            .id(tab)
+                    }
+                }
+                .scrollTargetLayout()
+            }
+            .contentMargins(.horizontal, sideMargin, for: .scrollContent)
+            .scrollIndicators(.hidden)
+            .scrollTargetBehavior(.viewAligned)
+            .scrollPosition(id: tabScrollBinding, anchor: .center)
+            .scrollClipDisabled()
+        }
+    }
+
+    // MARK: - Actions
+
+    private var actionRow: some View {
+        HStack(spacing: 14) {
+            OutlinedActionButton(title: "Log cycle", icon: "checkmark.circle") {
+                showLogCycle = true
+            }
+
+            if entry == nil {
+                OutlinedActionButton(title: "Add entry", icon: "plus") {
+                    showJournalEntry = true
+                }
+            } else {
+                OutlinedActionButton(title: "Edit entry", icon: "pencil") {
+                    showJournalEntry = true
+                }
             }
         }
     }
+}
 
-    // MARK: - Header Section
-    private func headerSection(for pageDate: Date) -> some View {
-        VStack(spacing: FloSpacing.xs) {
-            Text(dateFormatter.string(from: pageDate))
-                .font(.floDisplayLarge)
-                .foregroundColor(.floCharcoal)
+// MARK: - Phase tab card
 
-            Text(dayFormatter.string(from: pageDate))
-                .font(.floBodyMedium)
-                .foregroundColor(.floGray)
-        }
-        .padding(.top, FloSpacing.sm)
-    }
+/// One MIND / BODY / SOUL card: a photo strip, a caps label over a hairline,
+/// and the phase copy, scrolling inside the card when it runs long.
+struct PhaseTabCard: View {
+    let phase: CyclePhase
+    let tab: PhaseContentTab
 
-    // MARK: - Phase Info Card
-    private func phaseInfoCard(for data: DayLogData) -> some View {
+    var body: some View {
         VStack(spacing: 0) {
-            // Header — soft phase tint to match the calendar block exactly,
-            // with charcoal type for legible contrast across all four phases.
-            HStack {
-                VStack(alignment: .leading, spacing: FloSpacing.xs) {
-                    Text("DAY \(data.dayOfCycle) OF CYCLE")
-                        .font(.floLabel)
-                        .fontWeight(.medium)
-                        .foregroundColor(.floCharcoal.opacity(0.7))
-                        .tracking(1)
-
-                    Text(data.phase.name)
-                        .font(.floDisplaySmall)
-                        .foregroundColor(.floCharcoal)
+            Color.clear
+                .frame(height: 62)
+                .overlay {
+                    Image(PhaseTabCard.photoName(for: phase, tab: tab))
+                        .resizable()
+                        .scaledToFill()
                 }
+                .clipped()
 
-                Spacer()
+            Text("MY \(tab.rawValue)")
+                .font(.system(size: 12, weight: .heavy))
+                .tracking(1.5)
+                .foregroundStyle(Color.black)
+                .padding(.top, 20)
+                .padding(.bottom, 14)
 
-                // Phase number
-                Text(data.phase.number)
-                    .font(.custom("LUNARY free", size: 48))
-                    .foregroundColor(.floCharcoal.opacity(0.35))
+            FloHairline()
+                .padding(.horizontal, 18)
+
+            ScrollView(.vertical) {
+                Text(PhaseTabCard.copy(for: phase, tab: tab))
+                    .font(.system(size: 15))
+                    .foregroundStyle(Color.black)
+                    .lineSpacing(15 * 0.8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 28)
+                    .padding(.top, 18)
+                    .padding(.bottom, 24)
             }
-            .padding(FloSpacing.lg)
-            .background(data.phase.backgroundColor)
-
-            // Phase description
-            VStack(alignment: .leading, spacing: FloSpacing.sm) {
-                Text(data.phase.subtitle)
-                    .font(.floLabel)
-                    .fontWeight(.medium)
-                    .foregroundColor(.floSage)
-                    .tracking(1)
-
-                Text(phaseDescription(for: data.phase))
-                    .font(.floBodyMedium)
-                    .foregroundColor(.floGray)
-                    .lineSpacing(4)
-            }
-            .padding(FloSpacing.lg)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.white)
+            .scrollIndicators(.hidden)
         }
-        .cornerRadius(FloRadius.xl)
-        .shadow(color: .black.opacity(0.08), radius: 12, x: 0, y: 4)
-    }
-
-    private func phaseDescription(for phase: CyclePhase) -> String {
-        switch phase {
-        case .menstrual:
-            return "Your body is renewing. Rest and gentle movement are your friends today."
-        case .follicular:
-            return "Energy is rising! Great time for new projects and physical activity."
-        case .ovulation:
-            return "You're at your peak. Communication and connection flow naturally."
-        case .luteal:
-            return "Time to wrap up projects and prepare for rest. Honor your need for boundaries."
-        }
-    }
-
-    // MARK: - Activity Summary
-    private func activitySummary(for data: DayLogData) -> some View {
-        VStack(alignment: .leading, spacing: FloSpacing.md) {
-            Text("TODAY'S ACTIVITY")
-                .font(.floLabel)
-                .fontWeight(.medium)
-                .foregroundColor(.floGray)
-                .tracking(1)
-
-            HStack(spacing: FloSpacing.md) {
-                // Mood indicator
-                activityItem(
-                    icon: "face.smiling.fill",
-                    label: "Mood",
-                    value: data.mood ?? "Not logged",
-                    color: .floSage
-                )
-
-                // Meditation
-                activityItem(
-                    icon: "leaf.fill",
-                    label: "Meditation",
-                    value: data.meditatedMinutes != nil ? "\(data.meditatedMinutes!) min" : "None",
-                    color: .floTeal
-                )
-            }
-        }
-        .padding(FloSpacing.lg)
         .background(Color.white)
-        .cornerRadius(FloRadius.lg)
-        .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .floShadow(FloShadow.deep)
     }
 
-    private func activityItem(icon: String, label: String, value: String, color: Color) -> some View {
-        VStack(spacing: FloSpacing.xs) {
-            ZStack {
-                Circle()
-                    .fill(color.opacity(0.15))
-                    .frame(width: 44, height: 44)
-
-                Image(systemName: icon)
-                    .font(.system(size: 20))
-                    .foregroundColor(color)
-            }
-
-            Text(label)
-                .font(.floLabel)
-                .foregroundColor(.floGray)
-
-            Text(value)
-                .font(.floBodySmall)
-                .fontWeight(.medium)
-                .foregroundColor(.floCharcoal)
-                .lineLimit(1)
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    // MARK: - Journal Snippet
-    private func journalSnippet(for data: DayLogData) -> some View {
-        VStack(alignment: .leading, spacing: FloSpacing.md) {
-            HStack {
-                Text("JOURNAL ENTRY")
-                    .font(.floLabel)
-                    .fontWeight(.medium)
-                    .foregroundColor(.floGray)
-                    .tracking(1)
-
-                Spacer()
-
-                Button(action: {
-                    showJournalEntry = true
-                }) {
-                    Text("Edit")
-                        .font(.floBodySmall)
-                        .foregroundColor(.floSage)
-                }
-            }
-
-            Text(data.journalEntry ?? "")
-                .font(.floBodyMedium)
-                .foregroundColor(.floCharcoal)
-                .lineSpacing(6)
-                .lineLimit(4)
-
-            if (data.journalEntry?.count ?? 0) > 150 {
-                Button(action: {
-                    showJournalEntry = true
-                }) {
-                    Text("Read more...")
-                        .font(.floBodySmall)
-                        .foregroundColor(.floSage)
-                }
-            }
-        }
-        .padding(FloSpacing.lg)
-        .background(Color.white)
-        .cornerRadius(FloRadius.lg)
-        .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2)
-    }
-
-    // MARK: - Tips Section
-    private func tipsSection(for data: DayLogData) -> some View {
-        VStack(alignment: .leading, spacing: FloSpacing.md) {
-            Text("TIPS FOR TODAY")
-                .font(.floLabel)
-                .fontWeight(.medium)
-                .foregroundColor(.floGray)
-                .tracking(1)
-
-            ForEach(phaseTips(for: data.phase), id: \.self) { tip in
-                HStack(alignment: .top, spacing: FloSpacing.sm) {
-                    Image(systemName: "sparkle")
-                        .font(.system(size: 12))
-                        .foregroundColor(.floSage)
-                        .padding(.top, 3)
-
-                    Text(tip)
-                        .font(.floBodyMedium)
-                        .foregroundColor(.floCharcoal)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(FloSpacing.lg)
-        .background(Color.floMint.opacity(0.3))
-        .cornerRadius(FloRadius.lg)
-    }
-
-    private func phaseTips(for phase: CyclePhase) -> [String] {
-        switch phase {
-        case .menstrual:
-            return [
-                "Prioritize rest and sleep",
-                "Gentle yoga or stretching",
-                "Iron-rich foods like spinach and lentils"
-            ]
-        case .follicular:
-            return [
-                "Great day for high-intensity workouts",
-                "Start new projects or learn something new",
-                "Your body handles carbs well now"
-            ]
-        case .ovulation:
-            return [
-                "Schedule important meetings or conversations",
-                "Peak time for social activities",
-                "Your verbal skills are at their best"
-            ]
-        case .luteal:
-            return [
-                "Focus on completing existing tasks",
-                "Lower intensity exercise is ideal",
-                "Increase magnesium-rich foods"
-            ]
+    /// Photo for each phase + tab.
+    static func photoName(for phase: CyclePhase, tab: PhaseContentTab) -> String {
+        switch (phase, tab) {
+        // Menstrual — calm, grounded, introspective
+        case (.menstrual, .mind): return "rocks"
+        case (.menstrual, .body): return "caves"
+        case (.menstrual, .soul): return "starynight"
+        // Follicular — fresh, energetic, growth
+        case (.follicular, .mind): return "greencliff"
+        case (.follicular, .body): return "treepath"
+        case (.follicular, .soul): return "treetops"
+        // Ovulation — warm, vibrant, connected
+        case (.ovulation, .mind): return "sunsetrocks"
+        case (.ovulation, .body): return "surfer"
+        case (.ovulation, .soul): return "rivertrees"
+        // Luteal — quiet, reflective, deep
+        case (.luteal, .mind): return "cloudystars"
+        case (.luteal, .body): return "mtnpath"
+        case (.luteal, .soul): return "nightsky"
         }
     }
 
-    // MARK: - Floating Action Buttons
-    private var floatingActionButtons: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: FloSpacing.md) {
-                // Log Day button
-                Button(action: {
-                    FloHaptics.medium()
-                    showLogCycle = true
-                }) {
-                    HStack(spacing: FloSpacing.sm) {
-                        Image(systemName: "checkmark.circle")
-                        Text("Log Day")
-                    }
-                    .font(.floButton)
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, FloSpacing.md)
-                    .background(Color.floSage)
-                    .cornerRadius(FloRadius.full)
-                    .shadow(color: Color.black.opacity(0.15), radius: 8, x: 0, y: 4)
-                }
+    /// The tab's copy plus the extra paragraph a few tabs carry.
+    static func copy(for phase: CyclePhase, tab: PhaseContentTab) -> String {
+        let base = PhaseContent.content(for: phase, tab: tab).content
+        guard let extra = additionalCopy(for: phase, tab: tab) else { return base }
+        return base + "\n\n" + extra
+    }
 
-                // Journal button
-                Button(action: {
-                    FloHaptics.light()
-                    showJournalEntry = true
-                }) {
-                    HStack(spacing: FloSpacing.sm) {
-                        Image(systemName: "square.and.pencil")
-                        Text("Journal")
-                    }
-                    .font(.floButton)
-                    .foregroundColor(.floSage)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, FloSpacing.md)
-                    .background(Color.white)
-                    .cornerRadius(FloRadius.full)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: FloRadius.full)
-                            .stroke(Color.floSage, lineWidth: 1)
-                    )
-                    .shadow(color: Color.black.opacity(0.15), radius: 8, x: 0, y: 4)
-                }
-            }
-            .padding(.horizontal, FloSpacing.lg)
+    private static func additionalCopy(for phase: CyclePhase, tab: PhaseContentTab) -> String? {
+        switch (phase, tab) {
+        case (.menstrual, .mind):
+            return "Your testosterone levels will be on the rise, too, stimulating your libido. With this renewed energy, you can participate in more physical activities. Intimacy with your partner is enjoyable in this phase."
+        case (.menstrual, .body):
+            return "The follicular phase brings about a lower basal body temperature. You are also more sensitive to insulin, making this a good time to focus on carbohydrate-rich foods."
+        case (.follicular, .mind):
+            return "This is an excellent time to start new projects, have important conversations, or tackle challenging tasks that require mental clarity."
+        default:
+            return nil
         }
-        .padding(.top, FloSpacing.md)
-        .padding(.bottom, FloSpacing.lg)
-        .background(
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .mask(
-                    LinearGradient(
-                        colors: [.clear, .black],
-                        startPoint: .top,
-                        endPoint: .init(x: 0.5, y: 0.4)
-                    )
-                )
-        )
     }
 }
 
 #Preview {
-    SingleDayView(date: Date(), phase: .follicular, dayOfCycle: 8, onDismiss: {})
+    Color.gray.sheet(isPresented: .constant(true)) {
+        SingleDayView(date: Date(), onDismiss: {})
+            .presentationDetents([.large])
+            .presentationDragIndicator(.hidden)
+            .presentationCornerRadius(28)
+    }
 }

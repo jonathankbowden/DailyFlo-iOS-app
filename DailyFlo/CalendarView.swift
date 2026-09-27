@@ -78,8 +78,6 @@ struct CalendarView: View {
             if let date = selectedDate {
                 SingleDayView(
                     date: date,
-                    phase: cycleManager.phase(for: date),
-                    dayOfCycle: cycleManager.dayOfCycle(for: date),
                     onDismiss: { showSingleDay = false },
                     onLoggedCycle: {
                         pendingLogConfirmation = true

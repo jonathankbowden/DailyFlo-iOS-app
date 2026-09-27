@@ -31,10 +31,6 @@ import SwiftUI
     LogCycleView(selectedDate: Date(), onSave: { _ in }, onDismiss: {})
 }
 
-#Preview("8 - Phase Detail") {
-    PhaseDetailView(phase: CyclePhase.follicular, onDismiss: {})
-}
-
 #Preview("9 - Journal") {
     JournalFeedMixPreview()
 }
