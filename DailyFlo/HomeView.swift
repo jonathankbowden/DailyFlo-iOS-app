@@ -39,7 +39,7 @@ struct HomeView: View {
             } else {
                 GeometryReader { outerGeo in
                     ZStack {
-                        Color.floCream.ignoresSafeArea()
+                        Color.floBackground.ignoresSafeArea()
 
                         ScrollView {
                             VStack(spacing: 0) {
@@ -138,7 +138,7 @@ struct HomeView: View {
         .frame(maxWidth: .infinity)
         .clipped()
         .overlay(alignment: .bottom) {
-            Color.floCream
+            Color.floBackground
                 .frame(height: FloRadius.xl)
                 .clipShape(
                     RoundedCorner(radius: FloRadius.xl, corners: [.topLeft, .topRight])
@@ -187,7 +187,7 @@ struct HomeView: View {
         }
         .frame(height: heroHeight)
         .overlay(alignment: .bottom) {
-            Color.floCream
+            Color.floBackground
                 .frame(height: FloRadius.xl)
                 .clipShape(
                     RoundedCorner(radius: FloRadius.xl, corners: [.topLeft, .topRight])

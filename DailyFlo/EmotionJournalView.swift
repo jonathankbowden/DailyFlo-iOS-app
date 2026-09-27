@@ -30,7 +30,7 @@ struct EmotionJournalView: View {
 
     var body: some View {
         ZStack {
-            Color.floCream.ignoresSafeArea()
+            Color.floBackground.ignoresSafeArea()
 
             VStack(spacing: 0) {
                 // Header
@@ -760,7 +760,7 @@ struct JournalDaySheet: View {
     @ViewBuilder
     private var multiOrEmptyView: some View {
         ZStack {
-            Color.floCream.ignoresSafeArea()
+            Color.floBackground.ignoresSafeArea()
 
             VStack(spacing: 0) {
                 // Header
@@ -934,7 +934,7 @@ struct JournalBaseView: View {
 
     var body: some View {
         ZStack {
-            Color.floCream.ignoresSafeArea()
+            Color.floBackground.ignoresSafeArea()
 
             VStack(spacing: 0) {
                 tabHeaderBar

@@ -111,7 +111,7 @@ struct SupporterHomeView: View {
 
     var body: some View {
         ZStack {
-            Color.floCream.ignoresSafeArea()
+            Color.floBackground.ignoresSafeArea()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: FloSpacing.xl) {

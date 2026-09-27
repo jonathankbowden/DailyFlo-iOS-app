@@ -122,11 +122,10 @@ struct ContentView: View {
                     showJournalEntry = true
                 }) {
                     ZStack {
-                        // Shadow layer
+                        // Flat fill — the canvas drops the glow behind the FAB.
                         Circle()
                             .fill(Color.floSage)
                             .frame(width: 72, height: 72)
-                            .shadow(color: Color.floSage.opacity(0.4), radius: 12, x: 0, y: 6)
 
                         // Icon
                         Image(systemName: "plus")
@@ -248,7 +247,7 @@ struct ProfileTabView: View {
 
     var body: some View {
         ZStack {
-            Color.floCream.ignoresSafeArea()
+            Color.floBackground.ignoresSafeArea()
 
             ScrollView {
                 VStack(spacing: 0) {
@@ -359,7 +358,7 @@ struct LockedMeditationView: View {
 
     var body: some View {
         ZStack {
-            Color.floCream.ignoresSafeArea()
+            Color.floBackground.ignoresSafeArea()
 
             VStack(spacing: FloSpacing.xl) {
                 Spacer()

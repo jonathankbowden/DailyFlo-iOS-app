@@ -119,7 +119,7 @@ struct OnboardingView: View {
     var body: some View {
         ZStack {
             // Background
-            Color.floCream.ignoresSafeArea()
+            Color.floBackground.ignoresSafeArea()
 
             VStack(spacing: 0) {
                 // Progress indicator

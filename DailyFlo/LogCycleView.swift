@@ -32,7 +32,7 @@ struct LogCycleView: View {
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            Color.floCream.ignoresSafeArea()
+            Color.floBackground.ignoresSafeArea()
 
             VStack(spacing: FloSpacing.lg) {
                 Text("SELECT A START DATE:")

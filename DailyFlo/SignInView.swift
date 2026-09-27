@@ -53,7 +53,7 @@ struct SignInView: View {
     var body: some View {
         NavigationStack(path: $path) {
             ZStack {
-                Color.floCream.ignoresSafeArea()
+                Color.floBackground.ignoresSafeArea()
 
                 ScrollView {
                     VStack(spacing: FloSpacing.xl) {
@@ -665,7 +665,7 @@ private struct PasswordSignInSheet: View {
 
     var body: some View {
         ZStack {
-            Color.floCream.ignoresSafeArea()
+            Color.floBackground.ignoresSafeArea()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: FloSpacing.lg) {

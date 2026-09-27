@@ -102,7 +102,7 @@ struct SingleDayView: View {
 
     var body: some View {
         ZStack {
-            Color.floCream.ignoresSafeArea()
+            Color.floBackground.ignoresSafeArea()
 
             VStack(spacing: 0) {
                 // Drag indicator
@@ -163,7 +163,7 @@ struct SingleDayView: View {
         let data = dayData(for: pageDate)
 
         return ZStack {
-            Color.floCream.ignoresSafeArea()
+            Color.floBackground.ignoresSafeArea()
 
             ScrollView {
                 VStack(spacing: FloSpacing.lg) {

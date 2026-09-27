@@ -32,7 +32,7 @@ struct CodeEntryView: View {
 
     var body: some View {
         ZStack {
-            Color.floCream.ignoresSafeArea()
+            Color.floBackground.ignoresSafeArea()
 
             ScrollView {
                 VStack(spacing: FloSpacing.xl) {

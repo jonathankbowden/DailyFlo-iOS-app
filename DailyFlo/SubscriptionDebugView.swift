@@ -37,7 +37,7 @@ struct SubscriptionDebugView: View {
             .padding(.top, FloSpacing.md)
             .padding(.bottom, FloSpacing.xxl)
         }
-        .background(Color.floCream.ignoresSafeArea())
+        .background(Color.floBackground.ignoresSafeArea())
     }
 
     // MARK: - Title bar (sheet mode only)

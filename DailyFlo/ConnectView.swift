@@ -92,7 +92,7 @@ struct ConnectMainView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color.floCream.ignoresSafeArea()
+                Color.floBackground.ignoresSafeArea()
 
                 ScrollView {
                     VStack(spacing: FloSpacing.xl) {
@@ -718,7 +718,7 @@ struct InvitePartnerSheet: View {
                     .presentationDetents([.medium, .large])
                 }
             }
-            .background(Color.floCream)
+            .background(Color.floBackground)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -828,7 +828,7 @@ struct PartnerOptionsSheet: View {
             }
             .padding(.top, FloSpacing.lg)
             .padding(.bottom, FloSpacing.xl)
-            .background(Color.floCream)
+            .background(Color.floBackground)
             .navigationTitle(isTracker ? "Sharing" : "Supporting")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -1064,7 +1064,7 @@ struct CycleSyncInfoSheet: View {
                 }
                 .padding(.top, FloSpacing.lg)
             }
-            .background(Color.floCream)
+            .background(Color.floBackground)
             .navigationTitle("Cycle Sync")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

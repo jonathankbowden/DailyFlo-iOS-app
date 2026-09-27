@@ -74,7 +74,7 @@ struct PaywallView: View {
             .padding(.bottom, FloSpacing.xl)
             .frame(maxWidth: .infinity, alignment: .top)
         }
-        .background(Color.floCream.ignoresSafeArea())
+        .background(Color.floBackground.ignoresSafeArea())
         .safeAreaInset(edge: .top, spacing: 0) { topBar }
         .onAppear { syncDefaultSelection() }
         .onChange(of: manager.loadState) { _, _ in syncDefaultSelection() }
@@ -119,7 +119,7 @@ struct PaywallView: View {
             .padding(.horizontal, FloSpacing.md)
             .padding(.bottom, FloSpacing.xs)
         }
-        .background(Color.floCream)
+        .background(Color.floBackground)
     }
 
     // MARK: - Header

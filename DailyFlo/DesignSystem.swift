@@ -16,7 +16,8 @@ extension Color {
     static let floMint = Color(hex: "B8D4B8")           // Light mint for backgrounds
 
     // Neutral colors
-    static let floCream = Color(hex: "FAF9F6")          // Warm white background
+    static let floCream = Color(hex: "FAF9F6")          // Warm off-white (retired as a background)
+    static let floBackground = Color.white              // App background — pure white everywhere
     static let floCharcoal = Color(hex: "2D2D2D")       // Dark text
     static let floGray = Color(hex: "6B7280")           // Secondary text
     static let floLightGray = Color(hex: "E5E5E5")      // Borders and dividers
@@ -37,6 +38,17 @@ extension Color {
     static let dotJournaled = Color(hex: "40676E")      // Dark teal - journaling
     static let dotFeelings = Color(hex: "000000")       // Black - selected feelings
     static let dotMeditated = Color(hex: "BFD7DB")      // Light mint - meditated
+
+    // Restyle palette (Summer 2026 canvas) — high-contrast black and white
+    static let floInk = Color(hex: "6B6B6B")            // Outlined button border
+    static let floButtonFill = Color(hex: "FAFAFA")     // Outlined button fill
+    static let floDeepTeal = Color(hex: "40676E")       // Taglines, button icons
+    static let floSageX = Color(hex: "6FA090")          // Thin close X, play button
+    static let floStone = Color(hex: "EAECE6")          // Pause tab highlight, modal header strip
+    static let floHairline = Color(hex: "EDEDED")       // Hairline dividers
+    static let floRule = Color(hex: "707070")           // Heavier rule under tab rows
+    static let floFeelingSelected = Color(hex: "C9D8D1") // Selected feeling in the journal
+    static let floPhaseTab = Color(hex: "ADD1B7")       // Selected MIND/BODY/SOUL tab
 
     // Semantic colors
     static let floSuccess = Color(hex: "4CAF50")        // Success green
@@ -132,6 +144,11 @@ struct FloShadow {
     static let medium = Shadow(color: .black.opacity(0.08), radius: 8, x: 0, y: 4)
     static let large = Shadow(color: .black.opacity(0.12), radius: 16, x: 0, y: 8)
     static let elevated = Shadow(color: .black.opacity(0.16), radius: 24, x: 0, y: 12)
+    // Restyle: soft button lift, raised editor card, and the deep float under big cards.
+    // Figma blur ≈ 2 × SwiftUI radius.
+    static let button = Shadow(color: .black.opacity(0.10), radius: 1.5, x: 0, y: 2)
+    static let raised = Shadow(color: .black.opacity(0.14), radius: 14, x: 0, y: 12)
+    static let deep = Shadow(color: .black.opacity(0.20), radius: 17, x: 0, y: 22)
 
     struct Shadow {
         let color: Color
@@ -733,7 +750,7 @@ private extension View {
     }
     .padding(FloSpacing.xl)
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(Color.floCream)
+    .background(Color.floBackground)
 }
 
 

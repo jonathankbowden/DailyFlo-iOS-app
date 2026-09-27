@@ -112,7 +112,7 @@ struct JournalEntryView: View {
 
     var body: some View {
         ZStack {
-            Color.floCream.ignoresSafeArea()
+            Color.floBackground.ignoresSafeArea()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -693,7 +693,7 @@ struct TextEntryView: View {
 
     var body: some View {
         ZStack {
-            Color.floCream.ignoresSafeArea()
+            Color.floBackground.ignoresSafeArea()
 
             VStack(spacing: 0) {
                 HStack {
@@ -894,7 +894,7 @@ struct DatePickerSheet: View {
             .padding(.horizontal, FloSpacing.lg)
             .padding(.bottom, FloSpacing.lg)
         }
-        .background(Color.floCream)
+        .background(Color.floBackground)
     }
 }
 

@@ -37,7 +37,7 @@ struct VoiceEntryView: View {
 
     var body: some View {
         ZStack {
-            Color.floCream.ignoresSafeArea()
+            Color.floBackground.ignoresSafeArea()
 
             VStack(spacing: 0) {
                 // Drag indicator
