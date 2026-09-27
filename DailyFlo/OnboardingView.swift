@@ -20,9 +20,21 @@ enum OnboardingInputType {
     case none
     case textField(placeholder: String, keyboardType: UIKeyboardType)
     case datePicker
-    case numberPicker(range: ClosedRange<Int>, unit: String)
-    case multiSelect(options: [String])
+    /// Cycle length and period length on one screen.
+    case cycleRhythm
     case singleSelect(options: [String])
+}
+
+/// Page ids, in order. The id doubles as the page index (TabView tag and
+/// progress-dot position), so they must stay 0-based and contiguous.
+enum OnboardingPageID {
+    static let welcome = 0
+    static let name = 1
+    static let birthDate = 2
+    static let lastPeriod = 3
+    static let cycleRhythm = 4
+    static let fourPhases = 5
+    static let allSet = 6
 }
 
 // MARK: - Main Onboarding View
@@ -34,75 +46,54 @@ struct OnboardingView: View {
     @State private var lastPeriodDate = Date()
     @State private var cycleLength = 28
     @State private var periodLength = 5
-    @State private var selectedGoals: Set<String> = []
     @State private var isTransitioning = false
     @State private var showValidationError = false
 
     private let pages: [OnboardingPage] = [
         OnboardingPage(
-            id: 0,
+            id: OnboardingPageID.welcome,
             title: "Welcome to\nDailyFlo",
             subtitle: "Your personal cycle companion for mind, body, and soul wellness.",
             imageName: nil,
             inputType: .none
         ),
         OnboardingPage(
-            id: 1,
+            id: OnboardingPageID.name,
             title: "What's your name?",
             subtitle: "We'll personalize your experience.",
             imageName: nil,
             inputType: .textField(placeholder: "Enter your name", keyboardType: .default)
         ),
         OnboardingPage(
-            id: 2,
+            id: OnboardingPageID.birthDate,
             title: "When were you\nborn?",
             subtitle: "DailyFlo is for ages 13 and up.",
             imageName: nil,
             inputType: .datePicker
         ),
         OnboardingPage(
-            id: 3,
+            id: OnboardingPageID.lastPeriod,
             title: "When did your\nlast period start?",
             subtitle: "This helps us calculate your cycle phases.",
             imageName: nil,
             inputType: .datePicker
         ),
         OnboardingPage(
-            id: 4,
-            title: "How long is your\ntypical cycle?",
-            subtitle: "From the first day of one period to the first day of the next.",
+            id: OnboardingPageID.cycleRhythm,
+            title: "What's your\ncycle rhythm?",
+            subtitle: "Your typical cycle, first day to first day, and how long your period lasts.",
             imageName: nil,
-            inputType: .numberPicker(range: 21...35, unit: "days")
+            inputType: .cycleRhythm
         ),
         OnboardingPage(
-            id: 5,
-            title: "How many days does\nyour period last?",
-            subtitle: "This helps us track your menstrual phase.",
-            imageName: nil,
-            inputType: .numberPicker(range: 3...7, unit: "days")
-        ),
-        OnboardingPage(
-            id: 6,
-            title: "What are your\nwellness goals?",
-            subtitle: "Select all that apply.",
-            imageName: nil,
-            inputType: .multiSelect(options: [
-                "Track my cycle",
-                "Understand my moods",
-                "Optimize my energy",
-                "Plan for fertility",
-                "Mindfulness & meditation"
-            ])
-        ),
-        OnboardingPage(
-            id: 7,
+            id: OnboardingPageID.fourPhases,
             title: "Your Four Phases",
             subtitle: "Your cycle has 4 distinct phases, each with unique characteristics.",
             imageName: nil,
             inputType: .none
         ),
         OnboardingPage(
-            id: 8,
+            id: OnboardingPageID.allSet,
             title: "You're all set!",
             subtitle: "Let's begin your journey to cycle-synced living.",
             imageName: nil,
@@ -137,7 +128,6 @@ struct OnboardingView: View {
                             lastPeriodDate: $lastPeriodDate,
                             cycleLength: $cycleLength,
                             periodLength: $periodLength,
-                            selectedGoals: $selectedGoals,
                             showValidationError: $showValidationError
                         )
                         .tag(page.id)
@@ -222,14 +212,11 @@ struct OnboardingView: View {
         case .textField:
             return !userName.trimmingCharacters(in: .whitespaces).isEmpty
         case .datePicker:
-            // Birth-date page enforces the 13+ gate. Last-period page (id 3) is unrestricted.
-            if currentPage == 2 {
+            // Birth-date page enforces the 13+ gate. Last-period page is unrestricted.
+            if currentPage == OnboardingPageID.birthDate {
                 return ageInYears >= 13
             }
             return true
-        case .multiSelect:
-            // Only the wellness-goals page uses multiSelect; goals are required.
-            return !selectedGoals.isEmpty
         default:
             return true
         }
@@ -286,7 +273,6 @@ struct OnboardingView: View {
         UserDefaults.standard.set(lastPeriodDate, forKey: "lastPeriodDate")
         UserDefaults.standard.set(cycleLength, forKey: "cycleLength")
         UserDefaults.standard.set(periodLength, forKey: "periodLength")
-        UserDefaults.standard.set(Array(selectedGoals), forKey: "selectedGoals")
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
         UserDefaults.standard.set(true, forKey: "pendingOnboardingPayload")
 
@@ -304,7 +290,6 @@ struct OnboardingPageView: View {
     @Binding var lastPeriodDate: Date
     @Binding var cycleLength: Int
     @Binding var periodLength: Int
-    @Binding var selectedGoals: Set<String>
     @Binding var showValidationError: Bool
 
     @FocusState private var isTextFieldFocused: Bool
@@ -321,20 +306,20 @@ struct OnboardingPageView: View {
             Spacer()
 
             // Special layouts for welcome, phases, and completion
-            if page.id == 0 {
+            if page.id == OnboardingPageID.welcome {
                 welcomeElement
                     .scaleFadeIn(delay: hasAppeared ? 0 : 0.1, from: 0.85)
-            } else if page.id == 7 {
+            } else if page.id == OnboardingPageID.fourPhases {
                 phaseOverviewElement
                     .scaleFadeIn(delay: hasAppeared ? 0 : 0.1, from: 0.95)
-            } else if page.id == 8 {
+            } else if page.id == OnboardingPageID.allSet {
                 completionElement
                     .scaleFadeIn(delay: hasAppeared ? 0 : 0.1, from: 0.85)
             }
 
             // Title
             Text(page.title)
-                .font(page.id == 0 ? .floDisplayLarge : .floDisplayMedium)
+                .font(page.id == OnboardingPageID.welcome ? .floDisplayLarge : .floDisplayMedium)
                 .foregroundColor(.floCharcoal)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, FloSpacing.lg)
@@ -501,15 +486,15 @@ struct OnboardingPageView: View {
             VStack(spacing: FloSpacing.md) {
                 DatePicker(
                     "",
-                    selection: page.id == 2 ? $birthDate : $lastPeriodDate,
+                    selection: page.id == OnboardingPageID.birthDate ? $birthDate : $lastPeriodDate,
                     in: ...Date(),
                     displayedComponents: .date
                 )
                 .datePickerStyle(.wheel)
                 .labelsHidden()
-                .accessibilityLabel(page.id == 2 ? "Birth date" : "Last period start date")
+                .accessibilityLabel(page.id == OnboardingPageID.birthDate ? "Birth date" : "Last period start date")
 
-                if showValidationError, page.id == 2, ageGateFailed {
+                if showValidationError, page.id == OnboardingPageID.birthDate, ageGateFailed {
                     Text("DailyFlo is for ages 13 and up. Please double-check the date you entered.")
                         .font(.floCaption)
                         .foregroundColor(.floError)
@@ -520,52 +505,21 @@ struct OnboardingPageView: View {
             }
             .animation(FloAnimation.easeOutQuick, value: showValidationError)
 
-        case .numberPicker(let range, let unit):
-            VStack(spacing: FloSpacing.md) {
-                Picker("", selection: page.id == 4 ? $cycleLength : $periodLength) {
-                    ForEach(range, id: \.self) { num in
-                        Text("\(num) \(unit)")
-                            .tag(num)
-                    }
-                }
-                .pickerStyle(.wheel)
-                .frame(height: 150)
-                .accessibilityLabel(page.id == 4 ? "Cycle length in days" : "Period length in days")
+        case .cycleRhythm:
+            HStack(spacing: FloSpacing.md) {
+                rhythmPicker(
+                    label: "CYCLE",
+                    selection: $cycleLength,
+                    range: 21...35,
+                    accessibilityLabel: "Cycle length in days"
+                )
+                rhythmPicker(
+                    label: "PERIOD",
+                    selection: $periodLength,
+                    range: 3...7,
+                    accessibilityLabel: "Period length in days"
+                )
             }
-
-        case .multiSelect(let options):
-            // Only the wellness-goals page (id 6) uses multiSelect now.
-            VStack(alignment: .leading, spacing: FloSpacing.xs) {
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: FloSpacing.sm) {
-                    ForEach(Array(options.enumerated()), id: \.element) { index, option in
-                        MultiSelectButton(
-                            title: option,
-                            isSelected: selectedGoals.contains(option),
-                            action: {
-                                FloHaptics.selection()
-                                withAnimation(FloAnimation.springSnappy) {
-                                    if selectedGoals.contains(option) {
-                                        selectedGoals.remove(option)
-                                    } else {
-                                        selectedGoals.insert(option)
-                                    }
-                                }
-                            }
-                        )
-                        .animation(FloAnimation.stagger(index: index), value: page.id)
-                    }
-                }
-
-                if showValidationError && selectedGoals.isEmpty {
-                    Text("Please select at least one goal")
-                        .font(.floCaption)
-                        .foregroundColor(.floError)
-                        .padding(.leading, FloSpacing.xs)
-                        .padding(.top, FloSpacing.xs)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
-                }
-            }
-            .animation(FloAnimation.easeOutQuick, value: showValidationError)
 
         case .singleSelect(let options):
             VStack(spacing: FloSpacing.sm) {
@@ -587,43 +541,32 @@ struct OnboardingPageView: View {
             }
         }
     }
-}
 
-// MARK: - Multi-Select Button
-struct MultiSelectButton: View {
-    let title: String
-    let isSelected: Bool
-    let action: () -> Void
+    /// One labeled wheel on the Cycle rhythm page.
+    private func rhythmPicker(
+        label: String,
+        selection: Binding<Int>,
+        range: ClosedRange<Int>,
+        accessibilityLabel: String
+    ) -> some View {
+        VStack(spacing: FloSpacing.xs) {
+            Text(label)
+                .font(.floLabel)
+                .fontWeight(.bold)
+                .tracking(2)
+                .foregroundColor(.floCharcoal)
 
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: FloSpacing.sm) {
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 18))
-                    .foregroundColor(isSelected ? .floSage : .floGray.opacity(0.5))
-
-                Text(title)
-                    .font(.floBodySmall)
-                    .foregroundColor(.floCharcoal)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.85)
-                    .multilineTextAlignment(.leading)
-
-                Spacer()
+            Picker("", selection: selection) {
+                ForEach(range, id: \.self) { num in
+                    Text("\(num) days")
+                        .tag(num)
+                }
             }
-            .padding(.horizontal, FloSpacing.md)
-            .padding(.vertical, FloSpacing.sm + 2)
-            .background(isSelected ? Color.floSage.opacity(0.12) : Color.white)
-            .cornerRadius(FloRadius.md)
-            .overlay(
-                RoundedRectangle(cornerRadius: FloRadius.md)
-                    .stroke(isSelected ? Color.floSage : Color.floGray.opacity(0.25), lineWidth: isSelected ? 1.5 : 1)
-            )
+            .pickerStyle(.wheel)
+            .frame(height: 150)
+            .accessibilityLabel(accessibilityLabel)
         }
-        .buttonStyle(PlainButtonStyle())
-        .animation(FloAnimation.springSnappy, value: isSelected)
-        .accessibilityLabel(title)
-        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .frame(maxWidth: .infinity)
     }
 }
 
