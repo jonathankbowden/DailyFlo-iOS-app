@@ -228,16 +228,19 @@ struct CheckBadge: View {
     }
 }
 
-/// Round white button that overlaps a photo's bottom-right corner.
+/// Round white button that overlaps a photo's bottom-right corner. The
+/// visible circle is 36pt; the tap area is padded out to 44.
 struct RoundPhotoEditLabel: View {
-    var icon: String = "pencil"
+    var icon: String = "square.and.pencil"
 
     var body: some View {
         Image(systemName: icon)
-            .font(.system(size: 15, weight: .semibold))
-            .foregroundStyle(Color.floDeepTeal)
-            .frame(width: 44, height: 44)
+            .font(.system(size: 14, weight: .medium))
+            .foregroundStyle(Color.floInk)
+            .frame(width: 36, height: 36)
             .background(Circle().fill(Color.white))
             .floShadow(FloShadow.medium)
+            .frame(width: 44, height: 44)
+            .contentShape(Circle())
     }
 }

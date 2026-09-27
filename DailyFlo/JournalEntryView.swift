@@ -8,52 +8,41 @@
 import SwiftUI
 import PhotosUI
 
-/// Unified new + edit composer presented as a swipe-dismissable `.large`
-/// sheet. Four-card layout — feeling, photo, voice, text — over a cream
-/// background, with LOG CYCLE + CLOSE floating at the bottom.
+/// One journal entry, new or posted, presented as a swipe-dismissable
+/// `.large` sheet (Figma "January 14" 15:3782 and "Add new journal entry"
+/// 15:3879).
 ///
 /// `entry == nil` = compose for `date` (defaults to today). Under the
 /// one-entry-per-day rule the init first resolves any existing entry on that
-/// day and, if found, seeds from it so this becomes an in-place edit instead
-/// of a duplicate. A genuinely empty day creates via addEntry on SAVE.
-/// `entry != nil` = edit that entry (state seeded from it; SAVE writes back
-/// via updateEntry preserving the id; header shows a delete button).
+/// day and, if found, opens it as a posted entry instead of a blank composer.
+///
+/// There is no Save button: the entry autosaves when the sheet closes (X or
+/// swipe) and before SHARE / LOG CYCLE, as long as a feeling is picked. A new
+/// entry closed without a feeling is discarded.
 struct JournalEntryView: View {
-    let entry: JournalEntry?
     let journalManager: JournalManager
     let onDismiss: () -> Void
 
-    @State private var selectedFeeling: String?
+    /// Whether the sheet opened on an already-posted entry.
+    private let openedPosted: Bool
+
+    /// The entry as last written; nil until a new entry first saves.
+    @State private var currentEntry: JournalEntry?
+    @State private var selectedEmotion: CoreEmotion?
     @State private var entryDate: Date
     @State private var entryTitle: String
     @State private var entryBody: String
-    @State private var showLogCycleModal: Bool = false
-    @State private var showDatePicker: Bool = false
-    @State private var selectedIntensity: Int
-    @State private var isSaving: Bool = false
-    @State private var hasAppeared: Bool = false
-    @State private var showVoiceEntry: Bool = false
-    @State private var showTextEntry: Bool = false
-    @State private var selectedPhoto: PhotosPickerItem? = nil
-    @State private var photoImage: UIImage? = nil
-    @State private var showDeleteConfirm: Bool = false
+    @State private var photoImage: UIImage?
+    /// True when `photoImage` changed since the last save.
+    @State private var photoDirty = false
+    /// Posted entries open read-only; the photo's edit button switches to
+    /// the editor card. New entries open straight in the editor.
+    @State private var isEditing: Bool
+    @State private var selectedPhoto: PhotosPickerItem?
+    @State private var showLogCycleModal = false
+    @State private var showVoiceEntry = false
 
-    // Chip Dodd's eight core feelings.
-    private let feelings = ["Sad", "Anger", "Fear", "Hurt", "Lonely", "Shame", "Guilt", "Glad"]
-
-    // Display label → CoreEmotion lookup for save.
-    private let feelingToEmotion: [String: CoreEmotion] = [
-        "Sad": .sad, "Anger": .angry, "Fear": .afraid,
-        "Hurt": .hurt, "Lonely": .lonely, "Shame": .ashamed,
-        "Guilt": .guilty, "Glad": .glad
-    ]
-
-    // Reverse mapping for seeding `selectedFeeling` when editing an entry.
-    private static let emotionToFeeling: [CoreEmotion: String] = [
-        .sad: "Sad", .angry: "Anger", .afraid: "Fear",
-        .hurt: "Hurt", .lonely: "Lonely", .ashamed: "Shame",
-        .guilty: "Guilt", .glad: "Glad"
-    ]
+    private let feelingRowInset: CGFloat = 30
 
     init(
         entry: JournalEntry? = nil,
@@ -66,37 +55,34 @@ struct JournalEntryView: View {
 
         // One-entry-per-day enforcement, shared by every create surface (the
         // tab-bar FAB, the calendar day view, the journal grid): when opened to
-        // add a "new" entry, if the target day already has one, become that
-        // entry's editor instead of composing a duplicate. `date` is the day the
-        // presenting surface targets (calendar page / grid cell); it falls back
-        // to today for the FAB, which composes for the current day.
+        // add a "new" entry, if the target day already has one, open that
+        // entry instead of composing a duplicate. `date` falls back to today.
         let resolvedEntry = entry ?? journalManager.entry(for: date ?? Date())
-        self.entry = resolvedEntry
+        openedPosted = resolvedEntry != nil
+        _currentEntry = State(initialValue: resolvedEntry)
+        _isEditing = State(initialValue: resolvedEntry == nil)
 
         if let resolvedEntry {
             let parts = Self.splitNote(resolvedEntry.note)
-            _selectedFeeling = State(initialValue: Self.emotionToFeeling[resolvedEntry.emotion])
+            _selectedEmotion = State(initialValue: resolvedEntry.emotion)
             _entryDate = State(initialValue: resolvedEntry.date)
             _entryTitle = State(initialValue: parts.title)
             _entryBody = State(initialValue: parts.body)
-            _selectedIntensity = State(initialValue: resolvedEntry.intensity)
-            // Re-hydrate any previously-attached photo so the editor's
-            // photo card opens in its "image present" state and the
-            // user can swap or remove it.
-            if let stored = JournalPhotoStore.image(forStoredPath: resolvedEntry.userPhotoURL) {
-                _photoImage = State(initialValue: stored)
-            }
+            _photoImage = State(initialValue: JournalPhotoStore.image(forStoredPath: resolvedEntry.userPhotoURL))
         } else {
-            _selectedFeeling = State(initialValue: nil)
-            _entryDate = State(initialValue: date ?? Date())
+            let day = date ?? Date()
+            _selectedEmotion = State(initialValue: nil)
+            _entryDate = State(initialValue: day)
             _entryTitle = State(initialValue: "")
             _entryBody = State(initialValue: "")
-            _selectedIntensity = State(initialValue: 3)
+            // A photo picked on Home before the day had an entry shows here;
+            // JournalManager.addEntry attaches it when this entry first saves.
+            _photoImage = State(initialValue: JournalPhotoStore.pendingImage(for: day))
         }
     }
 
-    /// Inverse of saveEntry's `"\(title)\n\(body)"` join. If the stored
-    /// note has a newline, split on the first one; otherwise treat the
+    /// Inverse of the `"\(title)\n\(body)"` join in `composedNote`. If the
+    /// stored note has a newline, split on the first one; otherwise treat the
     /// whole thing as the title and leave the body empty.
     private static func splitNote(_ note: String) -> (title: String, body: String) {
         let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -111,70 +97,52 @@ struct JournalEntryView: View {
     }
 
     var body: some View {
-        ZStack {
-            Color.floBackground.ignoresSafeArea()
+        VStack(spacing: 0) {
+            SheetGrabber()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    editorHeader
-                        .padding(.top, FloSpacing.sm)
-                        .padding(.bottom, FloSpacing.md)
-
-                    dateSection
-                        .padding(.horizontal, FloSpacing.lg)
-                        .fadeIn(delay: hasAppeared ? 0 : 0.1)
-
-                    FloDivider()
+                    FloHairline()
                         .padding(.top, FloSpacing.md)
-                        .padding(.horizontal, FloSpacing.lg)
 
-                    VStack(spacing: FloSpacing.md) {
-                        feelingCard
-                            .fadeIn(delay: hasAppeared ? 0 : 0.15)
-                        photoCard
-                            .fadeIn(delay: hasAppeared ? 0 : 0.18)
-                        textCard
-                            .fadeIn(delay: hasAppeared ? 0 : 0.2)
-                        voiceCard
-                            .fadeIn(delay: hasAppeared ? 0 : 0.22)
-                    }
-                    .padding(.horizontal, FloSpacing.lg)
-                    .padding(.top, FloSpacing.lg)
+                    header
 
-                    if entry != nil {
-                        deleteEntryButton
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, FloSpacing.xl)
+                    FloHairline()
+
+                    Text("Feeling:")
+                        .font(.floLunary(size: 32))
+                        .foregroundStyle(Color.black)
+                        .padding(.leading, feelingRowInset)
+                        .padding(.top, 18)
+
+                    feelingRow
+                        .padding(.top, 10)
+                        .padding(.bottom, 20)
+
+                    FloRuleLine()
+
+                    if isEditing {
+                        editorCard
+                            .padding(.horizontal, feelingRowInset)
+                            .padding(.top, 20)
                             .padding(.bottom, FloSpacing.lg)
-                            .fadeIn(delay: hasAppeared ? 0 : 0.25)
+                    } else {
+                        postedContent
                     }
                 }
-                .padding(.bottom, 140)
             }
+            .scrollIndicators(.hidden)
             .scrollDismissesKeyboard(.interactively)
 
-            VStack {
-                Spacer()
-                floatingBottomButtons
-                    .fadeIn(delay: hasAppeared ? 0 : 0.25)
-            }
-            .ignoresSafeArea(.container, edges: .bottom)
+            actionRow
+                .padding(.horizontal, 36)
+                .padding(.top, 12)
+                .padding(.bottom, FloSpacing.md)
         }
+        .background(Color.floBackground.ignoresSafeArea())
         .presentationDetents([.large])
         .presentationDragIndicator(.hidden)
         .logCycleModal(isPresented: $showLogCycleModal, date: entryDate)
-        .alert("Delete Entry?", isPresented: $showDeleteConfirm) {
-            Button("Delete", role: .destructive) {
-                if let entry {
-                    FloHaptics.success()
-                    journalManager.deleteEntry(entry)
-                    onDismiss()
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This entry will be permanently removed.")
-        }
         .sheet(isPresented: $showVoiceEntry) {
             VoiceEntryView(
                 onComplete: { title, body in
@@ -187,98 +155,39 @@ struct JournalEntryView: View {
             .presentationDetents([.large])
             .presentationDragIndicator(.hidden)
         }
-        .sheet(isPresented: $showTextEntry) {
-            TextEntryView(
-                initialTitle: entryTitle,
-                initialBody: entryBody,
-                onComplete: { title, body in
-                    entryTitle = title
-                    entryBody = body
-                    showTextEntry = false
-                },
-                onDismiss: { showTextEntry = false }
-            )
-            .presentationDetents([.large])
-            .presentationDragIndicator(.hidden)
-        }
-        .sheet(isPresented: $showDatePicker) {
-            DatePickerSheet(selectedDate: $entryDate, isPresented: $showDatePicker)
-                .presentationDetents([.height(360)])
-        }
         .onChange(of: selectedPhoto) { _, newItem in
             guard let newItem else { return }
-            Task {
-                if let data = try? await newItem.loadTransferable(type: Data.self),
-                   let image = UIImage(data: data) {
-                    withAnimation(FloAnimation.springSnappy) {
-                        photoImage = image
-                    }
-                }
-            }
+            Task { await importPhoto(newItem) }
         }
-        .onAppear {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                hasAppeared = true
-            }
+        // Swipe-to-dismiss autosave. After an X close this is a no-op
+        // because nothing changed since that save.
+        .onDisappear {
+            autosave()
         }
     }
 
-    // MARK: - Editor header (drag handle)
-    private var editorHeader: some View {
-        Capsule()
-            .fill(Color.floGray.opacity(0.3))
-            .frame(width: 36, height: 5)
-            .frame(maxWidth: .infinity)
-    }
+    // MARK: - Header
 
-    // MARK: - Bottom destructive action (edit mode only)
-    private var deleteEntryButton: some View {
-        Button {
-            FloHaptics.light()
-            showDeleteConfirm = true
-        } label: {
-            Text("DELETE ENTRY")
-                .font(.floLabel)
-                .fontWeight(.bold)
-                .tracking(2)
-                .foregroundColor(.floCharcoal)
-        }
-        .buttonStyle(.floPressed)
-        .accessibilityLabel("Delete entry")
-        .accessibilityHint("Permanently removes this entry")
-    }
-
-    // MARK: - Date section
-    private var dateSection: some View {
+    private var header: some View {
         HStack(alignment: .center) {
-            VStack(alignment: .leading, spacing: FloSpacing.xxs) {
-                Text("DATE")
-                    .font(.floCaption)
-                    .fontWeight(.black)
-                    .foregroundColor(.floCharcoal)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(openedPosted ? "DATE POSTED:" : "DATE:")
+                    .font(.system(size: 11, weight: .black))
                     .tracking(1.5)
+                    .foregroundStyle(Color.black)
 
                 Text(formattedDate)
                     .font(.system(size: 18, weight: .light))
-                    .foregroundColor(.floCharcoal)
+                    .foregroundStyle(Color.black)
             }
 
             Spacer()
 
-            Button {
-                FloHaptics.light()
-                showDatePicker = true
-            } label: {
-                Image("calendar")
-                    .resizable()
-                    .renderingMode(.template)
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 28, height: 28)
-                    .foregroundColor(.floCharcoal)
-            }
-            .buttonStyle(.floPressed)
+            SageCloseButton(action: close)
         }
-        .padding(.top, FloSpacing.lg)
+        .padding(.leading, 28)
+        .padding(.trailing, FloSpacing.md)
+        .padding(.vertical, 18)
     }
 
     private var formattedDate: String {
@@ -287,610 +196,335 @@ struct JournalEntryView: View {
         return formatter.string(from: entryDate)
     }
 
-    // MARK: - Card wrapper (chunky white card with sage border)
-    private func cardWrapper<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        content()
-            .background(Color.white)
-            .cornerRadius(FloRadius.lg)
-            .overlay(
-                RoundedRectangle(cornerRadius: FloRadius.lg)
-                    .stroke(Color.floSage.opacity(0.3), lineWidth: 1.5)
-            )
-            .shadow(
-                color: FloShadow.small.color,
-                radius: FloShadow.small.radius,
-                x: 0,
-                y: FloShadow.small.y
-            )
-    }
+    // MARK: - Feeling row
 
-    // MARK: - 1. Feeling card
-    private var feelingCard: some View {
-        cardWrapper {
-            VStack(alignment: .leading, spacing: FloSpacing.md) {
+    /// All eight feelings in a snapping horizontal row. It starts inset 30pt
+    /// and the third button runs off the right edge as the swipe hint. A
+    /// posted entry scrolls its feeling into view on open.
+    private var feelingRow: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal) {
                 HStack(spacing: FloSpacing.md) {
-                    ZStack {
-                        Circle()
-                            .fill(Color.floSage.opacity(0.12))
-                            .frame(width: 56, height: 56)
-                        Image(systemName: "heart")
-                            .font(.system(size: 24, weight: .medium))
-                            .foregroundColor(.floSage)
+                    ForEach(CoreEmotion.allCases, id: \.self) { emotion in
+                        feelingButton(emotion)
+                            .id(emotion)
                     }
-
-                    VStack(alignment: .leading, spacing: FloSpacing.xxs) {
-                        Text("SELECT A FEELING")
-                            .font(.floLabel)
-                            .fontWeight(.bold)
-                            .foregroundColor(.floCharcoal)
-                            .tracking(1.5)
-
-                        Text(selectedFeeling ?? "How are you right now?")
-                            .font(.floBodySmall)
-                            .foregroundColor(selectedFeeling != nil ? .floTeal : .floGray)
-                    }
-
-                    Spacer()
                 }
-
-                let topRow = Array(feelings.prefix(4))
-                let bottomRow = Array(feelings.suffix(4))
-
-                VStack(spacing: FloSpacing.sm) {
-                    HStack(spacing: FloSpacing.sm) {
-                        ForEach(topRow, id: \.self) { feeling in
-                            feelingChip(feeling)
-                        }
-                    }
-                    HStack(spacing: FloSpacing.sm) {
-                        ForEach(bottomRow, id: \.self) { feeling in
-                            feelingChip(feeling)
-                        }
-                    }
+                .scrollTargetLayout()
+                // Room for the buttons' drop shadow inside the scroll clip.
+                .padding(.vertical, 6)
+            }
+            .contentMargins(.horizontal, feelingRowInset, for: .scrollContent)
+            .scrollIndicators(.hidden)
+            .scrollTargetBehavior(.viewAligned)
+            .onAppear {
+                guard openedPosted, let selectedEmotion else { return }
+                DispatchQueue.main.async {
+                    proxy.scrollTo(selectedEmotion, anchor: .center)
                 }
             }
-            .padding(FloSpacing.lg)
         }
     }
 
-    private func feelingChip(_ feeling: String) -> some View {
-        let isSelected = selectedFeeling == feeling
+    private func feelingButton(_ emotion: CoreEmotion) -> some View {
+        let isSelected = selectedEmotion == emotion
         return Button {
             FloHaptics.selection()
-            withAnimation(FloAnimation.springSnappy) {
-                selectedFeeling = isSelected ? nil : feeling
-            }
+            withAnimation(FloAnimation.springSnappy) { selectedEmotion = emotion }
         } label: {
-            Text(feeling)
-                .font(.floLabel)
-                .fontWeight(isSelected ? .bold : .medium)
-                .tracking(0.5)
-                .foregroundColor(isSelected ? .white : .floCharcoal)
-                .frame(maxWidth: .infinity)
-                .frame(height: 38)
+            Text(emotion.rawValue)
+                .font(.floLunary(size: 26))
+                .foregroundStyle(Color.black)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .frame(width: 120, height: 44)
                 .background(
-                    RoundedRectangle(cornerRadius: FloRadius.sm)
-                        .fill(isSelected ? Color.floTeal : Color.floCream)
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(isSelected ? Color.floFeelingSelected : Color.floButtonFill)
                 )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(Color.floInk, lineWidth: 1.5)
+                )
+                .floShadow(FloShadow.button)
         }
-        .buttonStyle(PlainButtonStyle())
-        .accessibilityLabel(feeling)
-        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .buttonStyle(.floPressed)
+        .accessibilityLabel(emotion.rawValue)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
-    // MARK: - 2. Photo card
-    private var photoCard: some View {
-        cardWrapper {
-            VStack(spacing: 0) {
-                if let photoImage {
-                    ZStack(alignment: .topTrailing) {
-                        Image(uiImage: photoImage)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(height: 180)
-                            .frame(maxWidth: .infinity)
-                            .clipped()
+    // MARK: - Posted entry
 
-                        Button {
-                            FloHaptics.light()
-                            withAnimation(FloAnimation.springSnappy) {
-                                self.photoImage = nil
-                                self.selectedPhoto = nil
-                            }
-                        } label: {
-                            Circle()
-                                .fill(Color.black.opacity(0.5))
-                                .frame(width: 32, height: 32)
-                                .overlay(
-                                    Image(systemName: "xmark")
-                                        .font(.system(size: 12, weight: .bold))
-                                        .foregroundColor(.white)
-                                )
-                        }
-                        .buttonStyle(.floPressed)
-                        .padding(FloSpacing.sm)
-                    }
-                } else {
-                    PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                        HStack(spacing: FloSpacing.md) {
-                            ZStack {
-                                Circle()
-                                    .fill(Color.floSage.opacity(0.12))
-                                    .frame(width: 56, height: 56)
-                                Image(systemName: "photo")
-                                    .font(.system(size: 24, weight: .medium))
-                                    .foregroundColor(.floSage)
-                            }
-
-                            VStack(alignment: .leading, spacing: FloSpacing.xxs) {
-                                Text("ADD A PHOTO")
-                                    .font(.floLabel)
-                                    .fontWeight(.bold)
-                                    .foregroundColor(.floCharcoal)
-                                    .tracking(1.5)
-                                Text("Attach an image to your entry")
-                                    .font(.floBodySmall)
-                                    .foregroundColor(.floGray)
-                            }
-
-                            Spacer()
-
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundColor(.floGray.opacity(0.5))
-                        }
-                        .padding(FloSpacing.lg)
+    private var postedContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            photoView
+                .frame(height: 232)
+                .frame(maxWidth: .infinity)
+                .clipped()
+                .overlay(alignment: .bottomTrailing) {
+                    Button {
+                        FloHaptics.light()
+                        withAnimation(FloAnimation.springGentle) { isEditing = true }
+                    } label: {
+                        RoundPhotoEditLabel()
                     }
                     .buttonStyle(.floPressed)
-                    .accessibilityLabel("Add a photo")
+                    .offset(y: 22)
+                    .padding(.trailing, 22)
+                    .accessibilityLabel("Edit entry")
                 }
+
+            if !entryTitle.isEmpty {
+                Text(entryTitle.uppercased())
+                    .font(.system(size: 13, weight: .heavy))
+                    .tracking(3)
+                    .foregroundStyle(Color.black)
+                    .padding(.horizontal, feelingRowInset)
+                    .padding(.top, 34)
+                    .padding(.bottom, 12)
+            } else {
+                Spacer().frame(height: 34)
+            }
+
+            FloHairline()
+                .padding(.horizontal, feelingRowInset)
+
+            Group {
+                if entryBody.isEmpty && entryTitle.isEmpty {
+                    Text("Nothing written yet. Tap the pencil to add to this entry.")
+                        .foregroundStyle(Color.floGray)
+                } else {
+                    Text(entryBody)
+                        .foregroundStyle(Color.black)
+                }
+            }
+            .font(.system(size: 16))
+            .lineSpacing(16 * 0.7)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, feelingRowInset)
+            .padding(.top, 18)
+            .padding(.bottom, FloSpacing.xl)
+        }
+    }
+
+    /// The entry's photo, or the feeling's stock photo when there isn't one.
+    @ViewBuilder
+    private var photoView: some View {
+        if let photoImage {
+            Color.clear.overlay {
+                Image(uiImage: photoImage)
+                    .resizable()
+                    .scaledToFill()
+            }
+        } else {
+            Color.clear.overlay {
+                Image((selectedEmotion ?? .ashamed).photoName)
+                    .resizable()
+                    .scaledToFill()
             }
         }
     }
 
-    // MARK: - 3. Voice card
-    private var voiceCard: some View {
-        cardWrapper {
-            Button {
-                FloHaptics.medium()
-                showVoiceEntry = true
-            } label: {
-                HStack(spacing: FloSpacing.md) {
-                    ZStack {
-                        Circle()
-                            .fill(Color.floSage.opacity(0.12))
-                            .frame(width: 56, height: 56)
-                        Image(systemName: "mic.fill")
-                            .font(.system(size: 24, weight: .medium))
-                            .foregroundColor(.floSage)
+    // MARK: - Editor card (new entry, or a posted entry being edited)
+
+    private var editorCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            photoView
+                .frame(height: 48)
+                .frame(maxWidth: .infinity)
+                .clipped()
+                .overlay(alignment: .bottomTrailing) {
+                    PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                        RoundPhotoEditLabel()
                     }
-
-                    VStack(alignment: .leading, spacing: FloSpacing.xxs) {
-                        Text("VOICE INPUT")
-                            .font(.floLabel)
-                            .fontWeight(.bold)
-                            .foregroundColor(.floCharcoal)
-                            .tracking(1.5)
-                        Text("Tap to speak your thoughts")
-                            .font(.floBodySmall)
-                            .foregroundColor(.floGray)
-                    }
-
-                    Spacer()
-
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.floGray.opacity(0.5))
+                    .buttonStyle(.floPressed)
+                    .offset(y: 20)
+                    .padding(.trailing, 8)
+                    .accessibilityLabel(photoImage == nil ? "Add a photo" : "Change photo")
                 }
-                .padding(FloSpacing.lg)
+                .zIndex(1)
+
+            TextField(
+                "",
+                text: $entryTitle,
+                prompt: Text("ENTER TITLE HERE").foregroundStyle(Color.black)
+            )
+            .font(.system(size: 12, weight: .heavy))
+            .tracking(2.5)
+            .foregroundStyle(Color.black)
+            .textInputAutocapitalization(.characters)
+            .submitLabel(.next)
+            .padding(.horizontal, 28)
+            .padding(.top, 30)
+            .padding(.bottom, 14)
+            .accessibilityLabel("Title")
+
+            FloHairline()
+                .padding(.horizontal, 18)
+
+            ZStack(alignment: .topLeading) {
+                if entryBody.isEmpty {
+                    Text("Start typing here…")
+                        .font(.system(size: 16))
+                        .foregroundStyle(Color.floCharcoal)
+                        .padding(.top, 8)
+                        .padding(.leading, 5)
+                        .allowsHitTesting(false)
+                }
+                TextEditor(text: $entryBody)
+                    .font(.system(size: 16))
+                    .lineSpacing(16 * 0.7)
+                    .scrollContentBackground(.hidden)
+                    .frame(minHeight: 300)
+                    .accessibilityLabel("Entry")
             }
-            .buttonStyle(.floPressed)
+            .padding(.leading, 23)
+            .padding(.trailing, 44)
+            .padding(.top, 12)
+            .padding(.bottom, FloSpacing.md)
+            .overlay(alignment: .topTrailing) {
+                Button {
+                    FloHaptics.light()
+                    showVoiceEntry = true
+                } label: {
+                    Image(systemName: "mic")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(Color.floDeepTeal)
+                }
+                .buttonStyle(.floPressed)
+                .floHitTarget()
+                .padding(.trailing, 4)
+                .accessibilityLabel("Voice input")
+            }
         }
-        .accessibilityLabel("Voice input")
-        .accessibilityHint("Opens voice recording for journaling")
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .floShadow(FloShadow.raised)
     }
 
-    // MARK: - 4. Text card
-    private var textCard: some View {
-        cardWrapper {
-            Button {
-                FloHaptics.medium()
-                showTextEntry = true
-            } label: {
-                HStack(spacing: FloSpacing.md) {
-                    ZStack {
-                        Circle()
-                            .fill(Color.floSage.opacity(0.12))
-                            .frame(width: 56, height: 56)
-                        Image(systemName: "square.and.pencil")
-                            .font(.system(size: 24, weight: .medium))
-                            .foregroundColor(.floSage)
-                    }
+    // MARK: - Actions row
 
-                    VStack(alignment: .leading, spacing: FloSpacing.xxs) {
-                        Text("WRITE IT DOWN")
-                            .font(.floLabel)
-                            .fontWeight(.bold)
-                            .foregroundColor(.floCharcoal)
-                            .tracking(1.5)
-                        Text(entryTitle.isEmpty && entryBody.isEmpty
-                             ? "Title and body text"
-                             : (entryTitle.isEmpty ? entryBody : entryTitle))
-                            .font(.floBodySmall)
-                            .foregroundColor(.floGray)
-                            .lineLimit(1)
-                    }
-
-                    Spacer()
-
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.floGray.opacity(0.5))
-                }
-                .padding(FloSpacing.lg)
-            }
-            .buttonStyle(.floPressed)
-        }
-        .accessibilityLabel("Write it down")
-        .accessibilityHint("Opens title and body text fields")
-    }
-
-    // MARK: - Floating bottom buttons (LOG CYCLE + CLOSE)
-    private var floatingBottomButtons: some View {
+    private var actionRow: some View {
         HStack(spacing: FloSpacing.md) {
-            Button {
-                FloHaptics.medium()
+            OutlinedActionButton(title: "Log cycle", icon: "checkmark.circle") {
+                autosave()
                 showLogCycleModal = true
-            } label: {
-                HStack(spacing: FloSpacing.sm) {
-                    Image(systemName: "checkmark.circle")
-                        .font(.system(size: 18, weight: .medium))
-                    Text("LOG CYCLE")
-                        .tracking(1.5)
-                }
             }
-            .buttonStyle(FloSecondaryButtonStyle())
-            .accessibilityLabel("Log cycle")
 
-            Button(action: saveEntry) {
-                HStack(spacing: FloSpacing.sm) {
-                    if isSaving {
-                        FloLoadingIndicator(size: 16, color: .white, lineWidth: 2)
-                    } else {
-                        Image(systemName: "checkmark.circle")
-                            .font(.system(size: 18, weight: .medium))
-                        Text("SAVE")
-                            .tracking(1.5)
-                    }
-                }
-            }
-            .buttonStyle(FloPrimaryButtonStyle(isDisabled: !canSave || isSaving))
-            .disabled(!canSave || isSaving)
-            .accessibilityLabel("Save and close")
+            shareButton
+                .frame(width: 128)
         }
-        .padding(.horizontal, FloSpacing.lg)
-        .padding(.top, FloSpacing.md)
-        .padding(.bottom, FloSpacing.lg)
-        .background(
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .mask(
-                    LinearGradient(
-                        colors: [.clear, .black],
-                        startPoint: .top,
-                        endPoint: .init(x: 0.5, y: 0.4)
-                    )
-                )
-                .allowsHitTesting(false)
-        )
     }
 
-    // MARK: - Save gate
-    private var canSave: Bool {
-        selectedFeeling != nil || !entryTitle.isEmpty || !entryBody.isEmpty
+    @ViewBuilder
+    private var shareButton: some View {
+        let label = OutlinedActionLabel(title: "Share", icon: "square.and.arrow.up")
+        Group {
+            if let photoImage {
+                let image = Image(uiImage: photoImage)
+                ShareLink(
+                    item: image,
+                    subject: Text(shareSubject),
+                    message: Text(shareText),
+                    preview: SharePreview(shareSubject, image: image)
+                ) { label }
+            } else {
+                ShareLink(item: shareText, subject: Text(shareSubject)) { label }
+            }
+        }
+        .buttonStyle(.floPressed)
+        // Save first so what's shared is also what's kept.
+        .simultaneousGesture(TapGesture().onEnded { autosave() })
+        .accessibilityLabel("Share entry")
     }
 
-    // MARK: - Actions
-    private func saveEntry() {
-        guard canSave else {
-            // Empty form on CLOSE: dismiss without writing. (For a new
-            // entry this drops the empty draft; in edit mode `canSave`
-            // stays true as long as anything is present, so an existing
-            // entry can't be silently emptied this way.)
-            FloHaptics.light()
-            onDismiss()
-            return
+    private var shareSubject: String {
+        entryTitle.isEmpty ? "My journal · \(formattedDate)" : entryTitle
+    }
+
+    private var shareText: String {
+        var parts: [String] = []
+        if let selectedEmotion { parts.append("Feeling: \(selectedEmotion.rawValue)") }
+        if !entryTitle.isEmpty { parts.append(entryTitle) }
+        if !entryBody.isEmpty { parts.append(entryBody) }
+        return parts.isEmpty ? formattedDate : parts.joined(separator: "\n\n")
+    }
+
+    // MARK: - Photo import
+
+    @MainActor
+    private func importPhoto(_ item: PhotosPickerItem) async {
+        defer { selectedPhoto = nil }
+        guard let data = try? await item.loadTransferable(type: Data.self),
+              let image = UIImage(data: data) else { return }
+        withAnimation(FloAnimation.springSnappy) {
+            photoImage = image
         }
+        photoDirty = true
+    }
 
-        FloHaptics.light()
-        isSaving = true
+    // MARK: - Save
 
-        let emotion = selectedFeeling.flatMap { feelingToEmotion[$0] }
-            ?? entry?.emotion
-            ?? .glad
-        let fullNote = entryTitle.isEmpty
-            ? entryBody
-            : (entryBody.isEmpty ? entryTitle : "\(entryTitle)\n\(entryBody)")
+    private var composedNote: String {
+        let title = entryTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let body = entryBody.trimmingCharacters(in: .whitespacesAndNewlines)
+        if title.isEmpty { return body }
+        return body.isEmpty ? title : "\(title)\n\(body)"
+    }
+
+    private func close() {
+        autosave()
+        onDismiss()
+    }
+
+    /// Writes the entry if a feeling is picked and something changed.
+    /// Idempotent: repeated calls with no edits write nothing.
+    private func autosave() {
+        guard let emotion = selectedEmotion else { return }
+        let note = composedNote
         let phase = CycleManager.shared.phase(for: entryDate)
 
-        if let existing = entry {
-            // Photo state for the updated entry:
-            //  - image present: re-save unconditionally so a swap to a
-            //    different image overwrites the JPEG on disk in-place.
-            //  - image cleared: delete the file and null out the URL.
-            //  - no prior photo, no current photo: leave URL nil.
-            let updatedPhotoURL: String?
-            if let photoImage {
-                updatedPhotoURL = JournalPhotoStore.save(photoImage, for: existing.id)
-                    ?? existing.userPhotoURL
-            } else if existing.userPhotoURL != nil {
-                JournalPhotoStore.delete(for: existing.id)
-                updatedPhotoURL = nil
-            } else {
-                updatedPhotoURL = nil
-            }
+        if let existing = currentEntry {
+            guard existing.emotion != emotion || existing.note != note || photoDirty else { return }
 
+            var photoURL = existing.userPhotoURL
+            if photoDirty, let photoImage {
+                photoURL = JournalPhotoStore.save(photoImage, for: existing.id) ?? photoURL
+            }
             let updated = JournalEntry(
                 id: existing.id,
-                date: entryDate,
+                date: existing.date,
                 emotion: emotion,
-                intensity: selectedIntensity,
-                note: fullNote,
+                intensity: existing.intensity,
+                note: note,
                 cyclePhase: phase,
-                userPhotoURL: updatedPhotoURL
+                userPhotoURL: photoURL
             )
             journalManager.updateEntry(updated)
+            currentEntry = updated
         } else {
             var new = JournalEntry(
                 date: entryDate,
                 emotion: emotion,
-                intensity: selectedIntensity,
-                note: fullNote,
+                intensity: 3,
+                note: note,
                 cyclePhase: phase
             )
-            if let photoImage {
+            if photoDirty, let photoImage {
                 new.userPhotoURL = JournalPhotoStore.save(photoImage, for: new.id)
             }
             journalManager.addEntry(new)
+            // addEntry may merge into an entry that appeared for this day in
+            // the meantime, so re-read what the store now holds.
+            currentEntry = journalManager.entry(for: entryDate) ?? new
         }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-            isSaving = false
-            FloHaptics.success()
-            onDismiss()
-        }
-    }
-}
-
-// MARK: - Text Entry Drawer
-/// A full-screen sheet for writing a journal entry's title and body.
-/// Mirrors the voice entry flow so both modalities feel parallel.
-struct TextEntryView: View {
-    let initialTitle: String
-    let initialBody: String
-    var onComplete: (_ title: String, _ body: String) -> Void
-    var onDismiss: () -> Void
-
-    @State private var title: String = ""
-    @State private var bodyText: String = ""
-    @State private var hasAppeared: Bool = false
-    @State private var showVoice: Bool = false
-    @FocusState private var focused: Field?
-
-    enum Field {
-        case title, body
-    }
-
-    var body: some View {
-        ZStack {
-            Color.floBackground.ignoresSafeArea()
-
-            VStack(spacing: 0) {
-                HStack {
-                    Spacer()
-                    Capsule()
-                        .fill(Color.floGray.opacity(0.3))
-                        .frame(width: 36, height: 5)
-                    Spacer()
-                }
-                .padding(.top, FloSpacing.sm)
-                .padding(.bottom, FloSpacing.md)
-
-                HStack(alignment: .center) {
-                    Text("Write it down")
-                        .font(.floSerif(size: 28))
-                        .foregroundColor(.floCharcoal)
-                        .accessibilityAddTraits(.isHeader)
-
-                    Spacer()
-
-                    Button {
-                        FloHaptics.medium()
-                        focused = nil
-                        showVoice = true
-                    } label: {
-                        ZStack {
-                            Circle()
-                                .fill(Color.floSage.opacity(0.12))
-                                .frame(width: 40, height: 40)
-                            Image(systemName: "mic.fill")
-                                .font(.system(size: 18, weight: .medium))
-                                .foregroundColor(.floSage)
-                        }
-                    }
-                    .buttonStyle(.floPressed)
-                    .accessibilityLabel("Dictate")
-                    .accessibilityHint("Opens voice recording to fill title and body")
-                }
-                .padding(.horizontal, FloSpacing.lg)
-                .padding(.bottom, FloSpacing.lg)
-
-                TextField("Title", text: $title)
-                    .font(.floLabel)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.floCharcoal)
-                    .tracking(1)
-                    .padding(.horizontal, FloSpacing.lg)
-                    .padding(.vertical, FloSpacing.md)
-                    .background(Color.white)
-                    .cornerRadius(FloRadius.md)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: FloRadius.md)
-                            .stroke(
-                                focused == .title ? Color.floSage : Color.floGray.opacity(0.3),
-                                lineWidth: focused == .title ? 2 : 1
-                            )
-                    )
-                    .focused($focused, equals: .title)
-                    .submitLabel(.next)
-                    .onSubmit { focused = .body }
-                    .padding(.horizontal, FloSpacing.lg)
-                    .animation(FloAnimation.easeOutQuick, value: focused)
-                    .accessibilityLabel("Journal entry title")
-
-                ZStack(alignment: .topLeading) {
-                    if bodyText.isEmpty {
-                        Text("Start typing here...")
-                            .font(.floBodyMedium)
-                            .foregroundColor(.floGray)
-                            .padding(.top, FloSpacing.md + 4)
-                            .padding(.horizontal, FloSpacing.lg + 4)
-                            .allowsHitTesting(false)
-                    }
-
-                    TextEditor(text: $bodyText)
-                        .font(.floBodyMedium)
-                        .foregroundColor(.floCharcoal)
-                        .scrollContentBackground(.hidden)
-                        .padding(.horizontal, FloSpacing.md)
-                        .padding(.vertical, FloSpacing.sm)
-                        .focused($focused, equals: .body)
-                        .accessibilityLabel("Journal entry content")
-                }
-                .background(Color.white)
-                .cornerRadius(FloRadius.md)
-                .overlay(
-                    RoundedRectangle(cornerRadius: FloRadius.md)
-                        .stroke(
-                            focused == .body ? Color.floSage : Color.floGray.opacity(0.3),
-                            lineWidth: focused == .body ? 2 : 1
-                        )
-                )
-                .padding(.horizontal, FloSpacing.lg)
-                .padding(.top, FloSpacing.md)
-                .animation(FloAnimation.easeOutQuick, value: focused)
-
-                Spacer(minLength: FloSpacing.lg)
-
-                HStack(spacing: FloSpacing.md) {
-                    Button {
-                        FloHaptics.light()
-                        onDismiss()
-                    } label: {
-                        Text("Cancel")
-                            .font(.floButton)
-                            .foregroundColor(.floGray)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, FloSpacing.md)
-                            .background(Color.white)
-                            .cornerRadius(FloRadius.full)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: FloRadius.full)
-                                    .stroke(Color.floGray.opacity(0.3), lineWidth: 1)
-                            )
-                    }
-                    .buttonStyle(.floPressed)
-
-                    Button {
-                        FloHaptics.success()
-                        onComplete(title, bodyText)
-                    } label: {
-                        Text("Done")
-                            .font(.floButton)
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, FloSpacing.md)
-                            .background(Color.floSage)
-                            .cornerRadius(FloRadius.full)
-                            .shadow(color: Color.floSage.opacity(0.3), radius: 8, x: 0, y: 4)
-                    }
-                    .buttonStyle(.floPressed)
-                }
-                .padding(.horizontal, FloSpacing.lg)
-                .padding(.bottom, FloSpacing.xl)
-            }
-        }
-        .onAppear {
-            title = initialTitle
-            bodyText = initialBody
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                focused = .title
-                hasAppeared = true
-            }
-        }
-        .sheet(isPresented: $showVoice) {
-            VoiceEntryView(
-                onComplete: { voicedTitle, voicedBody in
-                    title = voicedTitle
-                    bodyText = voicedBody
-                    showVoice = false
-                },
-                onDismiss: { showVoice = false }
-            )
-            .presentationDetents([.large])
-            .presentationDragIndicator(.hidden)
-        }
-    }
-}
-
-// MARK: - Date Picker Sheet
-struct DatePickerSheet: View {
-    @Binding var selectedDate: Date
-    @Binding var isPresented: Bool
-
-    var body: some View {
-        VStack(spacing: FloSpacing.md) {
-            Capsule()
-                .fill(Color.floGray.opacity(0.3))
-                .frame(width: 36, height: 4)
-                .padding(.top, FloSpacing.sm)
-
-            Text("Select Date")
-                .font(.floDisplaySmall)
-                .foregroundColor(.floCharcoal)
-
-            DatePicker(
-                "",
-                selection: $selectedDate,
-                in: ...Date(),
-                displayedComponents: .date
-            )
-            .datePickerStyle(.graphical)
-            .labelsHidden()
-
-            Button {
-                FloHaptics.light()
-                isPresented = false
-            } label: {
-                Text("Done")
-                    .font(.floButton)
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, FloSpacing.md)
-                    .background(Color.floSage)
-                    .cornerRadius(FloRadius.full)
-            }
-            .buttonStyle(.floPressed)
-            .padding(.horizontal, FloSpacing.lg)
-            .padding(.bottom, FloSpacing.lg)
-        }
-        .background(Color.floBackground)
+        photoDirty = false
+        FloHaptics.success()
     }
 }
 
 #Preview {
-    JournalEntryView(
-        journalManager: JournalManager.shared,
-        onDismiss: {}
-    )
+    Color.gray.sheet(isPresented: .constant(true)) {
+        JournalEntryView(journalManager: JournalManager.shared, onDismiss: {})
+    }
 }
