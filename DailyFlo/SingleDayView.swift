@@ -21,7 +21,6 @@ struct SingleDayView: View {
     @State private var selectedTab: PhaseContentTab = .body
     @State private var showLogCycle = false
     @State private var showJournalEntry = false
-    @State private var didLogCycle = false
 
     private let cycleManager = CycleManager.shared
     private let journalManager = JournalManager.shared
@@ -78,24 +77,11 @@ struct SingleDayView: View {
                 .padding(.bottom, FloSpacing.md)
         }
         .background(Color.floBackground.ignoresSafeArea())
-        .sheet(isPresented: $showLogCycle, onDismiss: {
-            // Fires after the LogCycle sheet finishes dismissing. If the user
-            // actually logged (not cancelled) and we were presented from the
-            // calendar, collapse this sheet too so we land back on the calendar.
-            if didLogCycle {
-                didLogCycle = false
-                onLoggedCycle?()
-            }
-        }) {
-            LogCycleView(
-                selectedDate: date,
-                onSave: { startDate in
-                    didLogCycle = true
-                    Task { await CycleManager.shared.logCycle(startDate: startDate) }
-                },
-                onDismiss: { showLogCycle = false }
-            )
-        }
+        // After a real log (not a cancel), collapse this sheet too when the
+        // calendar presented it, so we land back on the calendar.
+        .logCycleModal(isPresented: $showLogCycle, date: date, onLogged: {
+            onLoggedCycle?()
+        })
         .sheet(isPresented: $showJournalEntry) {
             // The one-entry-per-day resolver in JournalEntryView opens this
             // day's existing entry when there is one, else composes a new one.

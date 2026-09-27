@@ -89,7 +89,7 @@ struct PaywallView: View {
 
     private var topBar: some View {
         VStack(spacing: 0) {
-            // In-content drag grabber, matching PhaseDetailView. We render
+            // In-content drag grabber, matching the day sheet. We render
             // our own rather than using `.presentationDragIndicator(.visible)`
             // so the affordance sits visually inside the sheet's cream
             // surface instead of floating above it on the dim backdrop.

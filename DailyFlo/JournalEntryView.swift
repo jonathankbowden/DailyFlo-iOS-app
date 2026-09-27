@@ -162,17 +162,7 @@ struct JournalEntryView: View {
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.hidden)
-        .sheet(isPresented: $showLogCycleModal) {
-            LogCycleView(
-                selectedDate: entryDate,
-                onSave: { date in
-                    Task { @MainActor in
-                        await CycleManager.shared.logCycle(startDate: date)
-                    }
-                },
-                onDismiss: { showLogCycleModal = false }
-            )
-        }
+        .logCycleModal(isPresented: $showLogCycleModal, date: entryDate)
         .alert("Delete Entry?", isPresented: $showDeleteConfirm) {
             Button("Delete", role: .destructive) {
                 if let entry {
