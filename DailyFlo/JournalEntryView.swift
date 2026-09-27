@@ -516,7 +516,15 @@ struct JournalEntryView: View {
             journalManager.addEntry(new)
             // addEntry may merge into an entry that appeared for this day in
             // the meantime, so re-read what the store now holds.
-            currentEntry = journalManager.entry(for: entryDate) ?? new
+            let stored = journalManager.entry(for: entryDate) ?? new
+            currentEntry = stored
+            if stored.note != note {
+                // Merged with earlier text for the day: show the merged note
+                // so the next autosave doesn't overwrite it with ours alone.
+                let parts = Self.splitNote(stored.note)
+                entryTitle = parts.title
+                entryBody = parts.body
+            }
         }
         photoDirty = false
         FloHaptics.success()

@@ -114,6 +114,11 @@ enum JournalPhotoStore {
         UIImage(contentsOfFile: pendingURL(for: day).path)
     }
 
+    /// Removes any pending photo for `day`.
+    static func discardPending(for day: Date) {
+        try? FileManager.default.removeItem(at: pendingURL(for: day))
+    }
+
     /// Moves the pending photo for `day` onto `entryID`'s file and returns the
     /// value to store in `userPhotoURL`, or nil if nothing is pending.
     static func claimPending(for day: Date, entryID: UUID) -> String? {

@@ -61,6 +61,9 @@ class JournalManager {
            let claimed = JournalPhotoStore.claimPending(for: entry.date, entryID: entry.id) {
             entry.userPhotoURL = claimed
         }
+        // Once the day has an entry, a leftover pending photo is never shown
+        // again (the entry brought its own), so don't leave it on disk.
+        JournalPhotoStore.discardPending(for: entry.date)
 
         // One-entry-per-day backstop (data layer). Primary enforcement lives in
         // the create surfaces: when a day already has an entry they open it for
