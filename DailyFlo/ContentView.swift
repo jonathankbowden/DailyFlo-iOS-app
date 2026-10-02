@@ -24,6 +24,15 @@ struct ContentView: View {
     @State private var fabRotation: Double = 0
     @State private var previousTab = 0
 
+    // Single Pro gate for the whole app. Entitlement is checked once, here at
+    // the top level, right after onboarding/sign-in land the user on the tabs —
+    // never per feature. `hasEvaluatedProGate` keeps it to one evaluation per
+    // launch. Day 5 moves this gate to the end of onboarding; keeping it as one
+    // modifier on the tab container is what makes that move a lift-and-shift.
+    private let subs = SubscriptionManager.shared
+    @State private var showProGate = false
+    @State private var hasEvaluatedProGate = false
+
     var body: some View {
         ZStack {
             // Main content
@@ -57,6 +66,33 @@ struct ContentView: View {
                     showJournalEntry = false
                 }
             )
+        }
+        .task {
+            await evaluateProGate()
+        }
+        .onChange(of: subs.isPro) { _, isPro in
+            // Purchased or restored while the gate is up — drop it immediately.
+            if isPro { showProGate = false }
+        }
+        .sheet(isPresented: $showProGate) {
+            PaywallView()
+                .presentationDetents([.large])
+                .presentationDragIndicator(.hidden)
+        }
+    }
+
+    /// Resolves entitlement once per launch and presents the paywall when the
+    /// user has neither an active subscription nor an active trial. In
+    /// RevenueCat an in-progress free trial keeps the entitlement `isActive`,
+    /// so `isPro` is true throughout the trial — this gate only fires once the
+    /// trial has lapsed (or was never started). We refresh CustomerInfo first
+    /// so a Pro/trial user never sees the paywall flash before state settles.
+    private func evaluateProGate() async {
+        guard !hasEvaluatedProGate else { return }
+        hasEvaluatedProGate = true
+        await subs.refreshCustomerInfo()
+        if !subs.isPro {
+            showProGate = true
         }
     }
 
@@ -311,96 +347,13 @@ struct ProfileTabView: View {
     }
 }
 
-/// Pause tab entry. Free users see `LockedMeditationView` and get a
-/// `PaywallView` auto-presented the first time they land on this tab during
-/// a session. After dismissing the paywall they stay on the locked preview
-/// with a manual "Unlock DailyFLO Pro" CTA. When `isPro` flips on (real
-/// purchase, restore, or the DEBUG override) the gate falls away and
-/// `MeditationMainView` takes over.
+/// Pause tab entry. The meditation player opens directly — Pro access is no
+/// longer checked here. Entitlement is gated once at the top level (see the
+/// `evaluateProGate` modifier on `ContentView`), so by the time the user can
+/// reach this tab the single launch-level check has already run.
 struct MeditationView: View {
-    private let subs = SubscriptionManager.shared
-    @State private var showPaywall = false
-    @State private var hasAutoPresentedThisVisit = false
-
     var body: some View {
-        Group {
-            if subs.isPro {
-                MeditationMainView()
-            } else {
-                LockedMeditationView { showPaywall = true }
-            }
-        }
-        .onAppear {
-            if !subs.isPro && !hasAutoPresentedThisVisit {
-                hasAutoPresentedThisVisit = true
-                showPaywall = true
-            }
-        }
-        .onDisappear {
-            // Reset the one-shot so re-entering the tab auto-presents again.
-            hasAutoPresentedThisVisit = false
-        }
-        .onChange(of: subs.isPro) { _, isPro in
-            if isPro { showPaywall = false }
-        }
-        .sheet(isPresented: $showPaywall) {
-            PaywallView()
-                .presentationDetents([.large])
-                .presentationDragIndicator(.hidden)
-        }
-    }
-}
-
-/// Calm gated preview shown to free users on the Pause tab. Mirrors the
-/// meditation surface's palette without disclosing the actual library.
-struct LockedMeditationView: View {
-    let onUnlock: () -> Void
-
-    var body: some View {
-        ZStack {
-            Color.floBackground.ignoresSafeArea()
-
-            VStack(spacing: FloSpacing.xl) {
-                Spacer()
-
-                ZStack {
-                    Circle()
-                        .fill(Color.floMint.opacity(0.45))
-                        .frame(width: 128, height: 128)
-                    Image("pause")
-                        .renderingMode(.template)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 52, height: 52)
-                        .foregroundColor(.floSage)
-                }
-
-                VStack(spacing: FloSpacing.sm) {
-                    Text("Pause is part of Pro")
-                        .font(.floDisplayMedium)
-                        .foregroundColor(.floCharcoal)
-                        .multilineTextAlignment(.center)
-                    Text("Meditations with original music — a growing library to settle, restore, and reconnect.")
-                        .font(.floBodyMedium)
-                        .foregroundColor(.floGray)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, FloSpacing.xl)
-                }
-
-                Button {
-                    FloHaptics.medium()
-                    onUnlock()
-                } label: {
-                    Text("Unlock DailyFLO Pro")
-                }
-                .buttonStyle(.floPrimary(disabled: false))
-                .padding(.horizontal, FloSpacing.lg)
-
-                Spacer()
-                Spacer().frame(height: 100) // sit above the tab bar
-            }
-        }
-        .accessibilityElement(children: .contain)
+        MeditationMainView()
     }
 }
 

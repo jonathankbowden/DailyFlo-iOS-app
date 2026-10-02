@@ -33,6 +33,11 @@ struct ProfileMainView: View {
     #endif
     @State private var signOutErrorMessage: String?
 
+    // Restore Purchases (reachable from Settings, independent of the paywall).
+    @State private var isRestoring = false
+    @State private var restoreMessage: String?
+    @State private var restoreToastType: FloToastStyle.ToastType = .info
+
     @State private var profile: UserProfileRow?
     @State private var profileEmail: String?
     @State private var isLoadingProfile = false
@@ -145,6 +150,15 @@ struct ProfileMainView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     .padding(.bottom, FloSpacing.xxl)
                     .animation(FloAnimation.springGentle, value: signOutErrorMessage)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if let message = restoreMessage {
+                Text(message)
+                    .floToast(restoreToastType)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .padding(.bottom, FloSpacing.xxl)
+                    .animation(FloAnimation.springGentle, value: restoreMessage)
             }
         }
         #if DEBUG
@@ -575,9 +589,12 @@ struct ProfileMainView: View {
                     .fadeIn(delay: hasAppeared ? 0 : 0.3 + Double(index) * 0.05)
             }
 
+            restorePurchasesRow
+                .fadeIn(delay: hasAppeared ? 0 : 0.3 + Double(settingsItems.count) * 0.05)
+
             #if DEBUG
             developerRow
-                .fadeIn(delay: hasAppeared ? 0 : 0.3 + Double(settingsItems.count) * 0.05)
+                .fadeIn(delay: hasAppeared ? 0 : 0.3 + Double(settingsItems.count + 1) * 0.05)
             #endif
 
             // Sign out
@@ -691,6 +708,67 @@ struct ProfileMainView: View {
         }
         .buttonStyle(.floPressed)
         .accessibilityLabel(title)
+    }
+
+    // MARK: - Restore Purchases
+    //
+    // App Store requires a restore affordance outside the paywall. Runs the
+    // same RevenueCat restore the paywall uses and reports the result inline
+    // with a toast — no sheet, no navigation.
+    private var restorePurchasesRow: some View {
+        Button(action: { Task { await performRestore() } }) {
+            HStack {
+                if isRestoring {
+                    FloLoadingIndicator(size: 20, color: .floCharcoal, lineWidth: 2)
+                } else {
+                    Image(systemName: "arrow.clockwise.circle")
+                        .font(.system(size: 20))
+                        .foregroundColor(.floCharcoal)
+                }
+
+                Text("Restore Purchases")
+                    .font(.floBodyMedium)
+                    .foregroundColor(.floCharcoal)
+
+                Spacer()
+            }
+            .padding(.horizontal, FloSpacing.lg)
+            .padding(.vertical, FloSpacing.md)
+            .background(Color.white)
+            .cornerRadius(FloRadius.lg)
+        }
+        .buttonStyle(.floPressed)
+        .disabled(isRestoring)
+        .accessibilityLabel("Restore purchases")
+        .accessibilityHint("Restores a previous DailyFLO Pro purchase on this Apple ID")
+    }
+
+    private func performRestore() async {
+        guard !isRestoring else { return }
+        FloHaptics.light()
+        isRestoring = true
+        defer { isRestoring = false }
+
+        do {
+            switch try await SubscriptionManager.shared.restorePurchases() {
+            case .restored:
+                FloHaptics.success()
+                showRestoreToast("DailyFLO Pro restored.", type: .success)
+            case .nothingToRestore:
+                showRestoreToast("No active DailyFLO Pro subscription found on this Apple ID.", type: .info)
+            }
+        } catch {
+            FloHaptics.error()
+            showRestoreToast("Couldn't restore purchases. \(error.localizedDescription)", type: .error)
+        }
+    }
+
+    private func showRestoreToast(_ message: String, type: FloToastStyle.ToastType) {
+        restoreToastType = type
+        withAnimation(FloAnimation.springGentle) { restoreMessage = message }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            withAnimation { restoreMessage = nil }
+        }
     }
 
     #if DEBUG
