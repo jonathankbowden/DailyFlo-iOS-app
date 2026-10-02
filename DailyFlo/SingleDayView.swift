@@ -4,9 +4,9 @@
 //
 //  Created by Jonathan Bowden on 2/3/26.
 //
-//  The day sheet: opened from a calendar day (and from Home's phase cards
-//  for today). Phase header, MIND | BODY | SOUL tabs over a swipeable card
-//  carousel, and LOG CYCLE + ADD/EDIT ENTRY at the bottom.
+//  The day sheet: opened from a calendar day. Phase header, MIND | BODY |
+//  SOUL tabs over a swipeable card carousel, and LOG CYCLE + ADD/EDIT ENTRY
+//  at the bottom.
 //
 
 import SwiftUI

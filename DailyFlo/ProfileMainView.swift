@@ -10,11 +10,6 @@ import SwiftUI
 
 // MARK: - Profile Main View
 struct ProfileMainView: View {
-    /// When true, render as content-only (no full-bleed background, no inner
-    /// ScrollView) so this view can be embedded inside a parent ScrollView —
-    /// e.g. the Profile tab that stacks Home + ProfileMainView in one scroll.
-    var isEmbedded: Bool = false
-
     @State private var selectedTab: ProfileTab = .cycle
     @State private var hasAppeared = false
     @State private var showConnect = false
@@ -42,8 +37,6 @@ struct ProfileMainView: View {
     @State private var profileEmail: String?
     @State private var isLoadingProfile = false
     @State private var profileLoadFailed = false
-
-    @Environment(\.dismiss) private var dismiss
 
     private let cycleManager = CycleManager.shared
 
@@ -79,41 +72,35 @@ struct ProfileMainView: View {
     }
 
     var body: some View {
-        Group {
-            if isEmbedded {
-                profileContent
-            } else {
-                ZStack {
-                    Color.white.ignoresSafeArea()
+        ZStack {
+            Color.white.ignoresSafeArea()
 
+            VStack(spacing: 0) {
+                headerView
+                    .fadeIn(delay: hasAppeared ? 0 : 0.1)
+
+                greetingSection
+                    .fadeIn(delay: hasAppeared ? 0 : 0.15)
+
+                Rectangle()
+                    .fill(Color(hex: "E5E5E5"))
+                    .frame(height: 1)
+                    .padding(.top, FloSpacing.lg)
+
+                tabSelector
+                    .fadeIn(delay: hasAppeared ? 0 : 0.2)
+
+                Rectangle()
+                    .fill(Color(hex: "707070"))
+                    .frame(height: 1)
+
+                ScrollView {
                     VStack(spacing: 0) {
-                        headerView
-                            .fadeIn(delay: hasAppeared ? 0 : 0.1)
-
-                        greetingSection
-                            .fadeIn(delay: hasAppeared ? 0 : 0.15)
-
-                        Rectangle()
-                            .fill(Color(hex: "E5E5E5"))
-                            .frame(height: 1)
-                            .padding(.top, FloSpacing.lg)
-
-                        tabSelector
-                            .fadeIn(delay: hasAppeared ? 0 : 0.2)
-
-                        Rectangle()
-                            .fill(Color(hex: "707070"))
-                            .frame(height: 1)
-
-                        ScrollView {
-                            VStack(spacing: 0) {
-                                tabContent
-                            }
-                            .padding(.bottom, 140)
-                        }
-                        .background(Color(hex: "F8F8F8"))
+                        tabContent
                     }
+                    .padding(.bottom, 140)
                 }
+                .background(Color(hex: "F8F8F8"))
             }
         }
         .onAppear {
@@ -166,35 +153,6 @@ struct ProfileMainView: View {
             SubscriptionDebugView(onClose: { showSubscriptionDebug = false })
         }
         #endif
-    }
-
-    // MARK: - Embedded content (no inner ScrollView, no full-bleed background)
-    @ViewBuilder
-    private var profileContent: some View {
-        VStack(spacing: 0) {
-            headerView
-                .fadeIn(delay: hasAppeared ? 0 : 0.1)
-
-            greetingSection
-                .fadeIn(delay: hasAppeared ? 0 : 0.15)
-
-            Rectangle()
-                .fill(Color(hex: "E5E5E5"))
-                .frame(height: 1)
-                .padding(.top, FloSpacing.lg)
-
-            tabSelector
-                .fadeIn(delay: hasAppeared ? 0 : 0.2)
-
-            Rectangle()
-                .fill(Color(hex: "707070"))
-                .frame(height: 1)
-
-            VStack(spacing: 0) {
-                tabContent
-            }
-            .background(Color(hex: "F8F8F8"))
-        }
     }
 
     @ViewBuilder
@@ -302,31 +260,14 @@ struct ProfileMainView: View {
     // MARK: - Header
     private var headerView: some View {
         HStack {
-            if isEmbedded {
-                // Profile/partner icon — branding when embedded in the Profile tab.
-                Image("partner")
-                    .renderingMode(.template)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 24, height: 24)
-                    .foregroundColor(.floCharcoal)
-                    .accessibilityLabel("Profile")
-            } else {
-                // Back affordance when presented as its own page.
-                Button {
-                    FloHaptics.light()
-                    dismiss()
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(.floCharcoal)
-                        .frame(width: 32, height: 32)
-                        .contentShape(Rectangle())
-                }
-                .floHitTarget()
-                .accessibilityLabel("Back")
-                .accessibilityHint("Returns to the dashboard")
-            }
+            // Profile/partner icon — branding for the Profile tab.
+            Image("partner")
+                .renderingMode(.template)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 24, height: 24)
+                .foregroundColor(.floCharcoal)
+                .accessibilityLabel("Profile")
 
             Spacer()
 

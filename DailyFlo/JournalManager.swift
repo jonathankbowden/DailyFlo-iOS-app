@@ -53,18 +53,6 @@ class JournalManager {
     // MARK: - CRUD Operations
 
     func addEntry(_ entry: JournalEntry) {
-        // A photo picked on Home before the day had an entry waits as the
-        // day's pending photo; the first entry saved for that day adopts it.
-        var entry = entry
-        if entry.userPhotoURL == nil,
-           self.entry(for: entry.date)?.userPhotoURL == nil,
-           let claimed = JournalPhotoStore.claimPending(for: entry.date, entryID: entry.id) {
-            entry.userPhotoURL = claimed
-        }
-        // Once the day has an entry, a leftover pending photo is never shown
-        // again (the entry brought its own), so don't leave it on disk.
-        JournalPhotoStore.discardPending(for: entry.date)
-
         // One-entry-per-day backstop (data layer). Primary enforcement lives in
         // the create surfaces: when a day already has an entry they open it for
         // editing instead of presenting a blank composer. This catches anything

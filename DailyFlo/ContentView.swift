@@ -8,16 +8,8 @@
 import SwiftUI
 
 struct ContentView: View {
-    let greeting: SplashGreeting
-    var animateFromSplash: Bool
-
-    init(greeting: SplashGreeting = .random, animateFromSplash: Bool = false) {
-        self.greeting = greeting
-        self.animateFromSplash = animateFromSplash
-    }
-
-    // 0=Profile (dashboard + account), 1=Calendar, 2=Journal, 3=Meditation.
-    // Profile is the default tab on launch per the locked planned-UI changes.
+    // Tabs, left to right: 0=Calendar, 1=Journal, [+ FAB], 2=Profile, 3=Pause.
+    // Calendar is the default tab on launch — it's the app's home screen.
     @State private var selectedTab = 0
     @State private var showJournalEntry = false
     @State private var fabScale: CGFloat = 1.0
@@ -37,13 +29,13 @@ struct ContentView: View {
         ZStack {
             // Main content
             TabView(selection: $selectedTab) {
-                ProfileTabView(greeting: greeting, animateFromSplash: animateFromSplash)
+                CalendarView()
                     .tag(0)
 
-                CalendarView()
+                JournalView()
                     .tag(1)
 
-                JournalView()
+                ProfileMainView()
                     .tag(2)
 
                 MeditationView()
@@ -102,21 +94,21 @@ struct ContentView: View {
             let bottomSafeArea = geometry.safeAreaInsets.bottom
 
             ZStack(alignment: .bottom) {
-                // Black tab bar with icons — L→R: Profile, Calendar, [+], Journal, Pause
+                // Black tab bar with icons — L→R: Calendar, Journal, [+], Profile, Pause
                 VStack(spacing: 0) {
                     HStack(spacing: 0) {
-                        // Profile (dashboard + account) — default tab
-                        tabBarItemCustom(icon: "partner", tag: 0, size: 24)
+                        // Calendar — home / default tab
+                        tabBarItemCustom(icon: "calendar", tag: 0, size: 24)
 
-                        // Calendar
-                        tabBarItemCustom(icon: "calendar", tag: 1, size: 24)
+                        // Journal
+                        tabBarItemCustom(icon: "journal", tag: 1, size: 24)
 
                         // Spacer for centered FAB alignment
                         Spacer()
                             .frame(width: 80)
 
-                        // Journal
-                        tabBarItemCustom(icon: "journal", tag: 2, size: 24)
+                        // Profile (account & settings)
+                        tabBarItemCustom(icon: "partner", tag: 2, size: 24)
 
                         // Pause (Meditation)
                         tabBarItemCustom(icon: "pause", tag: 3, size: 24)
@@ -236,9 +228,9 @@ struct ContentView: View {
 
     private func tabAccessibilityLabel(for tag: Int) -> String {
         switch tag {
-        case 0: return "Profile, your dashboard and account"
-        case 1: return "Calendar, view your cycle"
-        case 2: return "Journal, view your entries"
+        case 0: return "Calendar, view your cycle"
+        case 1: return "Journal, view your entries"
+        case 2: return "Profile, your account and settings"
         case 3: return "Pause, guided meditation sessions"
         default: return "Tab"
         }
@@ -266,84 +258,7 @@ struct TabBarButtonStyle: ButtonStyle {
 
 struct JournalView: View {
     var body: some View {
-        // Greeting + search header on top, with the 2D day-card grid below
-        // when search is empty (or filtered results when it isn't).
         JournalBaseView()
-    }
-}
-
-/// Profile tab: dashboard only. Account/stats/sign-out live on their own
-/// page behind the "My Settings" row at the bottom of the dashboard scroll
-/// (presented as a fullScreenCover).
-struct ProfileTabView: View {
-    let greeting: SplashGreeting
-    let animateFromSplash: Bool
-
-    @State private var showSettings = false
-
-    var body: some View {
-        ZStack {
-            Color.floBackground.ignoresSafeArea()
-
-            ScrollView {
-                VStack(spacing: 0) {
-                    HomeView(greeting: greeting, animateFromSplash: animateFromSplash, isEmbedded: true)
-
-                    mySettingsButton
-                        .padding(.horizontal, FloSpacing.lg)
-                        .padding(.top, FloSpacing.xl)
-                }
-            }
-            // Keep the last cards fully above the tab bar and the FAB that
-            // pokes up out of it (bar 88 + FAB overhang + breathing room).
-            .contentMargins(.bottom, 160, for: .scrollContent)
-            .scrollIndicators(.hidden)
-            .ignoresSafeArea(edges: .top)
-        }
-        .fullScreenCover(isPresented: $showSettings) {
-            ProfileMainView()
-        }
-    }
-
-    /// Quiet utility entry to the settings page. Styled as a settings-list
-    /// row (white card + gear + chevron) rather than the loud sage primary
-    /// CTA — this is an "account & settings" affordance, not a primary
-    /// action. Mirrors the row treatment used inside `ProfileMainView`.
-    private var mySettingsButton: some View {
-        Button {
-            FloHaptics.light()
-            showSettings = true
-        } label: {
-            HStack(spacing: FloSpacing.md) {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundColor(.floCharcoal)
-
-                Text("My Settings")
-                    .font(.floBodyLarge.weight(.medium))
-                    .foregroundColor(.floCharcoal)
-
-                Spacer()
-
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.floGray)
-            }
-            .padding(.horizontal, FloSpacing.lg)
-            .padding(.vertical, FloSpacing.md)
-            .frame(maxWidth: .infinity)
-            .background(Color.white)
-            .cornerRadius(FloRadius.lg)
-            .shadow(
-                color: FloShadow.small.color,
-                radius: FloShadow.small.radius,
-                x: FloShadow.small.x,
-                y: FloShadow.small.y
-            )
-        }
-        .buttonStyle(.floPressed)
-        .accessibilityLabel("My Settings")
-        .accessibilityHint("Opens account settings, stats, and sign-out")
     }
 }
 

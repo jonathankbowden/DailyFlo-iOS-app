@@ -215,19 +215,6 @@ struct SheetGrabber: View {
     }
 }
 
-/// Small white check badge for filled Home cards.
-struct CheckBadge: View {
-    var body: some View {
-        Image(systemName: "checkmark")
-            .font(.system(size: 11, weight: .heavy))
-            .foregroundStyle(Color.floTeal)
-            .frame(width: 24, height: 24)
-            .background(Circle().fill(Color.white))
-            .floShadow(FloShadow.small)
-            .accessibilityHidden(true)
-    }
-}
-
 /// Round white button that overlaps a photo's bottom-right corner. The
 /// visible circle is 36pt; the tap area is padded out to 44.
 struct RoundPhotoEditLabel: View {

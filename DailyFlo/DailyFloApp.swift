@@ -90,7 +90,7 @@ struct DailyFloApp: App {
                         SupporterHomeView()
                             .transition(.opacity)
                     } else {
-                        ContentView(greeting: greeting, animateFromSplash: true)
+                        ContentView()
                             .transition(.opacity)
                             #if DEBUG
                             .task {

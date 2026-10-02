@@ -75,9 +75,7 @@ struct JournalEntryView: View {
             _entryDate = State(initialValue: day)
             _entryTitle = State(initialValue: "")
             _entryBody = State(initialValue: "")
-            // A photo picked on Home before the day had an entry shows here;
-            // JournalManager.addEntry attaches it when this entry first saves.
-            _photoImage = State(initialValue: JournalPhotoStore.pendingImage(for: day))
+            _photoImage = State(initialValue: nil)
         }
     }
 
