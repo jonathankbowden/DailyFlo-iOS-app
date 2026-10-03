@@ -494,7 +494,7 @@ struct DayCellWithPhase: View {
                 Text(label)
                     .font(.system(size: 10, weight: .medium))
                     .foregroundColor(.floGray)
-                    .offset(y: -22)
+                    .offset(y: -30)
             }
         }
         .frame(height: 56)
