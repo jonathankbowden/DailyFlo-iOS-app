@@ -9,6 +9,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 // MARK: - Shadow helper
 
@@ -91,6 +92,15 @@ struct ScreenHeader: View {
     var subtitle: String? = nil
     let leadingIcon: String
 
+    /// LUNARY 36pt has a 39.6pt line height per Figma (node 2383:2152).
+    /// `lineSpacing` only adds gaps *between* wrapped lines, so it's the delta
+    /// over the font's own line height — a single-line title is unaffected.
+    private var titleLineSpacing: CGFloat {
+        let targetLineHeight: CGFloat = 39.6
+        let naturalLineHeight = UIFont(name: "LUNARY free", size: 36)?.lineHeight ?? 36
+        return max(0, targetLineHeight - naturalLineHeight)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Icon + FLO wordmark on one row.
@@ -112,9 +122,10 @@ struct ScreenHeader: View {
             }
             .padding(.top, FloSpacing.md)
 
-            // Title — display serif, 40pt line height, top 47pt below the row.
+            // Title — LUNARY 36pt, 39.6pt line height, top 47pt below the row.
             Text(title)
-                .font(.floLunary(size: 40))
+                .font(.floLunary(size: 36))
+                .lineSpacing(titleLineSpacing)
                 .foregroundColor(.floCharcoal)
                 .accessibilityAddTraits(.isHeader)
                 .padding(.top, 47)
