@@ -67,10 +67,14 @@ struct CalendarView: View {
                     .frame(height: 1)
 
                 // Scrollable calendar with multiple months. Vertical-only.
-                // Each month leads with its own label row, so anchoring the
-                // current month's top (scrolledMonth = 0) to the viewport top
-                // puts the month label just under the sticky weekday row with
-                // today's week fully visible below it — no hardcoded nudge.
+                // Each month block carries its OWN Layout.screenMargin inset, so
+                // the scroll content is full viewport width: no horizontal
+                // padding sits outside scrollTargetLayout for the initial
+                // scrollPosition pass to skip, and the anchor's x (0.5) can't
+                // shift full-width content. Each month leads with its label row
+                // so anchoring the current month's top (scrolledMonth = 0) puts
+                // the label just under the sticky weekday row with today's week
+                // visible below — no hardcoded nudge.
                 ScrollView(.vertical) {
                     LazyVStack(spacing: 0) {
                         ForEach(monthOffsets, id: \.self) { monthOffset in
@@ -78,7 +82,6 @@ struct CalendarView: View {
                         }
                     }
                     .scrollTargetLayout()
-                    .padding(.horizontal, Layout.screenMargin)
                     .padding(.bottom, tabBarClearance) // clear the tab bar
                 }
                 .scrollPosition(id: $scrolledMonth, anchor: .top)
@@ -139,9 +142,12 @@ struct CalendarView: View {
 
         // Each month leads with a uniform label row (keeps month blocks equal
         // height so the LazyVStack offset math — and scrollPosition — stays
-        // exact), then the 7-column grid shared with the weekday header.
+        // exact), then the 7-column grid shared with the weekday header. The
+        // Layout.screenMargin inset lives HERE, inside the scroll content, so
+        // the grid's left edge aligns with the greeting and weekday row at 24pt
+        // on cold launch — no scroll API can move it.
         return VStack(spacing: 0) {
-            monthLabelRow(monthAbbrev)
+            monthLabelRow(monthAbbrev, firstDayColumn: firstWeekday)
 
             LazyVGrid(columns: CalendarColumns.gridItems, spacing: FloSpacing.xs) {
                 ForEach(Array(cellData.enumerated()), id: \.offset) { index, dayNumber in
@@ -165,20 +171,28 @@ struct CalendarView: View {
                 }
             }
         }
+        .padding(.horizontal, Layout.screenMargin)
     }
 
     // MARK: - Month label row
-    /// Left-aligned month abbreviation that heads each month's grid. Rendered
-    /// as a real row (not a negative-offset overlay) so it can't be clipped
-    /// when its month is anchored to the top of the scroll viewport.
-    private func monthLabelRow(_ abbrev: String) -> some View {
-        Text(abbrev)
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundColor(.floGray)
-            .tracking(1)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, FloSpacing.md)
-            .padding(.bottom, FloSpacing.sm)
+    /// Month abbreviation centered over the column of the month's first day
+    /// (NOV over Sunday for Nov 2026), ~27pt above that first week row, per
+    /// Brittany's frame (node 2383:2152). Laid out with the same
+    /// `CalendarColumns` as the grid so it tracks the first-day column exactly;
+    /// rendered as a real row (not a negative-offset overlay) so it can't be
+    /// clipped when its month is anchored to the top of the scroll viewport.
+    private func monthLabelRow(_ abbrev: String, firstDayColumn: Int) -> some View {
+        LazyVGrid(columns: CalendarColumns.gridItems, spacing: 0) {
+            ForEach(0..<CalendarColumns.count, id: \.self) { column in
+                Text(column == firstDayColumn ? abbrev : "")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.floGray)
+                    .tracking(1)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        .padding(.top, FloSpacing.md)
+        .padding(.bottom, 27) // Figma: label sits ~27pt above the first week row
     }
 
     // MARK: - Phase Background for tappable blocks
