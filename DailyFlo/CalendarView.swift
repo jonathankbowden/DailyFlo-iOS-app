@@ -20,6 +20,10 @@ struct CalendarView: View {
     @State private var pendingLogConfirmation = false
     @State private var emphasizeLoggedStart = false
 
+    /// Bottom inset so the last week clears the custom tab bar (bar height +
+    /// device safe-area inset), injected by `ContentView`.
+    @Environment(\.tabBarClearance) private var tabBarClearance
+
     private let cycleManager = CycleManager.shared
     private let calendar = Calendar.current
     private let daysOfWeek = ["M", "T", "W", "T", "F", "S", "S"]
@@ -37,11 +41,14 @@ struct CalendarView: View {
             Color.white.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                // Header
-                headerView
-
-                // Greeting & Phase Info
-                greetingSection
+                // Shared header: calendar icon + FLO, "Hello, name!", phase
+                // eyebrow, next-period subtitle.
+                ScreenHeader(
+                    title: "Hello, \(cycleManager.userName)!",
+                    eyebrow: cycleManager.currentPhaseLabel,
+                    subtitle: "Next period: \(cycleManager.nextPeriodFormatted)",
+                    leadingIcon: "calendar"
+                )
 
                 // Full-width divider line (top of days row)
                 Rectangle()
@@ -59,17 +66,20 @@ struct CalendarView: View {
                     .fill(Color(hex: "707070"))
                     .frame(height: 1)
 
-                // Scrollable calendar with multiple months
-                ScrollView {
+                // Scrollable calendar with multiple months. Vertical-only.
+                // Each month leads with its own label row, so anchoring the
+                // current month's top (scrolledMonth = 0) to the viewport top
+                // puts the month label just under the sticky weekday row with
+                // today's week fully visible below it — no hardcoded nudge.
+                ScrollView(.vertical) {
                     LazyVStack(spacing: 0) {
                         ForEach(monthOffsets, id: \.self) { monthOffset in
                             monthView(for: monthOffset)
                         }
                     }
                     .scrollTargetLayout()
-                    .padding(.horizontal, FloSpacing.lg)
-                    .padding(.top, FloSpacing.lg) // Vertical padding before calendar
-                    .padding(.bottom, 140) // Space for tab bar
+                    .padding(.horizontal, Layout.screenMargin)
+                    .padding(.bottom, tabBarClearance) // clear the tab bar
                 }
                 .scrollPosition(id: $scrolledMonth, anchor: .top)
             }
@@ -91,61 +101,12 @@ struct CalendarView: View {
         }
     }
 
-    // MARK: - Header
-    private var headerView: some View {
-        HStack {
-            // Calendar icon
-            Image("calendar")
-                .renderingMode(.template)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 24, height: 24)
-                .foregroundColor(.floCharcoal)
-                .accessibilityLabel("Calendar tab")
-
-            Spacer()
-
-            // FLO text
-            Text("FLO")
-                .font(.system(size: 20, weight: .black))
-                .foregroundColor(.floCharcoal)
-                .tracking(3)
-                .accessibilityHidden(true)
-        }
-        .padding(.horizontal, FloSpacing.lg)
-        .padding(.vertical, FloSpacing.md)
-    }
-
-    // MARK: - Greeting Section
-    private var greetingSection: some View {
-        VStack(alignment: .leading, spacing: FloSpacing.md) {
-            Text("Hello, \(cycleManager.userName)!")
-                .font(.custom("LUNARY free", size: 36))
-                .foregroundColor(.floCharcoal)
-                .accessibilityAddTraits(.isHeader)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(cycleManager.currentPhaseLabel)
-                    .font(.floLabel)
-                    .fontWeight(.bold)
-                    .foregroundColor(.floCharcoal)
-                    .tracking(2)
-
-                Text("Next Period: \(cycleManager.nextPeriodFormatted)")
-                    .font(.floBodyMedium)
-                    .foregroundColor(.floGray)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, FloSpacing.lg)
-        .padding(.top, FloSpacing.sm)
-        .padding(.bottom, FloSpacing.sm)
-        .accessibilityElement(children: .combine)
-    }
-
     // MARK: - Day of Week Header
+    /// Same 7 columns as every week row (`CalendarColumns.gridItems`) inside
+    /// the same `Layout.screenMargin`, so each letter sits dead-center over its
+    /// column of day numbers.
     private var dayOfWeekHeader: some View {
-        HStack {
+        LazyVGrid(columns: CalendarColumns.gridItems, spacing: 0) {
             ForEach(Array(daysOfWeek.enumerated()), id: \.offset) { _, day in
                 Text(day)
                     .font(.floLabel)
@@ -154,7 +115,7 @@ struct CalendarView: View {
                     .frame(maxWidth: .infinity)
             }
         }
-        .padding(.horizontal, FloSpacing.lg)
+        .padding(.horizontal, Layout.screenMargin)
     }
 
     // MARK: - Month View
@@ -176,28 +137,48 @@ struct CalendarView: View {
             return (index >= firstWeekday && dayNumber <= days) ? dayNumber : nil
         }
 
-        return LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: FloSpacing.xs) {
-            ForEach(Array(cellData.enumerated()), id: \.offset) { index, dayNumber in
-                if let day = dayNumber {
-                    DayCellWithPhase(
-                        day: day,
-                        isSelected: isSelected(day, in: monthDate),
-                        isToday: isToday(day, in: monthDate),
-                        isFuture: isFuture(day, in: monthDate),
-                        cycleData: cycleData,
-                        monthLabel: day == 1 ? monthAbbrev : nil,
-                        columnIndex: index % 7,
-                        emphasizeAsNewStart: emphasizeLoggedStart && isLoggedCycleStart(day, in: monthDate),
-                        onTapDay: {
-                            selectDay(day, in: monthDate, cycleData: cycleData)
-                        }
-                    )
-                } else {
-                    Color.clear
-                        .frame(height: 56)
+        // Each month leads with a uniform label row (keeps month blocks equal
+        // height so the LazyVStack offset math — and scrollPosition — stays
+        // exact), then the 7-column grid shared with the weekday header.
+        return VStack(spacing: 0) {
+            monthLabelRow(monthAbbrev)
+
+            LazyVGrid(columns: CalendarColumns.gridItems, spacing: FloSpacing.xs) {
+                ForEach(Array(cellData.enumerated()), id: \.offset) { index, dayNumber in
+                    if let day = dayNumber {
+                        DayCellWithPhase(
+                            day: day,
+                            isSelected: isSelected(day, in: monthDate),
+                            isToday: isToday(day, in: monthDate),
+                            isFuture: isFuture(day, in: monthDate),
+                            cycleData: cycleData,
+                            columnIndex: index % 7,
+                            emphasizeAsNewStart: emphasizeLoggedStart && isLoggedCycleStart(day, in: monthDate),
+                            onTapDay: {
+                                selectDay(day, in: monthDate, cycleData: cycleData)
+                            }
+                        )
+                    } else {
+                        Color.clear
+                            .frame(height: 56)
+                    }
                 }
             }
         }
+    }
+
+    // MARK: - Month label row
+    /// Left-aligned month abbreviation that heads each month's grid. Rendered
+    /// as a real row (not a negative-offset overlay) so it can't be clipped
+    /// when its month is anchored to the top of the scroll viewport.
+    private func monthLabelRow(_ abbrev: String) -> some View {
+        Text(abbrev)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundColor(.floGray)
+            .tracking(1)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, FloSpacing.md)
+            .padding(.bottom, FloSpacing.sm)
     }
 
     // MARK: - Phase Background for tappable blocks
@@ -395,7 +376,6 @@ struct DayCellWithPhase: View {
     let isToday: Bool
     let isFuture: Bool
     let cycleData: CycleData
-    let monthLabel: String? // Shows month abbreviation on day 1
     let columnIndex: Int // 0-6, which column this day is in
     var emphasizeAsNewStart: Bool = false // transient soft ring after logging a cycle
     /// Any tap in the cell opens the day sheet.
@@ -487,14 +467,6 @@ struct DayCellWithPhase: View {
                 // Phase indicator dots
                 indicatorDots
                     .padding(.top, 2)
-            }
-
-            // Month label (only on day 1) - positioned above the day number as overlay
-            if let label = monthLabel {
-                Text(label)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(.floGray)
-                    .offset(y: -30)
             }
         }
         .frame(height: 56)

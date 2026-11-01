@@ -77,6 +77,72 @@ struct OutlinedActionButton: View {
     }
 }
 
+// MARK: - Screen header
+
+/// The shared top-of-screen header used by Calendar, Journal, Profile and
+/// Pause. One row carries the 24×24 leading tab icon and the FLO wordmark;
+/// below it, the display-serif title, an optional tracked uppercase eyebrow,
+/// and an optional sentence-case subtitle. All spacing is fixed here so the
+/// icon, title, eyebrow and subtitle never shift by a point when the user
+/// switches tabs. Values taken from Brittany's "01 Calendar" frame (390pt).
+struct ScreenHeader: View {
+    let title: String
+    var eyebrow: String? = nil
+    var subtitle: String? = nil
+    let leadingIcon: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Icon + FLO wordmark on one row.
+            HStack {
+                Image(leadingIcon)
+                    .renderingMode(.template)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 24, height: 24)
+                    .foregroundColor(.floCharcoal)
+
+                Spacer()
+
+                Text("FLO")
+                    .font(.system(size: 20, weight: .black))
+                    .foregroundColor(.floCharcoal)
+                    .tracking(3)
+                    .accessibilityHidden(true)
+            }
+            .padding(.top, FloSpacing.md)
+
+            // Title — display serif, 40pt line height, top 47pt below the row.
+            Text(title)
+                .font(.floLunary(size: 40))
+                .foregroundColor(.floCharcoal)
+                .accessibilityAddTraits(.isHeader)
+                .padding(.top, 47)
+
+            // Eyebrow — uppercase, tracked, small bold, 17pt below the title.
+            if let eyebrow {
+                Text(eyebrow.uppercased())
+                    .font(.floLabel)
+                    .fontWeight(.bold)
+                    .foregroundColor(.floCharcoal)
+                    .tracking(2)
+                    .padding(.top, 17)
+            }
+
+            // Subtitle — sentence case, 18pt below the eyebrow.
+            if let subtitle {
+                Text(subtitle)
+                    .font(.floBodyMedium)
+                    .foregroundColor(.floGray)
+                    .padding(.top, 18)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Layout.screenMargin)
+        .accessibilityElement(children: .combine)
+    }
+}
+
 // MARK: - Segmented caps tabs
 
 /// Three-way caps tab row (MIND | BODY | SOUL, 5 MIN | 10 MIN | 60 MIN).

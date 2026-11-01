@@ -23,37 +23,50 @@ struct ContentView: View {
     @State private var hasEvaluatedProGate = false
 
     var body: some View {
-        // Root GeometryReader reads the device's real bottom safe-area inset
-        // (don't hardcode 34) so the bar can extend its background through it.
+        // One root GeometryReader whose `.ignoresSafeArea(.container,
+        // edges: .bottom)` (applied below, to the whole reader) does two things
+        // at once: it lets `proxy.safeAreaInsets.bottom` report the device's
+        // real home-indicator inset, AND it extends the stack to the physical
+        // bottom edge. The TabView fills the frame normally — no manual
+        // `.frame(proxy.size)`, which previously fought the layout — and the
+        // bar is anchored to the bottom of the stack via the ZStack alignment.
         GeometryReader { proxy in
             let bottomInset = proxy.safeAreaInsets.bottom
-            ZStack {
+            ZStack(alignment: .bottom) {
                 // Main content
                 TabView(selection: $selectedTab) {
                     CalendarView()
                         .tag(0)
+                        .toolbar(.hidden, for: .tabBar)
 
                     JournalView()
                         .tag(1)
+                        .toolbar(.hidden, for: .tabBar)
 
                     ProfileMainView()
                         .tag(2)
+                        .toolbar(.hidden, for: .tabBar)
 
                     MeditationView()
                         .tag(3)
+                        .toolbar(.hidden, for: .tabBar)
                 }
+                // Scroll content in every tab clears the bar via this inset:
+                // the 88pt bar band plus the device's bottom safe-area inset.
+                .environment(\.tabBarClearance, Layout.tabBarHeight + bottomInset)
 
-                // Custom bottom bar with the center + cutout, pinned to the
-                // bottom. Its background extends through the bottom safe area.
-                VStack {
-                    Spacer()
-                    FloTabBar(selectedTab: $selectedTab, bottomInset: bottomInset) {
-                        showJournalEntry = true
-                    }
+                // Custom bottom bar with the center + cutout. Anchored to the
+                // bottom of the stack — which now reaches the screen edge — so
+                // the bar's bottom edge is the physical edge. Its height is
+                // 88 + bottomInset, so the charcoal fills through the
+                // home-indicator region while the icons/capsule sit in the
+                // 88pt band above it.
+                FloTabBar(selectedTab: $selectedTab, bottomInset: bottomInset) {
+                    showJournalEntry = true
                 }
             }
-            .frame(width: proxy.size.width, height: proxy.size.height)
         }
+        .ignoresSafeArea(.container, edges: .bottom)
         .sheet(isPresented: $showJournalEntry) {
             JournalEntryView(
                 journalManager: JournalManager.shared,
@@ -190,8 +203,11 @@ struct FloTabBar: View {
     var bottomInset: CGFloat = 0
     let onPlus: () -> Void
 
-    // Reference measurements (points), bar-top relative.
-    private let barHeight: CGFloat = 122
+    // Reference measurements (points), bar-top relative. The charcoal bar is
+    // 88pt tall above the device bottom inset; total height = 88 + inset
+    // (122pt on a home-indicator device). Icon/capsule offsets are measured
+    // from the bar's top edge, so they're unaffected by the inset below.
+    private let barHeight: CGFloat = Layout.tabBarHeight
     private let plusDiameter: CGFloat = 72
     private let cutoutRadius: CGFloat = 44.5     // 89pt diameter → 8.5pt ring
     private let plusCenterAboveTop: CGFloat = 6
@@ -261,7 +277,6 @@ struct FloTabBar: View {
         }
         .frame(height: barHeight + bottomInset)
         .frame(maxWidth: .infinity)
-        .ignoresSafeArea(edges: .bottom)
     }
 
     private func tabButton(_ tab: Tab, width: CGFloat) -> some View {

@@ -203,20 +203,12 @@ struct MeditationMainView: View {
             Color.white.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                // Header
-                headerView
-                    .fadeIn(delay: hasAppeared ? 0 : 0.1)
-
-                // Title
-                Text("Let's take a pause")
-                    .font(.floLunary(size: 40))
-                    .foregroundStyle(Color.black)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, FloSpacing.lg)
-                    .padding(.top, FloSpacing.sm)
-                    .padding(.bottom, FloSpacing.lg)
-                    .accessibilityAddTraits(.isHeader)
-                    .fadeIn(delay: hasAppeared ? 0 : 0.15)
+                // Shared header: pause icon + FLO, "Let's take a pause" title.
+                ScreenHeader(
+                    title: "Let's take a pause",
+                    leadingIcon: "pause"
+                )
+                .fadeIn(delay: hasAppeared ? 0 : 0.1)
 
                 // Duration tabs (hairline above, rule below)
                 SegmentedCapsTabs(
@@ -225,6 +217,7 @@ struct MeditationMainView: View {
                     title: { $0.displayText },
                     highlight: .floStone
                 )
+                .padding(.top, FloSpacing.lg)
                 .fadeIn(delay: hasAppeared ? 0 : 0.2)
 
                 // Three columns (5/10/60) as a peeking horizontal carousel:
@@ -308,31 +301,6 @@ struct MeditationMainView: View {
         }
     }
 
-    // MARK: - Header
-    private var headerView: some View {
-        HStack {
-            // Pause icon
-            Image("pause")
-                .renderingMode(.template)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 24, height: 24)
-                .foregroundColor(.floCharcoal)
-                .accessibilityLabel("Meditation")
-
-            Spacer()
-
-            // FLO text
-            Text("FLO")
-                .font(.system(size: 20, weight: .black))
-                .foregroundColor(.floCharcoal)
-                .tracking(3)
-                .accessibilityHidden(true)
-        }
-        .padding(.horizontal, FloSpacing.lg)
-        .padding(.vertical, FloSpacing.md)
-    }
-
     private func toggleFavorite(_ session: MeditationSession) {
         if let index = sessions.firstIndex(where: { $0.id == session.id }) {
             withAnimation(FloAnimation.springSnappy) {
@@ -357,6 +325,9 @@ private struct MeditationColumn: View {
     /// happens to read at tap time (which could be mid-swipe).
     let onPlay: (MeditationSession, MeditationDuration) -> Void
     let onFavorite: (MeditationSession) -> Void
+
+    /// Bottom inset so the last card clears the custom tab bar.
+    @Environment(\.tabBarClearance) private var tabBarClearance
 
     /// Vertical gap between stacked cards in a column (Figma spec, 28pt).
     private static let cardSpacing: CGFloat = 28
@@ -392,7 +363,7 @@ private struct MeditationColumn: View {
                 }
             }
             .padding(.top, Self.topGap)
-            .padding(.bottom, 140)
+            .padding(.bottom, tabBarClearance)
         }
     }
 }

@@ -116,6 +116,61 @@ extension Font {
 }
 
 
+// MARK: - Layout (single source of truth for screen-level geometry)
+
+/// Screen-level layout constants shared across every top-level tab. Keeping the
+/// horizontal margin and the tab-bar height here means the greeting, the
+/// calendar grid, and the scroll insets can never drift out of agreement.
+enum Layout {
+    /// Horizontal margin for every screen header and the calendar grid. The
+    /// "Hello" greeting, the weekday letters and the day numbers all align to
+    /// this single value (24pt per Brittany's "01 Calendar" frame, 390pt wide).
+    static let screenMargin: CGFloat = 24
+
+    /// Custom bottom tab-bar height *above* the device bottom safe-area inset.
+    /// On-screen total = `tabBarHeight + safeAreaInsets.bottom` (122pt on a
+    /// 34pt-inset phone). Scroll content is padded by that total via
+    /// `\.tabBarClearance` so the last row clears the bar.
+    static let tabBarHeight: CGFloat = 88
+}
+
+/// Shared 7-column geometry for the calendar. The weekday header row AND every
+/// week row of the day grid lay out with the same `gridItems`, so each day
+/// number sits exactly centered under its weekday letter and the grid's left
+/// edge lines up with the greeting at `Layout.screenMargin`.
+enum CalendarColumns {
+    static let count = 7
+
+    /// Seven equal, zero-spacing flexible columns. Used by BOTH the weekday
+    /// header and the month grids, inside a `Layout.screenMargin` inset.
+    static let gridItems: [GridItem] = Array(
+        repeating: GridItem(.flexible(), spacing: 0),
+        count: count
+    )
+
+    /// Explicit column width for a container, should a caller need it:
+    /// (containerWidth − 2·screenMargin) / 7.
+    static func columnWidth(containerWidth: CGFloat) -> CGFloat {
+        (containerWidth - 2 * Layout.screenMargin) / CGFloat(count)
+    }
+}
+
+// MARK: - Tab bar clearance (bottom inset for scroll content under the bar)
+
+private struct TabBarClearanceKey: EnvironmentKey {
+    static let defaultValue: CGFloat = Layout.tabBarHeight
+}
+
+extension EnvironmentValues {
+    /// Bottom inset a scroll view needs so its last row clears the custom tab
+    /// bar. `ContentView` injects `Layout.tabBarHeight + safeAreaInsets.bottom`;
+    /// tabs read it with `@Environment(\.tabBarClearance)`.
+    var tabBarClearance: CGFloat {
+        get { self[TabBarClearanceKey.self] }
+        set { self[TabBarClearanceKey.self] = newValue }
+    }
+}
+
 // MARK: - Spacing (8pt grid system for pixel-perfect alignment)
 struct FloSpacing {
     static let xxs: CGFloat = 2  // Micro spacing

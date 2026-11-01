@@ -336,6 +336,9 @@ struct JournalGridView: View {
     /// Non-nil while composing a new entry for a specific (empty) day card.
     @State private var newEntryDate: Date? = nil
 
+    /// Bottom inset so the last feed card clears the custom tab bar.
+    @Environment(\.tabBarClearance) private var tabBarClearance
+
     private let calendar = Calendar.current
 
     /// Days available to scroll through. A year of history + ~a month forward.
@@ -430,7 +433,7 @@ struct JournalGridView: View {
             }
             .padding(.horizontal, FloSpacing.lg)
             .padding(.top, FloSpacing.md)
-            .padding(.bottom, 140)
+            .padding(.bottom, tabBarClearance)
         }
     }
 
@@ -921,6 +924,9 @@ struct JournalBaseView: View {
     @State private var journalLayout: JournalGridView.Layout = .feed
     @FocusState private var isSearchFocused: Bool
 
+    /// Bottom inset so the last entry clears the custom tab bar.
+    @Environment(\.tabBarClearance) private var tabBarClearance
+
     private var userName: String { CycleManager.shared.userName }
 
     private var filteredEntries: [JournalEntry] {
@@ -937,13 +943,21 @@ struct JournalBaseView: View {
             Color.floBackground.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                tabHeaderBar
-                    .onLongPressGesture {
-                        FloHaptics.medium()
-                        journalLayout = (journalLayout == .feed) ? .grid : .feed
-                    }
+                // Shared header: journal icon + FLO, "Hello, name!", eyebrow.
+                // Long-press flips the parked grid/feed layouts.
+                ScreenHeader(
+                    title: "Hello, \(userName)!",
+                    eyebrow: "Way to take time to write it down.",
+                    leadingIcon: "journal"
+                )
+                .onLongPressGesture {
+                    FloHaptics.medium()
+                    journalLayout = (journalLayout == .feed) ? .grid : .feed
+                }
 
-                header
+                searchBar
+                    .padding(.horizontal, Layout.screenMargin)
+                    .padding(.top, FloSpacing.lg)
                     .padding(.bottom, FloSpacing.md)
 
                 if searchText.isEmpty {
@@ -963,67 +977,6 @@ struct JournalBaseView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 hasAppeared = true
             }
-        }
-    }
-
-    // MARK: - Tab header bar (journal icon left, FLO wordmark right)
-    private var tabHeaderBar: some View {
-        HStack {
-            Image("journal")
-                .renderingMode(.template)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 24, height: 24)
-                .foregroundColor(.floCharcoal)
-                .accessibilityLabel("Journal")
-
-            Spacer()
-
-            Text("FLO")
-                .font(.system(size: 20, weight: .black))
-                .foregroundColor(.floCharcoal)
-                .tracking(3)
-                .accessibilityHidden(true)
-        }
-        .padding(.horizontal, FloSpacing.lg)
-        .padding(.vertical, FloSpacing.md)
-    }
-
-    // MARK: - Greeting + search
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("Hello, \(userName)!")
-                .font(.floSerif(size: 36))
-                .foregroundColor(.floCharcoal)
-                .accessibilityAddTraits(.isHeader)
-                .padding(.top, FloSpacing.md)
-                .padding(.horizontal, FloSpacing.lg)
-
-            // Bracketed subtitle — full-bleed divider lines matching
-            // CalendarView's day-letter row (lighter above, darker below).
-            VStack(spacing: 0) {
-                Rectangle()
-                    .fill(Color(hex: "E5E5E5"))
-                    .frame(height: 1)
-
-                Text("WAY TO TAKE TIME TO WRITE IT DOWN.")
-                    .font(.floLabel)
-                    .fontWeight(.medium)
-                    .foregroundColor(.floCharcoal)
-                    .tracking(1)
-                    .padding(.vertical, FloSpacing.sm)
-                    .padding(.horizontal, FloSpacing.lg)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                Rectangle()
-                    .fill(Color(hex: "707070"))
-                    .frame(height: 1)
-            }
-            .padding(.top, FloSpacing.sm)
-
-            searchBar
-                .padding(.top, FloSpacing.lg)
-                .padding(.horizontal, FloSpacing.lg)
         }
     }
 
@@ -1096,7 +1049,7 @@ struct JournalBaseView: View {
             }
             .padding(.horizontal, FloSpacing.lg)
             .padding(.top, FloSpacing.md)
-            .padding(.bottom, 140)
+            .padding(.bottom, tabBarClearance)
         }
     }
 }

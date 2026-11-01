@@ -40,6 +40,10 @@ struct ProfileMainView: View {
 
     private let cycleManager = CycleManager.shared
 
+    /// Bottom inset so the last row clears the custom tab bar, injected by
+    /// `ContentView` (bar height + device safe-area inset).
+    @Environment(\.tabBarClearance) private var tabBarClearance
+
     /// The user's chosen name, or "" when we don't have one yet. We NEVER
     /// derive a name from the email address — an email local-part (e.g. an
     /// Apple private-relay prefix like "7hcwmfhmfb") is not a name. Callers
@@ -76,11 +80,13 @@ struct ProfileMainView: View {
             Color.white.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                headerView
-                    .fadeIn(delay: hasAppeared ? 0 : 0.1)
-
-                greetingSection
-                    .fadeIn(delay: hasAppeared ? 0 : 0.15)
+                ScreenHeader(
+                    title: greetingTitle,
+                    eyebrow: currentPhase,
+                    subtitle: "Next period: \(nextPeriodDate)",
+                    leadingIcon: "partner"
+                )
+                .fadeIn(delay: hasAppeared ? 0 : 0.1)
 
                 Rectangle()
                     .fill(Color(hex: "E5E5E5"))
@@ -98,7 +104,7 @@ struct ProfileMainView: View {
                     VStack(spacing: 0) {
                         tabContent
                     }
-                    .padding(.bottom, 140)
+                    .padding(.bottom, tabBarClearance)
                 }
                 .background(Color(hex: "F8F8F8"))
             }
@@ -255,60 +261,6 @@ struct ProfileMainView: View {
                 }
             }
         }
-    }
-
-    // MARK: - Header
-    private var headerView: some View {
-        HStack {
-            // Profile/partner icon — branding for the Profile tab.
-            Image("partner")
-                .renderingMode(.template)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 24, height: 24)
-                .foregroundColor(.floCharcoal)
-                .accessibilityLabel("Profile")
-
-            Spacer()
-
-            // FLO text
-            Text("FLO")
-                .font(.system(size: 20, weight: .black))
-                .foregroundColor(.floCharcoal)
-                .tracking(3)
-                .accessibilityHidden(true)
-        }
-        .padding(.horizontal, FloSpacing.lg)
-        .padding(.vertical, FloSpacing.md)
-    }
-
-    // MARK: - Greeting Section
-    private var greetingSection: some View {
-        VStack(alignment: .leading, spacing: FloSpacing.md) {
-            // Large greeting in Lunary font
-            Text(greetingTitle)
-                .font(.custom("LUNARY free", size: 36))
-                .foregroundColor(.floCharcoal)
-                .accessibilityAddTraits(.isHeader)
-
-            VStack(alignment: .leading, spacing: 4) {
-                // Current phase
-                Text(currentPhase)
-                    .font(.floLabel)
-                    .fontWeight(.bold)
-                    .foregroundColor(.floCharcoal)
-                    .tracking(2)
-
-                // Next period
-                Text("Next Period: \(nextPeriodDate)")
-                    .font(.floBodyMedium)
-                    .foregroundColor(.floGray)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, FloSpacing.lg)
-        .padding(.top, FloSpacing.sm)
-        .padding(.bottom, FloSpacing.sm)
     }
 
     // MARK: - Tab Selector
