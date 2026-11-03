@@ -18,7 +18,7 @@ struct SingleDayView: View {
     /// log so the calendar can collapse this sheet and confirm the change.
     let onLoggedCycle: (() -> Void)?
 
-    @State private var selectedTab: PhaseContentTab = .body
+    @State private var selectedTab: PhaseContentTab = .mind
     @State private var showLogCycle = false
     @State private var showJournalEntry = false
 
@@ -120,19 +120,17 @@ struct SingleDayView: View {
 
                 SageCloseButton(action: onDismiss)
             }
-
-            Text(statusLine)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Color.floGray)
         }
         .accessibilityElement(children: .contain)
+        .accessibilityLabel(accessibilityDateLabel)
     }
 
-    private var statusLine: String {
+    /// The date is not shown in the header (per Brittany's frame), so it is
+    /// exposed to VoiceOver here instead.
+    private var accessibilityDateLabel: String {
         let formatter = DateFormatter()
         formatter.dateFormat = "EEEE, MMMM d"
-        let logged = entry == nil ? "Nothing logged" : "Entry logged ✓"
-        return "\(formatter.string(from: date)) · Day \(dayOfCycle) · \(logged)"
+        return "\(formatter.string(from: date)), day \(dayOfCycle), \(phase.name)"
     }
 
     // MARK: - Carousel
@@ -162,19 +160,27 @@ struct SingleDayView: View {
 
     // MARK: - Actions
 
+    /// A day after today can only have a cycle logged against it; journal
+    /// entries are for today and the past.
+    private var isFutureDay: Bool {
+        date > Calendar.current.startOfDay(for: Date())
+    }
+
     private var actionRow: some View {
         HStack(spacing: 14) {
             OutlinedActionButton(title: "Log cycle", icon: "checkmark.circle") {
                 showLogCycle = true
             }
 
-            if entry == nil {
-                OutlinedActionButton(title: "Add entry", icon: "plus") {
-                    showJournalEntry = true
-                }
-            } else {
-                OutlinedActionButton(title: "Edit entry", icon: "pencil") {
-                    showJournalEntry = true
+            if !isFutureDay {
+                if entry == nil {
+                    OutlinedActionButton(title: "Add entry", icon: "plus") {
+                        showJournalEntry = true
+                    }
+                } else {
+                    OutlinedActionButton(title: "Edit entry", icon: "pencil") {
+                        showJournalEntry = true
+                    }
                 }
             }
         }
