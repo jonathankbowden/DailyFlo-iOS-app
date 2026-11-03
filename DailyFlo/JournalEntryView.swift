@@ -16,8 +16,8 @@ import PhotosUI
 /// one-entry-per-day rule the init first resolves any existing entry on that
 /// day and, if found, opens it as a posted entry instead of a blank composer.
 ///
-/// There is no Save button: the entry autosaves when the sheet closes (X or
-/// swipe) and before SHARE / LOG CYCLE, as long as a feeling is picked. A new
+/// There is no Save button: the entry autosaves when the sheet closes (X,
+/// CLOSE or swipe) and before LOG CYCLE, as long as a feeling is picked. A new
 /// entry closed without a feeling is discarded.
 struct JournalEntryView: View {
     let journalManager: JournalManager
@@ -402,6 +402,10 @@ struct JournalEntryView: View {
 
     // MARK: - Actions row
 
+    /// LOG CYCLE + CLOSE, equal widths, per Brittany's "Journal Entry
+    /// Overlay" frame (2052:3261). CLOSE autosaves and dismisses, same as
+    /// the X in the header. Sharing an entry was removed with it (Nov 2026);
+    /// the ShareLink version is in git history if it comes back in v1.1.
     private var actionRow: some View {
         HStack(spacing: FloSpacing.md) {
             OutlinedActionButton(title: "Log cycle", icon: "checkmark.circle") {
@@ -409,43 +413,10 @@ struct JournalEntryView: View {
                 showLogCycleModal = true
             }
 
-            shareButton
-                .frame(width: 128)
-        }
-    }
-
-    @ViewBuilder
-    private var shareButton: some View {
-        let label = OutlinedActionLabel(title: "Share", icon: "square.and.arrow.up")
-        Group {
-            if let photoImage {
-                let image = Image(uiImage: photoImage)
-                ShareLink(
-                    item: image,
-                    subject: Text(shareSubject),
-                    message: Text(shareText),
-                    preview: SharePreview(shareSubject, image: image)
-                ) { label }
-            } else {
-                ShareLink(item: shareText, subject: Text(shareSubject)) { label }
+            OutlinedActionButton(title: "Close", icon: "xmark.circle") {
+                close()
             }
         }
-        .buttonStyle(.floPressed)
-        // Save first so what's shared is also what's kept.
-        .simultaneousGesture(TapGesture().onEnded { autosave() })
-        .accessibilityLabel("Share entry")
-    }
-
-    private var shareSubject: String {
-        entryTitle.isEmpty ? "My journal · \(formattedDate)" : entryTitle
-    }
-
-    private var shareText: String {
-        var parts: [String] = []
-        if let selectedEmotion { parts.append("Feeling: \(selectedEmotion.rawValue)") }
-        if !entryTitle.isEmpty { parts.append(entryTitle) }
-        if !entryBody.isEmpty { parts.append(entryBody) }
-        return parts.isEmpty ? formattedDate : parts.joined(separator: "\n\n")
     }
 
     // MARK: - Photo import

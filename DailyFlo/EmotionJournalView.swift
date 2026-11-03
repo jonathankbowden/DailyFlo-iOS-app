@@ -311,27 +311,13 @@ struct JournalCardView: View {
     EmotionJournalView()
 }
 
-// MARK: - Journal Grid (2D day-card navigation)
-/// Journal tab's base view. Each day is a full-screen card whose face is the
-/// most recent entry; empty days show a calm empty-state. Navigation is
-/// anchored on today: left/right paging by ±1 day comes from a single
-/// horizontal paging ScrollView; up/down by ±7 days (same weekday) comes
-/// from a DragGesture that jumps the scroll position. One ScrollView keeps
-/// the initial position rock-steady and avoids nested-scroll layout races.
-struct JournalGridView: View {
-    /// Two container layouts that share the same day-card builders.
-    /// `.grid` keeps the parked Option A — horizontal-paging 2D nav.
-    /// `.feed` is Option B — a vertical scroll with today on top and
-    /// only past days that actually have entries below.
-    enum Layout {
-        case grid
-        case feed
-    }
-
-    let layout: Layout
-
+// MARK: - Journal Feed (Option B — the v1 journal)
+/// Journal tab's base view: a vertical feed with today's card on top (Add
+/// entry when empty) and past days that have entries below, newest first.
+/// The 2D day-card grid (Option A) was parked to v2 in June and removed
+/// from the code in November 2026; it lives in git history before d3b9c96.
+struct JournalFeedView: View {
     @State private var journalManager = JournalManager.shared
-    @State private var currentDate: Date?
     @State private var detailDate: Date? = nil
     /// Non-nil while composing a new entry for a specific (empty) day card.
     @State private var newEntryDate: Date? = nil
@@ -341,70 +327,32 @@ struct JournalGridView: View {
 
     private let calendar = Calendar.current
 
-    /// Days available to scroll through. A year of history + ~a month forward.
-    private let dates: [Date] = {
-        let cal = Calendar.current
-        let today = cal.startOfDay(for: Date())
-        return (-365...30).compactMap { offset in
-            cal.date(byAdding: .day, value: offset, to: today)
-        }
-    }()
-
-    init(layout: Layout = .grid) {
-        self.layout = layout
-        _currentDate = State(initialValue: Calendar.current.startOfDay(for: Date()))
-    }
-
     var body: some View {
-        Group {
-            switch layout {
-            case .grid: gridBody
-            case .feed: feedBody
-            }
-        }
-        .sheet(item: Binding(
-            get: { detailDate.map { JournalDayAnchor(date: $0) } },
-            set: { detailDate = $0?.date }
-        )) { anchor in
-            JournalDaySheet(date: anchor.date, journalManager: journalManager) {
-                detailDate = nil
-            }
-        }
-        .sheet(item: Binding(
-            get: { newEntryDate.map { JournalDayAnchor(date: $0) } },
-            set: { newEntryDate = $0?.date }
-        )) { anchor in
-            // Compose for the tapped day (empty card). Passing the date keeps the
-            // entry on that day and lets the one-entry-per-day resolver open an
-            // existing entry should one exist.
-            JournalEntryView(
-                date: anchor.date,
-                journalManager: JournalManager.shared,
-                onDismiss: { newEntryDate = nil }
-            )
-        }
-    }
-
-    // MARK: - Grid (Option A — parked)
-    private var gridBody: some View {
-        GeometryReader { reader in
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 0) {
-                    ForEach(dates, id: \.self) { date in
-                        dayCardPage(for: date, pageHeight: reader.size.height)
-                            .containerRelativeFrame(.horizontal)
-                            .id(date)
-                    }
+        feedBody
+            .sheet(item: Binding(
+                get: { detailDate.map { JournalDayAnchor(date: $0) } },
+                set: { detailDate = $0?.date }
+            )) { anchor in
+                JournalDaySheet(date: anchor.date, journalManager: journalManager) {
+                    detailDate = nil
                 }
-                .scrollTargetLayout()
             }
-            .scrollTargetBehavior(.paging)
-            .scrollPosition(id: $currentDate, anchor: .leading)
-            .simultaneousGesture(verticalSwipeGesture)
-        }
+            .sheet(item: Binding(
+                get: { newEntryDate.map { JournalDayAnchor(date: $0) } },
+                set: { newEntryDate = $0?.date }
+            )) { anchor in
+                // Compose for the tapped day (empty card). Passing the date keeps the
+                // entry on that day and lets the one-entry-per-day resolver open an
+                // existing entry should one exist.
+                JournalEntryView(
+                    date: anchor.date,
+                    journalManager: JournalManager.shared,
+                    onDismiss: { newEntryDate = nil }
+                )
+            }
     }
 
-    // MARK: - Feed (Option B — journal tab home)
+    // MARK: - Feed
     /// Today's card on top (Add entry when empty), then past days-with-entries
     /// newest-first. Empty/future days are intentionally omitted.
     private var feedBody: some View {
@@ -437,9 +385,8 @@ struct JournalGridView: View {
         }
     }
 
-    /// One feed row = the redesigned day-card with the same chrome
-    /// (white background, FloRadius.xl, soft shadow, tap-to-open) as the
-    /// grid mode's `dayCardPage`. Sizes to its own content.
+    /// One feed row = the day-card with its chrome (white background,
+    /// FloRadius.xl, soft shadow, tap-to-open). Sizes to its own content.
     private func feedCard(for date: Date) -> some View {
         let hasEntries = !journalManager.entries(for: date).isEmpty
         return dayCard(for: date)
@@ -455,60 +402,6 @@ struct JournalGridView: View {
                     newEntryDate = date
                 }
             }
-    }
-
-    /// Vertical swipe → ±7 days (same weekday). Attached as a simultaneous
-    /// gesture so it doesn't fight the horizontal ScrollView's paging.
-    private var verticalSwipeGesture: some Gesture {
-        DragGesture(minimumDistance: 30)
-            .onEnded { value in
-                let dx = value.translation.width
-                let dy = value.translation.height
-                // Only react to predominantly vertical swipes.
-                guard abs(dy) > abs(dx), abs(dy) > 50 else { return }
-                // SwiftUI: +y is down. Swipe DOWN (dy > 0) = next week.
-                let weekDelta = dy > 0 ? 7 : -7
-                guard let current = currentDate,
-                      let target = calendar.date(byAdding: .day, value: weekDelta, to: current),
-                      dates.contains(where: { calendar.isDate($0, inSameDayAs: target) })
-                else { return }
-                FloHaptics.light()
-                withAnimation(.snappy) {
-                    currentDate = target
-                }
-            }
-    }
-
-    /// One page = cream margins + a contained, rounded card with a soft shadow.
-    /// Vertical sizing comes from the parent GeometryReader (pageHeight) rather
-    /// than containerRelativeFrame(.vertical) — container-relative in the
-    /// cross-axis of a horizontal scroll has unreliable initial-paint math,
-    /// which would otherwise show as a top cutoff on first load.
-    private func dayCardPage(for cellDate: Date, pageHeight: CGFloat) -> some View {
-        let hasEntries = !journalManager.entries(for: cellDate).isEmpty
-
-        // Card hugs its content vertically; the page itself fills pageHeight
-        // and top-aligns the card so the cream margin sits below it.
-        return VStack(spacing: 0) {
-            dayCard(for: cellDate)
-                .background(Color.white)
-                .clipShape(RoundedRectangle(cornerRadius: FloRadius.xl, style: .continuous))
-                .shadow(color: Color.black.opacity(0.12), radius: 14, x: 0, y: 6)
-                .contentShape(RoundedRectangle(cornerRadius: FloRadius.xl, style: .continuous))
-                .onTapGesture {
-                    FloHaptics.light()
-                    if hasEntries {
-                        detailDate = cellDate
-                    } else {
-                        newEntryDate = cellDate
-                    }
-                }
-                .padding(.horizontal, FloSpacing.lg)
-                .padding(.top, FloSpacing.sm)
-
-            Spacer(minLength: 0)
-        }
-        .frame(height: pageHeight)
     }
 
     // MARK: - Day card
@@ -704,18 +597,6 @@ struct JournalGridView: View {
 
     // MARK: - Date formatting
 
-    private func weekdayString(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.dateFormat = "EEEE"
-        return f.string(from: date)
-    }
-
-    private func dateString(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.dateFormat = "MMMM d"
-        return f.string(from: date)
-    }
-
     private func longDateString(_ date: Date) -> String {
         let f = DateFormatter()
         f.dateFormat = "EEEE, MMMM d, yyyy"
@@ -909,19 +790,15 @@ struct JournalDaySheet: View {
     }
 }
 
-// MARK: - Journal Base View (header + grid or filtered list)
+// MARK: - Journal Base View (header + feed or filtered list)
 /// Journal tab's base view. Persistent header with greeting + search at top.
-/// Below the header: the 2D paged day-card grid when search is empty, or a
-/// filtered list of entries when the user is searching.
+/// Below the header: the day-card feed when search is empty, or a filtered
+/// list of entries when the user is searching.
 struct JournalBaseView: View {
     @State private var journalManager = JournalManager.shared
     @State private var searchText: String = ""
     @State private var selectedEntry: JournalEntry? = nil
     @State private var hasAppeared = false
-    /// Default Journal-tab layout. Long-pressing the tab header bar flips
-    /// between .feed (Option B, the production layout) and .grid (Option A,
-    /// the parked 2D paging). In-memory only — resets to .feed on relaunch.
-    @State private var journalLayout: JournalGridView.Layout = .feed
     @FocusState private var isSearchFocused: Bool
 
     /// Bottom inset so the last entry clears the custom tab bar.
@@ -944,16 +821,11 @@ struct JournalBaseView: View {
 
             VStack(spacing: 0) {
                 // Shared header: journal icon + FLO, "Hello, name!", eyebrow.
-                // Long-press flips the parked grid/feed layouts.
                 ScreenHeader(
                     title: "Hello, \(userName)!",
                     eyebrow: "Way to take time to write it down.",
                     leadingIcon: "journal"
                 )
-                .onLongPressGesture {
-                    FloHaptics.medium()
-                    journalLayout = (journalLayout == .feed) ? .grid : .feed
-                }
 
                 searchBar
                     .padding(.horizontal, Layout.screenMargin)
@@ -961,7 +833,7 @@ struct JournalBaseView: View {
                     .padding(.bottom, FloSpacing.md)
 
                 if searchText.isEmpty {
-                    JournalGridView(layout: journalLayout)
+                    JournalFeedView()
                 } else {
                     searchResultsList
                 }
@@ -1054,10 +926,10 @@ struct JournalBaseView: View {
     }
 }
 
-#Preview("Journal Grid (focused card)") {
-    JournalGridView()
+#Preview("Journal Feed") {
+    JournalFeedView()
 }
 
-#Preview("Journal Tab (header + grid)") {
+#Preview("Journal Tab (header + feed)") {
     JournalBaseView()
 }
