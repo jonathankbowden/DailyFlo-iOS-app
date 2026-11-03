@@ -33,8 +33,6 @@ enum OnboardingPageID {
     static let birthDate = 2
     static let lastPeriod = 3
     static let cycleRhythm = 4
-    static let fourPhases = 5
-    static let allSet = 6
 }
 
 // MARK: - Main Onboarding View
@@ -84,20 +82,6 @@ struct OnboardingView: View {
             subtitle: "Your typical cycle, first day to first day, and how long your period lasts.",
             imageName: nil,
             inputType: .cycleRhythm
-        ),
-        OnboardingPage(
-            id: OnboardingPageID.fourPhases,
-            title: "Your Four Phases",
-            subtitle: "Your cycle has 4 distinct phases, each with unique characteristics.",
-            imageName: nil,
-            inputType: .none
-        ),
-        OnboardingPage(
-            id: OnboardingPageID.allSet,
-            title: "You're all set!",
-            subtitle: "Let's begin your journey to cycle-synced living.",
-            imageName: nil,
-            inputType: .none
         )
     ]
 
@@ -305,15 +289,9 @@ struct OnboardingPageView: View {
         VStack(spacing: FloSpacing.xl) {
             Spacer()
 
-            // Special layouts for welcome, phases, and completion
+            // Welcome gets the logo + brand mark above the title
             if page.id == OnboardingPageID.welcome {
                 welcomeElement
-                    .scaleFadeIn(delay: hasAppeared ? 0 : 0.1, from: 0.85)
-            } else if page.id == OnboardingPageID.fourPhases {
-                phaseOverviewElement
-                    .scaleFadeIn(delay: hasAppeared ? 0 : 0.1, from: 0.95)
-            } else if page.id == OnboardingPageID.allSet {
-                completionElement
                     .scaleFadeIn(delay: hasAppeared ? 0 : 0.1, from: 0.85)
             }
 
@@ -364,80 +342,6 @@ struct OnboardingPageView: View {
                 .shadow(color: Color.floSage.opacity(0.3), radius: 16, x: 0, y: 8)
         }
         .padding(.bottom, FloSpacing.md)
-        .accessibilityHidden(true)
-    }
-
-    // MARK: - Phase Overview Element
-    @ViewBuilder
-    private var phaseOverviewElement: some View {
-        VStack(spacing: FloSpacing.sm) {
-            ForEach(CyclePhase.allCases, id: \.self) { phase in
-                HStack(spacing: FloSpacing.md) {
-                    // Phase number circle — soft tint with charcoal numeral
-                    // so the light backgrounds stay legible and we avoid the
-                    // pink/yellow accent palette per product rule.
-                    ZStack {
-                        Circle()
-                            .fill(phase.backgroundColor)
-                            .frame(width: 44, height: 44)
-
-                        Text(phase.number)
-                            .font(.floLabel)
-                            .fontWeight(.bold)
-                            .foregroundColor(.floCharcoal)
-                    }
-
-                    // Phase info
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(phase.name)
-                            .font(.floBodyMedium)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.floCharcoal)
-
-                        Text(phase.subtitle)
-                            .font(.floCaption)
-                            .foregroundColor(.floGray)
-                            .tracking(0.5)
-                    }
-
-                    Spacer()
-
-                    // Day range
-                    Text("Days \(phase.dayRange.lowerBound)-\(phase.dayRange.upperBound)")
-                        .font(.floCaption)
-                        .foregroundColor(.floGray)
-                }
-                .padding(.horizontal, FloSpacing.md)
-                .padding(.vertical, FloSpacing.sm)
-                .background(phase.backgroundColor.opacity(0.6))
-                .cornerRadius(FloRadius.md)
-            }
-        }
-        .padding(.horizontal, FloSpacing.md)
-        .accessibilityElement(children: .contain)
-    }
-
-    // MARK: - Completion Element
-    @ViewBuilder
-    private var completionElement: some View {
-        VStack(spacing: FloSpacing.md) {
-            // Success checkmark
-            ZStack {
-                Circle()
-                    .fill(Color.floSage.opacity(0.15))
-                    .frame(width: 100, height: 100)
-
-                Circle()
-                    .fill(Color.floSage)
-                    .frame(width: 72, height: 72)
-                    .shadow(color: Color.floSage.opacity(0.3), radius: 12, x: 0, y: 6)
-
-                Image(systemName: "checkmark")
-                    .font(.system(size: 32, weight: .semibold))
-                    .foregroundColor(.white)
-            }
-        }
-        .padding(.bottom, FloSpacing.sm)
         .accessibilityHidden(true)
     }
 
