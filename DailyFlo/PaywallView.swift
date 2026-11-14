@@ -18,6 +18,12 @@ struct PaywallView: View {
 
     private let manager = SubscriptionManager.shared
 
+    /// When false, the close (✕) affordance is hidden — used by the Pro gate
+    /// in `ContentView`, where the paywall is a hard gate with no exit but
+    /// entitlement (Restore and "I have a code" stay available). Defaults to
+    /// true everywhere else so an ordinary presentation can be dismissed.
+    private let canClose: Bool
+
     @State private var selectedPackage: Package?
     @State private var purchaseState: PurchaseState = .idle
     @State private var errorMessage: String?
@@ -45,11 +51,14 @@ struct PaywallView: View {
 
     private let previewTrialDemo: PreviewTrialDemo?
 
-    init(previewTrialDemo: PreviewTrialDemo? = nil) {
+    init(canClose: Bool = true, previewTrialDemo: PreviewTrialDemo? = nil) {
+        self.canClose = canClose
         self.previewTrialDemo = previewTrialDemo
     }
     #else
-    init() {}
+    init(canClose: Bool = true) {
+        self.canClose = canClose
+    }
     #endif
 
     var body: some View {
@@ -102,28 +111,34 @@ struct PaywallView: View {
             // our own rather than using `.presentationDragIndicator(.visible)`
             // so the affordance sits visually inside the sheet's cream
             // surface instead of floating above it on the dim backdrop.
-            Capsule()
-                .fill(Color.floGray.opacity(0.3))
-                .frame(width: 36, height: 5)
-                .padding(.top, FloSpacing.sm)
-                .padding(.bottom, FloSpacing.xs)
-                .accessibilityHidden(true)
+            // Hidden on the hard gate (`canClose == false`) so nothing signals
+            // a swipe-to-dismiss that won't work.
+            if canClose {
+                Capsule()
+                    .fill(Color.floGray.opacity(0.3))
+                    .frame(width: 36, height: 5)
+                    .padding(.top, FloSpacing.sm)
+                    .padding(.bottom, FloSpacing.xs)
+                    .accessibilityHidden(true)
+            }
 
             HStack {
                 Spacer()
-                Button {
-                    FloHaptics.light()
-                    dismiss()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(.floCharcoal.opacity(0.6))
-                        .frame(width: 32, height: 32)
-                        .background(Color.white.opacity(0.7))
-                        .clipShape(Circle())
+                if canClose {
+                    Button {
+                        FloHaptics.light()
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.floCharcoal.opacity(0.6))
+                            .frame(width: 32, height: 32)
+                            .background(Color.white.opacity(0.7))
+                            .clipShape(Circle())
+                    }
+                    .floHitTarget()
+                    .accessibilityLabel("Close")
                 }
-                .floHitTarget()
-                .accessibilityLabel("Close")
             }
             .padding(.horizontal, FloSpacing.md)
             .padding(.bottom, FloSpacing.xs)

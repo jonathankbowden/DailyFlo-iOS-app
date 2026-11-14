@@ -83,11 +83,12 @@ struct ContentView: View {
             if isPro { showProGate = false }
         }
         .sheet(isPresented: $showProGate) {
-            PaywallView()
+            // Hard gate: no ✕ and no swipe. Entitlement is the only exit
+            // (isPro flips → sheet drops). Restore and "I have a code" stay
+            // available inside so nobody gets trapped.
+            PaywallView(canClose: false)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.hidden)
-                // The paywall is the Pro gate — it can't be swiped away.
-                // Entitlement is the only exit (isPro flips → sheet drops).
                 .interactiveDismissDisabled()
         }
     }
