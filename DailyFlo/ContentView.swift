@@ -86,6 +86,9 @@ struct ContentView: View {
             PaywallView()
                 .presentationDetents([.large])
                 .presentationDragIndicator(.hidden)
+                // The paywall is the Pro gate — it can't be swiped away.
+                // Entitlement is the only exit (isPro flips → sheet drops).
+                .interactiveDismissDisabled()
         }
     }
 

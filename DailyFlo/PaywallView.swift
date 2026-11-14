@@ -4,11 +4,12 @@
 //
 //  Subscription paywall driven by SubscriptionManager. Pulls $rc_annual +
 //  $rc_monthly from the active "default" Offering, frames the annual with
-//  a 1-month free trial, and routes the CTA through SubscriptionManager's
-//  `purchase(package:)` (stubbed until the next prompt).
+//  a 1-month free trial, routes the CTA through SubscriptionManager's
+//  `purchase(package:)`, and offers Restore + Apple Offer Code redemption.
 //
 
 import RevenueCat
+import StoreKit
 import SwiftUI
 
 struct PaywallView: View {
@@ -21,6 +22,7 @@ struct PaywallView: View {
     @State private var purchaseState: PurchaseState = .idle
     @State private var errorMessage: String?
     @State private var showError = false
+    @State private var showOfferCodeRedemption = false
 
     private enum PurchaseState: Equatable {
         case idle
@@ -67,6 +69,7 @@ struct PaywallView: View {
                         .padding(.horizontal, FloSpacing.xs)
                 }
                 restoreButton
+                offerCodeButton
                 legalLinks
             }
             .padding(.horizontal, FloSpacing.lg)
@@ -82,6 +85,12 @@ struct PaywallView: View {
             Button("OK", role: .cancel) { }
         } message: { message in
             Text(message)
+        }
+        // Apple's Offer Code redemption sheet. On completion, hand the result
+        // to the manager, which refreshes CustomerInfo so a redeemed code flips
+        // `isPro` and the gating paywall closes without a relaunch.
+        .offerCodeRedemption(isPresented: $showOfferCodeRedemption) { result in
+            Task { await manager.completeOfferCodeRedemption(result) }
         }
     }
 
@@ -388,6 +397,22 @@ struct PaywallView: View {
         }
         .buttonStyle(.floTertiary)
         .disabled(purchaseState != .idle)
+    }
+
+    /// Opens Apple's Offer Code redemption sheet. Styled to match
+    /// `restoreButton` so the two ancillary actions read as a pair.
+    private var offerCodeButton: some View {
+        Button {
+            FloHaptics.light()
+            showOfferCodeRedemption = true
+        } label: {
+            Text("I have a code")
+                .font(.floBodyMedium.weight(.medium))
+        }
+        .buttonStyle(.floTertiary)
+        .disabled(purchaseState != .idle)
+        .accessibilityLabel("I have a code")
+        .accessibilityHint("Redeem an Apple subscription offer code")
     }
 
     private var legalLinks: some View {

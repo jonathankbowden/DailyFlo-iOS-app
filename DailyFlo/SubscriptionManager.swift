@@ -149,6 +149,24 @@ final class SubscriptionManager {
         return realIsPro ? .restored : .nothingToRestore
     }
 
+    /// Finishes an Apple Offer Code redemption. Called by the paywall with the
+    /// result of SwiftUI's `.offerCodeRedemption` sheet. On success we re-pull
+    /// CustomerInfo so `isPro` reflects the redeemed subscription and the
+    /// gating paywall closes without a relaunch; `customerInfoStream` would
+    /// also catch it, but this makes the close immediate. Failures (including
+    /// user-cancel) are intentionally silent — nothing was redeemed.
+    ///
+    /// Centralizing the post-redemption work here means a second code type
+    /// (e.g. a server-issued promo code) can be wired in at this one place.
+    func completeOfferCodeRedemption(_ result: Result<Void, Error>) async {
+        switch result {
+        case .success:
+            await refreshCustomerInfo()
+        case .failure:
+            break
+        }
+    }
+
     // MARK: - Identity
 
     /// Ties RevenueCat's app user id to the Supabase auth UUID so the
