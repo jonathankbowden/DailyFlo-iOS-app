@@ -32,7 +32,7 @@ On May 20, 2026 this project nearly lost untracked work because two out-of-sync 
 
 A subscription iOS app for women across a wide age range (teens through women in long marriages, including post-menopause as a v1.x audience). Combines cycle tracking, daily emotion journaling, integrated meditation with music, and a partner/parent share loop. Faith-informed in tone and worldview, not explicitly evangelical. Visual identity is soft neutrals and nature tones — no pinks/purples, no body imagery.
 
-Founded May 2026 by Jonathan Bowden and his wife Brittany Bowden (50/50). Bootstrapped. **Current target: submit to App Review September 29, 2026** via the "30 for 30" cadence (30 min/day, Sept 1–30; TestFlight build at the end of each week — builds 16–19). The original July 1 target passed during a capacity crunch; the September plan is the active one.
+Founded May 2026 by Jonathan Bowden and his wife Brittany Bowden (50/50). Bootstrapped. **Current target: submit to App Review November 29, 2026** via the November "30 for 30" cadence (~30 min/day, Nov 1–30, day N = Nov N; TestFlight build at the end of each week). The July 1 and September 29 targets both passed during capacity crunches; the November plan is the active one.
 
 The Bowdens also operate a separate design partnership called **Kreathaus**. Keep DailyFLO IP cleanly separated from Kreathaus work.
 
@@ -46,35 +46,36 @@ The Bowdens also operate a separate design partnership called **Kreathaus**. Kee
 - **Future:** Cloudflare R2 for audio CDN (post-launch)
 - **Music for meditations:** Suno Pro generated + originals from a church musician (hybrid model)
 
-## Current build state (as of September 6, 2026 — build 16 on TestFlight, build 17 in progress on branch `claude/30-for-30-list-muvjsh`)
+## Current build state (as of November 14, 2026 — `CURRENT_PROJECT_VERSION` bumped to **build 19** for this TestFlight upload; build 18 was set in September and may already be uploaded, so 19 avoids a duplicate-build rejection. Work lands on `design/original-restyle`, which fast-forward-merges into `main` for archiving.)
 
 ### What's real and wired
 
-- **Partner share is real end to end (Week 2, Days 8–13).** The whole loop is wired to Supabase and verified on the simulator with two accounts:
+- **Partner share is real end to end (wired in September).** The whole loop is wired to Supabase and verified on the simulator with two accounts — **not yet tested on two real phones (that's Nov Day 10).**
   - **Invite:** `PartnerManager.ensurePendingInvitation()` writes an `invitations` row with a client-minted `FLO-XXXXXX` code (unambiguous alphabet, 30-day expiry). "Share Code" opens the system share sheet (`InviteShareSheet` wraps `UIActivityViewController`; SwiftUI's `ShareLink` has no completion callback) with a first-person message and the code.
   - **Accept:** the supporter types the code; `acceptInvitation(code:)` calls the `accept_invitation` RPC, which validates, inserts `partner_relationships`, stamps `invitations.accepted_at`, and settles `profiles.role` (tracker → supporter if no cycles, tracker → both if some). Errors are named (`invitation_not_found`, `invitation_expired`, `invitation_already_accepted`, `own_invitation`) and mapped to copy in `PartnerError`.
   - **Read:** `ConnectView` derives its state from the DB on every open (`syncStatus`): active relationship → connected, open invitation → pending, else not connected. The sample "Sarah" partner and the DEBUG "Demo: Show Connected" button are gone. `SupporterHomeView` renders from `SupporterSnapshot` (tracker name, permission-gated phase inputs); the phase is computed with `CycleManager`'s static math so both phones agree.
   - **Permissions + disconnect:** the "…" on the connected card opens `PartnerOptionsSheet`. v1 exposes exactly one switch, "Share my current phase" (`show_current_phase`), because it is the only permission anything renders yet; the other eight keys stay stored. Either side can disconnect; it's a soft end (`ended_at`), never a delete.
   - **Server functions** (all SECURITY DEFINER, granted to `authenticated` only, in `supabase/migrations/2026091[0-3]_*.sql`): `accept_invitation`, `my_partner_relationships`, `supporter_snapshot`, `update_partner_permissions`, `disconnect_partner`. Client code never reads `invitations` or `profiles` across users directly — RLS only exposes your own rows, so any cross-user read goes through one of these.
   - **Permission keys are settled** on the app's `show_*` / `notify_*` names (see `PartnerManager.defaultPermissions`). `partner_has_permission` was redefined (Sept 13 migration) to read those and to alias the older `view_*` spellings the July RLS verification script assumed, so existing policies keep working. Its parameter names `(tracker_id, supporter_id, permission_key)` cannot change — `CREATE OR REPLACE` refuses.
-  - **Not yet:** the tracker's phone hasn't run the Week 2 code (no cable/phone during Days 11–13); build 17 to TestFlight is Day 14. Notifications (`notify_*` keys) are stored but nothing sends them. The support-tip copy for menstrual/ovulation/luteal in `SupporterTips` is a draft for Brittany to edit.
+  - **Not yet:** the full loop hasn't run on two real phones — that's Nov Day 10, and it's the main open risk on partner share. Notifications (`notify_*` keys) are stored but nothing sends them. The support-tip copy for menstrual/ovulation/luteal in `SupporterTips` is a draft for Brittany to edit.
 
 - **Auth is real.** Sign in with Apple (native button + direct ASAuthorizationController), Google, and email — email is **passwordless OTP** via `signInWithOtp` (June 10 decision; the password path is kept hidden for App Review). All sign-in methods flow through one central auth loop. Apple full name persisted; revoked/existing-account cases handled; display_name never derived from email.
 - **Cycle and journal sync to Supabase.** `CycleManager` → `profiles` + `cycles`; `JournalManager` → `emotion_entries` (one entry per day enforced). UserDefaults remains the local cache layer. Onboarding persists via deferred write on first authed launch; the birth date (13+ gate) is the only hard requirement for that push — **a missing display name must never block it** (Sept 6 fix: it used to, which silently dropped the initial `cycles` row for Sign in with Apple users whose name never arrived). `refresh(userId:)` backfills the initial cycle when the server has none but the device has a period date.
 - **RevenueCat is live end to end.** SDK integrated, purchases work, `linkUser`/`unlinkUser` in `SubscriptionManager` tie the RevenueCat customer to the Supabase auth UUID from the central auth loop. The `revenuecat-webhook` Supabase Edge Function is **deployed and verified** (first 200 received Sept 1); webhook wired in the RevenueCat dashboard for both environments.
 - **RevenueCat Transfer behavior is deliberately "Keep with original App User ID."** Subscriptions do NOT follow identified→identified account switches — this is a shared-device safety decision for our couple and parent-teen audiences (one person's sub shouldn't unlock for whoever signs in next on the same phone). The `revenuecat-webhook` `TRANSFER` handler (Day 3, Sept 3) exists for the **anonymous→identified merge** case (purchase-then-sign-in, and the `linkUser` race that dropped early sandbox purchases), which RevenueCat always transfers regardless of this setting. It re-syncs the identified user's state from the RC REST API (`REVENUECAT_API_KEY` secret). Do not "fix" account switches by flipping this setting — the current behavior is intended.
-- **UI shell is polished and complete.** Splash → onboarding → signIn → 5-tab main with custom FAB. Design system (`DesignSystem.swift`) is mature — use its tokens, never hardcode design values.
+- **UI shell is polished and complete.** Flow is Splash → onboarding → sign-in → main. **Onboarding is five screens** (`OnboardingView`): welcome, name, birthday (13+ gate), last-period date, cycle rhythm (cycle length + period length on one screen) — then sign-in. **There is no Home dashboard (`HomeView` is deleted).** The main screen is a **five-slot custom bottom bar: Calendar · Journal · [+] · Profile · Pause**, where [+] is the centered FAB in a cut-out notch (`FloTabBar`/`FloTabBarShape` in `ContentView.swift`) that opens a new journal entry. **Calendar is the launch tab** (`selectedTab = 0`) and the app's home. Design system (`DesignSystem.swift`) is mature — use its tokens, never hardcode design values.
+- **Paywall is a single hard gate.** `ContentView.evaluateProGate()` runs once per launch right after onboarding + sign-in; if the user isn't Pro it presents `PaywallView` in a sheet that **can't be swiped away and has no ✕ (`canClose: false` + `.interactiveDismissDisabled()`)** — entitlement is the only exit (when `isPro` flips, the sheet drops). The gate still shows **Restore purchases** and **"I have a code"** (Apple Offer Code redemption via SwiftUI `.offerCodeRedemption`, completed through `SubscriptionManager.completeOfferCodeRedemption(_:)`) so nobody is trapped. `PaywallView(canClose:)` defaults to `true`, so any non-gate presentation keeps the ✕.
 - **Cycle math works.** Phases, next-period prediction, day-of-cycle, month calendar generation.
 - **Voice entry exists.** `VoiceEntryView` + `SpeechRecognizer` — feature flag candidate if it gets flaky.
 - **Supabase backend is complete.** 10 tables with RLS on every one; migrations live in `supabase/migrations/` (see schema section).
 - **Privacy manifest** (`PrivacyInfo.xcprivacy`) is in the target (Week 1). **Fake journal seed removed; dev tools gated behind `#if DEBUG`** (Week 1).
 
-### What's still missing (the 30-for-30 punch list)
+### What's still missing (the November punch list)
 
-- **Build 17 not yet on TestFlight** — Day 14. Needs the phone in hand (cable or Wi-Fi pairing). Run the test-data cleanup (below) before Brittany's first real accept.
-- **No Sentry, no PostHog.** Accounts exist; SDKs not integrated (Week 3).
+- **Partner share not yet verified on two real phones** — Nov Day 10. Run the test-data cleanup (below) before Brittany's first real accept.
+- **Meditation catalog/streaming + church access codes** — Week 2 work; the catalog currently ships bundled MP3s, cloud streaming and the church-musician access codes aren't wired yet.
+- **No account deletion flow, no SMTP sender, no Sentry, no PostHog, no offline journal write queue, no photos-to-Storage** — all Week 3.
 - **No tests.**
-- **No offline write queue** for failed Supabase writes (journal first, Week 3).
 - **Partner notifications** (`notify_*` permission keys) are stored but nothing sends them.
 
 ### Test data in production Supabase (as of Sept 6)
@@ -115,7 +116,7 @@ These are settled — don't re-litigate them in suggestions:
 ## UI decisions since May
 
 - **Journal base view (locked June): simple vertical feed, "Option B."** The omni-scroll 2D day-card calendar grid ("Option A") is **parked to v2 — do not re-pitch it.** v1 journal is a straightforward vertical feed of entries.
-- **Tab bar restructure (designed May 26):** Profile, Calendar, [+] FAB, Journal, Pause (Meditation), with Profile as the default-selected landing tab absorbing the Home dashboard. **Verify against `ContentView.swift` before assuming built or unbuilt** — don't trust this doc for its current state.
+- **Tab bar + home (current, built):** five-slot custom bottom bar — **Calendar · Journal · [+] · Profile · Pause** — with **Calendar as the default-selected launch tab** and the app's home. There is **no Home dashboard** (`HomeView` deleted; it was never reinstated). The [+] is the centered FAB in a cut-out notch and opens a new journal entry. (This supersedes the May 26 "Profile-as-landing" sketch.) Still verify against `ContentView.swift` if in doubt.
 - All UI work honors the locked design constraints: no symptoms, no flow/heaviness, no pinks/purples.
 
 ## Supabase schema (live; migrations in `supabase/migrations/`)
@@ -159,14 +160,14 @@ When integrating the SDK, read credentials from a `.xcconfig` file or `Info.plis
 - **Meta (Facebook Login) is OUT for v1** (decided Sept 1, 2026). Remove or keep-hidden any Meta button stubs; don't build the provider config.
 - Email is `signInWithOtp` — no password at signup. A password path exists but stays hidden for App Review. Phone OTP deferred to v1.x.
 
-## Next engineering work — the 30-for-30 plan (Sept 1–30, 2026)
+## Next engineering work — the November "30 for 30" plan (Nov 1–30, 2026)
 
-One finishable ~30-minute task per day; day N = September N. The authoritative day-by-day list lives in Jonathan's Cowork "dailyflo-30-for-30" tracker. Shape of the month:
+One finishable ~30-minute task per day; day N = November N. Target: **submit to App Review Nov 29.** Shape of the month:
 
-1. **Week 1 — clear the blockers (done):** rotate webhook secret + prove sandbox purchase chain (row lands in `subscriptions`), privacy manifest, remove fake journal seed + gate dev tools out of Release, this doc rewrite, **build 16 shipped**.
-2. **Week 2 — partner share, for real (Days 8–13 done, verified on simulator):** real invite codes → `invitations` (Day 8), share sheet (9), accept flow → `partner_relationships` (10), ConnectView reads real state (11), supporter home reads real data (12), permissions + disconnect (13). **Day 14: ship build 17** (tested on two phones) — pending the phone.
-3. **Week 3 — instrument & finish:** Sentry, PostHog, BBT field, offline journal write queue, meditation sessions → cloud, photos → Storage, **ship build 18**.
-4. **Week 4 — submit:** remaining schema into version control, first tests, store listing, App Review prep, fresh-phone walkthrough, fix what testers hit, **ship build 19, submit for App Review Day 29**, retro Day 30.
+1. **Week 1 — original design:** land the Summer-2026 restyle on the core screens (Calendar home, shared `ScreenHeader`, pinned custom tab bar, paywall hard gate + Offer Codes). This is where the current branch work sits.
+2. **Week 2 — partner share on two real phones** (the Day 10 verification), **meditation catalog/streaming**, and **church-musician access codes**.
+3. **Week 3 — instrument & finish:** account deletion, SMTP sender, Sentry, PostHog, offline journal write queue, photos → Storage.
+4. **Week 4 — submit:** compliance pass, remaining schema into version control, store listing, App Review prep, fresh-phone walkthrough, fix what testers hit, **submit for App Review Nov 29.**
 
 ## Conventions
 
