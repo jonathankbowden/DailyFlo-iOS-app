@@ -29,6 +29,11 @@ enum AccountDeletion {
     /// should surface an error and stay signed in). Local teardown and sign-out
     /// only run after the server delete succeeds.
     static func deleteAccount() async throws {
+        // 0. Abandon any queued offline journal writes FIRST, so a reconnect
+        //    mid-deletion can't replay them and resurrect rows the server delete
+        //    is about to erase.
+        JournalManager.shared.clearPendingQueueForCurrentUser()
+
         // 1. Server: delete the auth user + every owned row in one transaction.
         //    auth.uid() inside the function guarantees it only touches the
         //    caller's data.
