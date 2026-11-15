@@ -79,9 +79,10 @@ final class MeditationCatalog {
 
     /// Groups rows by theme (preserving the server's `sort_order`) into one
     /// `MeditationSession` per theme. `collectibleImages` is ordered by duration
-    /// [5, 10, 60] so it lines up with `MeditationDuration`/`imageVariant`, and
-    /// the bundled/synth source comes from the theme's shortest-duration row
-    /// (one looping track per theme today).
+    /// [5, 10, 60] to line up with `MeditationDuration`/`imageVariant`. The
+    /// streaming `audioPaths` map is filled **per slot** from every row, so no
+    /// duration's `audio_path` is lost. Bundled/synth stays per theme (one loop
+    /// today), taken from the shortest-duration row.
     private static func sessions(from rows: [CatalogRow]) -> [MeditationSession] {
         var order: [String] = []
         var byTheme: [String: [CatalogRow]] = [:]
@@ -95,13 +96,21 @@ final class MeditationCatalog {
             let sorted = group.sorted { $0.durationMinutes < $1.durationMinutes }
             let images = sorted.map(\.imageName)
             let base = sorted[0]
+
+            var audioPaths: [MeditationDuration: String] = [:]
+            for row in sorted {
+                guard let path = row.audioPath, !path.isEmpty,
+                      let duration = MeditationDuration(rawValue: row.durationMinutes) else { continue }
+                audioPaths[duration] = path
+            }
+
             return MeditationSession(
                 title: base.title,
                 phase: Self.phase(from: base.phase),
                 imageName: images.first ?? base.imageName,
                 collectibleImages: images,
                 audioFileName: base.bundledAudio,
-                audioPath: base.audioPath,
+                audioPaths: audioPaths,
                 ambientSound: AmbientSoundType(rawValue: base.ambientSound) ?? .warmDrone
             )
         }

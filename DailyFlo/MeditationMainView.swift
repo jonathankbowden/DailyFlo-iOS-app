@@ -39,12 +39,14 @@ struct MeditationSession: Identifiable {
     /// All three theme variants (`_a`/`_b`/`_c`), wired for the future
     /// collectible gallery. The active surface uses `imageName` (== `_a`).
     let collectibleImages: [String]
-    /// Bundled MP3 looped during the session. `nil` falls back to the
-    /// `AmbientAudioEngine` synth for `ambientSound`.
+    /// Bundled MP3 looped during the session — one loop per theme today. `nil`
+    /// falls back to the `AmbientAudioEngine` synth for `ambientSound`.
     let audioFileName: String?
-    /// Supabase Storage path for the streamed track. `nil` today — streaming
-    /// lands tomorrow; until then playback uses `audioFileName` / the synth.
-    var audioPath: String? = nil
+    /// Supabase Storage paths for the streamed track, **per duration slot**.
+    /// Empty today — streaming lands tomorrow; until then playback uses
+    /// `audioFileName` / the synth. Keyed by duration so the 5/10/60 slots can
+    /// each point at their own object (a longer track for 60 min, etc.).
+    var audioPaths: [MeditationDuration: String] = [:]
     /// Synth fallback used when `audioFileName` is `nil`.
     var ambientSound: AmbientSoundType = .warmDrone
     var isFavorite: Bool = false
@@ -677,7 +679,7 @@ struct MeditationPlayerView: View {
             // unified controller; subsequent presses resume after pause.
             if !hasStartedAudio {
                 hasStartedAudio = true
-                audio.play(session: session)
+                audio.play(session: session, duration: duration)
             } else {
                 audio.resume()
             }
