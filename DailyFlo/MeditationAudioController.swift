@@ -2,39 +2,75 @@
 //  MeditationAudioController.swift
 //  DailyFlo
 //
-//  Unified audio surface for the meditation player. Picks between a
-//  bundled MP3 (looped via AVAudioPlayer) and the synthesized
-//  AmbientAudioEngine fallback based on the session passed in. Exposes
-//  the play/pause/resume/stop interface the player view already uses.
+//  The single owner of meditation playback. Picks one source per slot —
+//  a streamed Storage track (StreamAudioEngine), a bundled MP3 loop
+//  (FileAudioEngine), or the synthesized AmbientAudioEngine fallback — and
+//  never starts more than one at a time. Also owns the shared audio session,
+//  the Now Playing lock-screen info, and the remote (play/pause) commands, so
+//  playback continues with the screen locked. Exposes the
+//  play/pause/resume/stop interface the player view already uses.
 //
 
 import AVFoundation
+import MediaPlayer
 import Observation
+import UIKit
 
 @MainActor
 @Observable
 final class MeditationAudioController {
+    private var streamEngine: StreamAudioEngine?
     private var fileEngine: FileAudioEngine?
     private var synthEngine: AmbientAudioEngine?
 
     private(set) var isPlaying = false
 
+    // Now Playing / lock-screen state for the active session.
+    private var currentSession: MeditationSession?
+    private var currentDuration: MeditationDuration?
+    private var elapsedBase: TimeInterval = 0   // accumulated before the current run
+    private var runStart: Date?                 // when the current play/resume began
+    private var remoteCommandsWired = false
+
     /// Begins playback for the given session at the chosen duration. Source
     /// priority **per slot** (theme × duration):
-    ///   1. `audioPaths[duration]` → stream the Supabase Storage object (TODO,
-    ///                               lands with tomorrow's streaming task).
+    ///   1. `audioPaths[duration]` → stream the Supabase Storage object.
     ///   2. `audioFileName`        → loop the bundled MP3 via `FileAudioEngine`.
     ///   3. neither                → synthesized `AmbientAudioEngine` fallback.
-    /// Streaming isn't wired yet, so a slot with an `audioPaths` entry still
-    /// falls through to its bundled file / synth — no slot is ever silent today.
-    /// Either way the call is fire-and-forget.
+    /// If streaming fails to sign/load, it falls back to the bundled loop / synth
+    /// for the same session — a slot is never left silent. Fire-and-forget.
     func play(session: MeditationSession, duration: MeditationDuration) {
         stop()
+        activateSession()
+        wireRemoteCommandsIfNeeded()
+
+        currentSession = session
+        currentDuration = duration
+        elapsedBase = 0
+        runStart = Date()
+
         if let path = session.audioPaths[duration], !path.isEmpty {
-            #if DEBUG
-            print("MeditationAudioController: TODO stream Storage path '\(path)' for '\(session.title)' @\(duration.rawValue)min; using bundled/synth for now")
-            #endif
+            let engine = StreamAudioEngine()
+            streamEngine = engine
+            engine.play(path: path) { [weak self] in
+                // Signing/loading failed — drop to the bundled loop / synth.
+                guard let self, self.streamEngine === engine else { return }
+                #if DEBUG
+                print("MeditationAudioController: stream failed for '\(session.title)'; falling back to bundled/synth")
+                #endif
+                self.streamEngine = nil
+                self.startBundledOrSynth(session)
+            }
+        } else {
+            startBundledOrSynth(session)
         }
+
+        isPlaying = true
+        updateNowPlaying(rate: 1)
+    }
+
+    /// Bundled MP3 loop if present, otherwise the synthesized fallback.
+    private func startBundledOrSynth(_ session: MeditationSession) {
         if let filename = session.audioFileName {
             let engine = FileAudioEngine()
             engine.play(resource: filename)
@@ -49,29 +85,31 @@ final class MeditationAudioController {
                 synthEngine = engine
             } catch {
                 #if DEBUG
-                print("""
-                MeditationAudioController: synth start FAILED for '\(session.title)'
-                  sound:                  \(session.ambientSound.rawValue)
-                  error:                  \(error)
-                  audio session category: \(AVAudioSession.sharedInstance().category.rawValue)
-                  audio session active:   \(AVAudioSession.sharedInstance().isOtherAudioPlaying)
-                """)
+                print("MeditationAudioController: synth start FAILED for '\(session.title)': \(error)")
                 #endif
             }
         }
-        isPlaying = true
     }
 
     func pause() {
+        streamEngine?.pause()
         fileEngine?.pause()
         synthEngine?.pause()
+        // Freeze accumulated elapsed time at the pause point.
+        elapsedBase = currentElapsed()
+        runStart = nil
         isPlaying = false
+        updateNowPlaying(rate: 0)
     }
 
     func resume() {
+        activateSession()
+        streamEngine?.resume()
         fileEngine?.resume()
         synthEngine?.resume()
+        runStart = Date()
         isPlaying = true
+        updateNowPlaying(rate: 1)
     }
 
     /// Stops playback with an optional custom fade. Default is the snappy
@@ -79,11 +117,97 @@ final class MeditationAudioController {
     /// A longer fade (3–5s) is appropriate at natural session-end so the
     /// loop bleeds out gently instead of cutting off.
     func stop(fade: Double = 1.0) {
+        streamEngine?.stop(fade: fade)
         fileEngine?.stop(fade: fade)
         synthEngine?.stop()
+        streamEngine = nil
         fileEngine = nil
         synthEngine = nil
         isPlaying = false
+        currentSession = nil
+        currentDuration = nil
+        runStart = nil
+        elapsedBase = 0
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+    }
+
+    // MARK: - Audio session
+
+    /// Routes audio to `.playback` so it keeps going with the screen locked and
+    /// the app in the background (requires UIBackgroundModes = audio). Owned
+    /// here so the per-source engines don't each fight over the category.
+    private func activateSession() {
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setCategory(.playback, mode: .default)
+            try session.setActive(true)
+        } catch {
+            #if DEBUG
+            print("MeditationAudioController: audio session activation failed: \(error)")
+            #endif
+        }
+    }
+
+    // MARK: - Now Playing (lock screen)
+
+    private func currentElapsed() -> TimeInterval {
+        let running = runStart.map { Date().timeIntervalSince($0) } ?? 0
+        let total = elapsedBase + running
+        if let seconds = currentDuration?.seconds { return min(total, TimeInterval(seconds)) }
+        return total
+    }
+
+    private func updateNowPlaying(rate: Double) {
+        guard let session = currentSession, let duration = currentDuration else { return }
+        var info: [String: Any] = [
+            MPMediaItemPropertyTitle: session.title.capitalized,
+            MPMediaItemPropertyArtist: "DailyFLO",
+            MPMediaItemPropertyPlaybackDuration: TimeInterval(duration.seconds),
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: currentElapsed(),
+            MPNowPlayingInfoPropertyPlaybackRate: rate
+        ]
+        if let image = artworkImage(for: session, duration: duration) {
+            info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+        }
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    }
+
+    /// The per-slot background image the card/player showed, for lock-screen art.
+    private func artworkImage(for session: MeditationSession, duration: MeditationDuration) -> UIImage? {
+        let index: Int
+        switch duration {
+        case .five: index = 0
+        case .ten: index = 1
+        case .sixty: index = 2
+        }
+        let name = session.collectibleImages.indices.contains(index)
+            ? session.collectibleImages[index]
+            : session.imageName
+        return UIImage(named: name)
+    }
+
+    // MARK: - Remote commands
+
+    private func wireRemoteCommandsIfNeeded() {
+        guard !remoteCommandsWired else { return }
+        remoteCommandsWired = true
+
+        let center = MPRemoteCommandCenter.shared()
+        center.playCommand.addTarget { [weak self] _ in
+            guard let self, !self.isPlaying else { return .commandFailed }
+            self.resume()
+            return .success
+        }
+        center.pauseCommand.addTarget { [weak self] _ in
+            guard let self, self.isPlaying else { return .commandFailed }
+            self.pause()
+            return .success
+        }
+        center.togglePlayPauseCommand.addTarget { [weak self] _ in
+            guard let self else { return .commandFailed }
+            if self.isPlaying { self.pause() } else { self.resume() }
+            return .success
+        }
     }
 }
 
@@ -127,7 +251,9 @@ final class FileAudioEngine {
         print("FileAudioEngine: resolved '\(resource)' -> \(url.path)")
         #endif
 
-        configureAudioSession()
+        // Audio session is owned by MeditationAudioController (.playback), so
+        // bundled playback shares the same route as streaming and shows on the
+        // lock screen.
 
         do {
             let player = try AVAudioPlayer(contentsOf: url)
@@ -162,18 +288,6 @@ final class FileAudioEngine {
         fade(to: 0, duration: duration) { [weak self] in
             self?.player?.stop()
             self?.player = nil
-        }
-    }
-
-    private func configureAudioSession() {
-        let session = AVAudioSession.sharedInstance()
-        do {
-            try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
-            try session.setActive(true)
-        } catch {
-            #if DEBUG
-            print("FileAudioEngine: audio session error: \(error)")
-            #endif
         }
     }
 

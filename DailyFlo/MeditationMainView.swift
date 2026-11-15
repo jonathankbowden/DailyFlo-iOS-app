@@ -480,6 +480,10 @@ struct MeditationPlayerView: View {
     @State private var progress: CGFloat = 0.0
     @State private var timeRemaining: Int
     @State private var timer: Timer?
+    /// Wall-clock moment the session should end while playing (nil when paused).
+    /// Source of truth for the countdown, so a locked/backgrounded phone still
+    /// ends and fades on time regardless of timer throttling.
+    @State private var endDate: Date?
     @State private var imageScale: CGFloat = 1.0
     @State private var pulseScale: CGFloat = 1.0
     @State private var pulseOpacity: Double = 0.6
@@ -487,6 +491,7 @@ struct MeditationPlayerView: View {
     @State private var audio = MeditationAudioController()
     @State private var hasStarted = false
     @State private var hasStartedAudio = false
+    @Environment(\.scenePhase) private var scenePhase
 
     /// Fade duration applied when the session timer runs out — long enough
     /// that the loop tapers gently rather than cutting off.
@@ -569,6 +574,20 @@ struct MeditationPlayerView: View {
         .onDisappear {
             stopTimer()
             audio.stop()
+        }
+        // Mirror lock-screen / Control-Center play-pause (which drives the
+        // controller directly) into the view's countdown, without calling back
+        // into the controller.
+        .onChange(of: audio.isPlaying) { _, controllerPlaying in
+            if controllerPlaying != isPlaying {
+                setPlaying(controllerPlaying, propagate: false)
+            }
+        }
+        // Re-sync the countdown from the wall clock on return to foreground, in
+        // case the per-second timer was throttled while backgrounded.
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active, isPlaying else { return }
+            refreshCountdownFromClock()
         }
     }
 
@@ -670,23 +689,37 @@ struct MeditationPlayerView: View {
     // MARK: - Controls
     private func togglePlayPause() {
         FloHaptics.medium()
-        isPlaying.toggle()
+        setPlaying(!isPlaying, propagate: true)
+    }
 
-        if isPlaying {
+    /// Single entry point for flipping play state. `propagate == true` drives the
+    /// audio controller (in-app button); `false` is used when the change came
+    /// FROM the controller (a lock-screen command), so we mirror it without a
+    /// feedback loop.
+    private func setPlaying(_ playing: Bool, propagate: Bool) {
+        guard playing != isPlaying else { return }
+        isPlaying = playing
+
+        if playing {
+            // Anchor the end to the wall clock so the countdown survives a
+            // throttled timer or a spell in the background.
+            endDate = Date().addingTimeInterval(TimeInterval(timeRemaining))
             startTimer()
             startPulseAnimation()
-            // First press kicks off real-file or synth playback via the
-            // unified controller; subsequent presses resume after pause.
-            if !hasStartedAudio {
-                hasStartedAudio = true
-                audio.play(session: session, duration: duration)
-            } else {
-                audio.resume()
+            if propagate {
+                if !hasStartedAudio {
+                    hasStartedAudio = true
+                    audio.play(session: session, duration: duration)
+                } else {
+                    audio.resume()
+                }
             }
         } else {
+            syncRemainingFromClock()
+            endDate = nil
             stopTimer()
             stopPulseAnimation()
-            audio.pause()
+            if propagate { audio.pause() }
         }
     }
 
@@ -705,28 +738,43 @@ struct MeditationPlayerView: View {
     }
 
     private func startTimer() {
-        let totalSeconds = duration.seconds
+        stopTimer()
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
-            Task { @MainActor in
-                if timeRemaining > 0 {
-                    timeRemaining -= 1
-                    progress = CGFloat(totalSeconds - timeRemaining) / CGFloat(totalSeconds)
-                } else {
-                    FloHaptics.success()
-                    stopTimer()
-                    isPlaying = false
-                    stopPulseAnimation()
-                    // Gentle fade at natural session end (vs. the snappier
-                    // 1s fade when the user dismisses).
-                    audio.stop(fade: naturalEndFade)
-                }
-            }
+            Task { @MainActor in refreshCountdownFromClock() }
         }
     }
 
     private func stopTimer() {
         timer?.invalidate()
         timer = nil
+    }
+
+    /// Recomputes `timeRemaining`/`progress` from the wall-clock `endDate` and
+    /// fires the natural end when it reaches zero. Called on each tick and on
+    /// return to foreground, so a locked phone still ends and fades on time.
+    private func refreshCountdownFromClock() {
+        syncRemainingFromClock()
+        let total = duration.seconds
+        progress = total > 0 ? CGFloat(total - timeRemaining) / CGFloat(total) : 0
+        if timeRemaining <= 0 { finishNaturally() }
+    }
+
+    private func syncRemainingFromClock() {
+        guard let endDate else { return }
+        timeRemaining = max(0, Int(ceil(endDate.timeIntervalSinceNow)))
+    }
+
+    private func finishNaturally() {
+        stopTimer()
+        endDate = nil
+        isPlaying = false
+        timeRemaining = 0
+        progress = 1
+        stopPulseAnimation()
+        FloHaptics.success()
+        // Gentle fade at natural session end (vs. the snappier 1s fade on
+        // explicit dismiss).
+        audio.stop(fade: naturalEndFade)
     }
 }
 
