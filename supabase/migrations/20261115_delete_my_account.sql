@@ -53,9 +53,11 @@ begin
   -- Profile (1:1 with the auth user).
   delete from public.profiles           where user_id = v_uid;
 
-  -- Any Storage objects the caller owns (journal photos / voice notes once
-  -- those move to Storage; a harmless no-op while they're still device-local).
-  delete from storage.objects           where owner = v_uid;
+  -- Storage cleanup is intentionally NOT done here: newer Supabase blocks
+  -- direct DELETEs on storage.* tables, which would fail the whole RPC. It's a
+  -- no-op today anyway (journal photos / voice notes are device-local). When
+  -- those move to Storage (Day 21), delete the objects via the Storage API
+  -- (client or Edge Function), not from this function.
 
   -- Finally the auth record. auth.identities / sessions / refresh_tokens
   -- cascade from this within the auth schema.
