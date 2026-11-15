@@ -5,6 +5,7 @@
 //  Created by Jonathan Bowden on 2/3/26.
 //
 
+import StoreKit
 import Supabase
 import SwiftUI
 
@@ -27,6 +28,12 @@ struct ProfileMainView: View {
     @State private var isResetting = false
     #endif
     @State private var signOutErrorMessage: String?
+
+    // Account deletion (App Store Guideline 5.1.1(v)).
+    @State private var showDeleteConfirm = false
+    @State private var isDeleting = false
+    @State private var deleteErrorMessage: String?
+    private let subs = SubscriptionManager.shared
 
     // Restore Purchases (reachable from Settings, independent of the paywall).
     @State private var isRestoring = false
@@ -128,6 +135,15 @@ struct ProfileMainView: View {
         } message: {
             Text("You'll need to sign in again to access your cycle and journal.")
         }
+        .alert("Delete your account?", isPresented: $showDeleteConfirm) {
+            Button("Delete", role: .destructive) { performDeleteAccount() }
+            if subs.isPro {
+                Button("Manage Subscription") { Task { await openManageSubscriptions() } }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(deleteAlertMessage)
+        }
         #if DEBUG
         .alert("Reset DailyFLO?", isPresented: $showResetConfirm) {
             Button("Reset", role: .destructive) { performReset() }
@@ -152,6 +168,15 @@ struct ProfileMainView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     .padding(.bottom, FloSpacing.xxl)
                     .animation(FloAnimation.springGentle, value: restoreMessage)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if let message = deleteErrorMessage {
+                Text(message)
+                    .floToast(.error)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .padding(.bottom, FloSpacing.xxl)
+                    .animation(FloAnimation.springGentle, value: deleteErrorMessage)
             }
         }
         #if DEBUG
@@ -260,6 +285,52 @@ struct ProfileMainView: View {
                     withAnimation { signOutErrorMessage = nil }
                 }
             }
+        }
+    }
+
+    // MARK: - Delete Account
+
+    /// Base copy plus Apple's required subscription notice when the user is Pro.
+    private var deleteAlertMessage: String {
+        var message = "This permanently deletes your cycles, journal and partner connections. It can't be undone."
+        if subs.isPro {
+            message += "\n\nDeleting your account doesn't cancel your App Store subscription — manage or cancel it in the App Store."
+        }
+        return message
+    }
+
+    private func performDeleteAccount() {
+        guard !isDeleting else { return }
+        FloHaptics.medium()
+        isDeleting = true
+
+        Task { @MainActor in
+            defer { isDeleting = false }
+            do {
+                try await AccountDeletion.deleteAccount()
+                // On success the Supabase session ends and the app-level auth
+                // listener routes to onboarding — nothing more to do here.
+            } catch {
+                FloHaptics.error()
+                deleteErrorMessage = "Couldn't delete your account. \(error.localizedDescription)"
+                DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+                    withAnimation { deleteErrorMessage = nil }
+                }
+            }
+        }
+    }
+
+    /// Opens the system "Manage Subscriptions" sheet so the user can cancel an
+    /// App Store subscription that account deletion won't touch.
+    private func openManageSubscriptions() async {
+        guard let scene = UIApplication.shared.connectedScenes
+            .first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene else { return }
+        do {
+            try await AppStore.showManageSubscriptions(in: scene)
+        } catch {
+            #if DEBUG
+            print("ProfileMainView: showManageSubscriptions failed: \(error)")
+            #endif
         }
     }
 
@@ -521,6 +592,38 @@ struct ProfileMainView: View {
             .fadeIn(delay: hasAppeared ? 0 : 0.5)
             .accessibilityLabel("Sign out")
             .accessibilityHint("Sign out of your DailyFLO account")
+
+            // Delete Account — permanent, App Store Guideline 5.1.1(v).
+            Button(action: {
+                FloHaptics.light()
+                showDeleteConfirm = true
+            }) {
+                HStack(spacing: FloSpacing.sm) {
+                    if isDeleting {
+                        FloLoadingIndicator(size: 18, color: .floError, lineWidth: 2)
+                    } else {
+                        Image(systemName: "trash")
+                            .font(.system(size: 18, weight: .medium))
+                    }
+
+                    Text(isDeleting ? "Deleting…" : "Delete Account")
+                        .font(.floButton)
+                }
+                .foregroundColor(.floError)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, FloSpacing.md)
+                .background(Color.white)
+                .cornerRadius(FloRadius.lg)
+                .overlay(
+                    RoundedRectangle(cornerRadius: FloRadius.lg)
+                        .stroke(Color.floError.opacity(0.3), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.floPressed)
+            .disabled(isDeleting || isSigningOut)
+            .fadeIn(delay: hasAppeared ? 0 : 0.55)
+            .accessibilityLabel("Delete account")
+            .accessibilityHint("Permanently deletes your account and all your data")
 
             // Reset app & onboarding — DEBUG only, never ships in Release.
             #if DEBUG

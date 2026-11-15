@@ -159,6 +159,7 @@ When integrating the SDK, read credentials from a `.xcconfig` file or `Info.plis
 - **v1 auth = Sign in with Apple, Google, and passwordless email OTP** on a unified "Continue with" screen. Apple listed first (privacy positioning + App Store Guideline 4.8).
 - **Meta (Facebook Login) is OUT for v1** (decided Sept 1, 2026). Remove or keep-hidden any Meta button stubs; don't build the provider config.
 - Email is `signInWithOtp` — no password at signup. A password path exists but stays hidden for App Review. Phone OTP deferred to v1.x.
+- **Account deletion (Guideline 5.1.1(v))** lives in Profile → Settings → "Delete Account": `AccountDeletion.deleteAccount()` calls the `delete_my_account()` SECURITY DEFINER RPC (erases the caller's auth row + every owned row via `auth.uid()`), then RevenueCat logout + local-cache wipe + sign-out → onboarding. **Every new user-owned table MUST be added to `delete_my_account()`** (`supabase/migrations/20261115_delete_my_account.sql`), or its rows orphan on deletion.
 
 ## Next engineering work — the November "30 for 30" plan (Nov 1–30, 2026)
 

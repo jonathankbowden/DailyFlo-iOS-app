@@ -52,6 +52,12 @@ enum JournalPhotoStore {
         try? FileManager.default.removeItem(at: url)
     }
 
+    /// Removes every stored journal photo. Used by account deletion to return
+    /// the device to a fresh-install state.
+    static func deleteAll() {
+        try? FileManager.default.removeItem(at: directory())
+    }
+
     /// Loads the UIImage backing `userPhotoURL`. Tolerates three legacy
     /// shapes so any older entries still resolve:
     ///   - bare filename (the canonical format)

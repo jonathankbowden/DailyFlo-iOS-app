@@ -138,6 +138,12 @@ final class MeditationCatalog {
         try? data.write(to: cacheURL, options: .atomic)
     }
 
+    /// Deletes the on-disk catalog cache. Used by account deletion to return the
+    /// device to a fresh-install state.
+    func clearDiskCache() {
+        try? FileManager.default.removeItem(at: cacheURL)
+    }
+
     private func cachedOrBundled() -> [MeditationSession] {
         if let data = try? Data(contentsOf: cacheURL),
            let rows = try? JSONDecoder().decode([CatalogRow].self, from: data),
