@@ -42,6 +42,9 @@ struct MeditationSession: Identifiable {
     /// Bundled MP3 looped during the session. `nil` falls back to the
     /// `AmbientAudioEngine` synth for `ambientSound`.
     let audioFileName: String?
+    /// Supabase Storage path for the streamed track. `nil` today — streaming
+    /// lands tomorrow; until then playback uses `audioFileName` / the synth.
+    var audioPath: String? = nil
     /// Synth fallback used when `audioFileName` is `nil`.
     var ambientSound: AmbientSoundType = .warmDrone
     var isFavorite: Bool = false
@@ -106,97 +109,15 @@ struct MeditationMainView: View {
         )
     }
 
-    /// The full 10-theme library. Each theme has an `_a`/`_b`/`_c`
-    /// background set; the active surface uses `_a` and the rest are
-    /// wired through `collectibleImages` for the future gallery. The
-    /// five themes that ship with bundled MP3s loop the real file;
-    /// the other five drop to the `AmbientAudioEngine` synth.
-    @State private var sessions: [MeditationSession] = [
-        // Menstrual
-        MeditationSession(
-            title: "MIST",
-            phase: .menstrual,
-            imageName: "medbg_mist_a",
-            collectibleImages: ["medbg_mist_a", "medbg_mist_b", "medbg_mist_c"],
-            audioFileName: "mist_05min",
-            ambientSound: .gentleRain
-        ),
-        MeditationSession(
-            title: "NIGHT SKY",
-            phase: .menstrual,
-            imageName: "medbg_nightsky_a",
-            collectibleImages: ["medbg_nightsky_a", "medbg_nightsky_b", "medbg_nightsky_c"],
-            audioFileName: "nightsky_05min",
-            ambientSound: .nightAmbience
-        ),
-        MeditationSession(
-            title: "STILLWATER",
-            phase: .menstrual,
-            imageName: "medbg_stillwater_a",
-            collectibleImages: ["medbg_stillwater_a", "medbg_stillwater_b", "medbg_stillwater_c"],
-            audioFileName: "stillwater_05min",
-            ambientSound: .warmDrone
-        ),
-        // Follicular
-        MeditationSession(
-            title: "CANOPY",
-            phase: .follicular,
-            imageName: "medbg_canopy_a",
-            collectibleImages: ["medbg_canopy_a", "medbg_canopy_b", "medbg_canopy_c"],
-            audioFileName: "canopy_05min",
-            ambientSound: .forestBreeze
-        ),
-        MeditationSession(
-            title: "OPEN HILLS",
-            phase: .follicular,
-            imageName: "medbg_openhills_a",
-            collectibleImages: ["medbg_openhills_a", "medbg_openhills_b", "medbg_openhills_c"],
-            audioFileName: "openhills_05min",
-            ambientSound: .forestBreeze
-        ),
-        // Ovulation
-        MeditationSession(
-            title: "GOLDEN HOUR",
-            phase: .ovulation,
-            imageName: "medbg_goldenhour_a",
-            collectibleImages: ["medbg_goldenhour_a", "medbg_goldenhour_b", "medbg_goldenhour_c"],
-            audioFileName: "goldenhour_05min",
-            ambientSound: .softChimes
-        ),
-        MeditationSession(
-            title: "OCEAN",
-            phase: .ovulation,
-            imageName: "medbg_ocean_a",
-            collectibleImages: ["medbg_ocean_a", "medbg_ocean_b", "medbg_ocean_c"],
-            audioFileName: "ocean_05min",
-            ambientSound: .oceanWaves
-        ),
-        // Luteal
-        MeditationSession(
-            title: "STORM",
-            phase: .luteal,
-            imageName: "medbg_storm_a",
-            collectibleImages: ["medbg_storm_a", "medbg_storm_b", "medbg_storm_c"],
-            audioFileName: "storm_05min",
-            ambientSound: .gentleRain
-        ),
-        MeditationSession(
-            title: "FOREST",
-            phase: .luteal,
-            imageName: "medbg_forest_a",
-            collectibleImages: ["medbg_forest_a", "medbg_forest_b", "medbg_forest_c"],
-            audioFileName: "forest_05min",
-            ambientSound: .forestBreeze
-        ),
-        MeditationSession(
-            title: "SOLITUDE",
-            phase: .luteal,
-            imageName: "medbg_solitude_a",
-            collectibleImages: ["medbg_solitude_a", "medbg_solitude_b", "medbg_solitude_c"],
-            audioFileName: "solitude_05min",
-            ambientSound: .warmDrone
-        )
-    ]
+    /// The themes the carousel renders. Seeded with the bundled fallback so the
+    /// first frame is never empty, then replaced by the live Supabase catalog
+    /// (or the disk cache offline) via `refreshCatalog()` on each Pause open.
+    @State private var sessions: [MeditationSession] = MeditationCatalog.bundledFallback
+
+    /// Favorited themes, keyed by title. Held here (not on `sessions`) so a
+    /// catalog refresh can repopulate `sessions` without dropping the hearts.
+    /// In-memory only, exactly as before — resets on relaunch.
+    @State private var favoriteKeys: Set<String> = []
 
     var body: some View {
         ZStack {
@@ -298,10 +219,36 @@ struct MeditationMainView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 hasAppeared = true
             }
+            // Refresh from Supabase every time Pause opens, so a catalog edit
+            // shows up without a rebuild. Offline, this returns the disk cache
+            // (or the bundled fallback) — Pause always has a catalog.
+            Task { await refreshCatalog() }
+        }
+    }
+
+    /// Loads the live catalog and applies it, preserving current favorites.
+    private func refreshCatalog() async {
+        applyCatalog(await MeditationCatalog.shared.load())
+    }
+
+    /// Replaces `sessions` with a freshly loaded catalog, re-stamping each
+    /// theme's favorite state from `favoriteKeys` so hearts survive the swap.
+    private func applyCatalog(_ loaded: [MeditationSession]) {
+        sessions = loaded.map { session in
+            var session = session
+            session.isFavorite = favoriteKeys.contains(session.title)
+            return session
         }
     }
 
     private func toggleFavorite(_ session: MeditationSession) {
+        // Track by title so the state survives a catalog refresh (which rebuilds
+        // the session objects, changing their ids).
+        if favoriteKeys.contains(session.title) {
+            favoriteKeys.remove(session.title)
+        } else {
+            favoriteKeys.insert(session.title)
+        }
         if let index = sessions.firstIndex(where: { $0.id == session.id }) {
             withAnimation(FloAnimation.springSnappy) {
                 sessions[index].isFavorite.toggle()

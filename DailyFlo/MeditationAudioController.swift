@@ -19,11 +19,21 @@ final class MeditationAudioController {
 
     private(set) var isPlaying = false
 
-    /// Begins playback for the given session. If the session ships with a
-    /// bundled MP3, that file is looped; otherwise we fall back to the
-    /// synthesized ambient sound. Either way the call is fire-and-forget.
+    /// Begins playback for the given session. Source priority per slot:
+    ///   1. `audioPath`      → stream the Supabase Storage object (TODO, lands
+    ///                         with tomorrow's streaming task).
+    ///   2. `audioFileName`  → loop the bundled MP3 via `FileAudioEngine`.
+    ///   3. neither          → synthesized `AmbientAudioEngine` fallback.
+    /// Streaming isn't wired yet, so a slot with an `audioPath` still falls
+    /// through to its bundled file / synth — no slot is ever silent today.
+    /// Either way the call is fire-and-forget.
     func play(session: MeditationSession) {
         stop()
+        if let path = session.audioPath, !path.isEmpty {
+            #if DEBUG
+            print("MeditationAudioController: TODO stream Storage path '\(path)' for '\(session.title)'; using bundled/synth for now")
+            #endif
+        }
         if let filename = session.audioFileName {
             let engine = FileAudioEngine()
             engine.play(resource: filename)
