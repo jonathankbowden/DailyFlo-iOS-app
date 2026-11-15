@@ -8,11 +8,12 @@
 //
 //  The DB stores `audio_path` as "<bucket>/<key…>" (e.g.
 //  "meditations/mist-10.m4a"): first path component is the bucket, the rest is
-//  the object key. We sign a 1-hour URL, stream it on an AVQueuePlayer looped
-//  by AVPlayerLooper (so a 10-min track fills a 60-min session seamlessly), and
-//  fade volume the same way FileAudioEngine does. If signing or loading fails,
-//  `onFailure` fires exactly once so the controller falls back to the bundled
-//  loop / synth — a slot is never left silent.
+//  the object key. We sign a URL (session length + 30 min, min 1 hour), stream
+//  it on an AVQueuePlayer looped by AVPlayerLooper (so a 10-min track fills a
+//  60-min session seamlessly), and fade volume the same way FileAudioEngine
+//  does. If signing/loading fails — or playback simply never starts within a
+//  few seconds — `onFailure` fires exactly once so the controller falls back to
+//  the bundled loop / synth. A slot is never left silent.
 //
 
 import AVFoundation
@@ -22,26 +23,33 @@ import Supabase
 final class StreamAudioEngine {
     private var player: AVQueuePlayer?
     private var looper: AVPlayerLooper?
-    private var statusObservation: NSKeyValueObservation?
+    private var looperStatusObservation: NSKeyValueObservation?
+    private var timeControlObservation: NSKeyValueObservation?
 
     private let targetVolume: Float = 0.85
-    private let signedURLTTL = 3600   // 1 hour
+    /// Fall back if real playback hasn't begun within this long of `play(path:)`.
+    private let startTimeoutSeconds: Double = 8
 
-    /// Desired play/pause intent, honoured once the item becomes ready — covers
-    /// a pause issued during the ~1s signing/loading window.
+    /// Desired play/pause intent, honoured once playback is possible — covers a
+    /// pause issued during the signing/loading window.
     private var shouldBePlaying = true
     /// Guards against teardown-after-stop and double `onFailure`.
     private var isStopped = false
     private var didFail = false
+    /// True once the queue has actually reached `.playing`.
+    private var hasStarted = false
 
-    /// Called once if signing/loading fails, so the controller can fall back.
+    /// Called once if signing/loading fails or playback never starts.
     private var onFailure: (() -> Void)?
     private var streamURL: URL?
+    private var startTimeoutTask: Task<Void, Never>?
 
     /// Signs `path`, streams it looped, and fades in. `onFailure` is called at
-    /// most once, on the main actor, if anything goes wrong.
-    func play(path: String, onFailure: @escaping () -> Void) {
+    /// most once, on the main actor, if anything goes wrong. `duration` sets the
+    /// signed-URL lifetime so a long session can't outlive its URL.
+    func play(path: String, duration: MeditationDuration, onFailure: @escaping () -> Void) {
         self.onFailure = onFailure
+        scheduleStartTimeout()
 
         guard let (bucket, key) = Self.split(path) else {
             #if DEBUG
@@ -51,12 +59,16 @@ final class StreamAudioEngine {
             return
         }
 
+        // Session length + 30 min, floored at 1 hour, so a 60-min session still
+        // has a valid URL at the end.
+        let ttl = max(3600, duration.seconds + 1800)
+
         Task { [weak self] in
             guard let self else { return }
             do {
                 let url = try await SupabaseClient.shared.storage
                     .from(bucket)
-                    .createSignedURL(path: key, expiresIn: self.signedURLTTL)
+                    .createSignedURL(path: key, expiresIn: ttl)
                 guard !self.isStopped else { return }
                 self.start(url: url)
             } catch {
@@ -73,41 +85,56 @@ final class StreamAudioEngine {
         let item = AVPlayerItem(url: url)
         let queue = AVQueuePlayer()
         queue.volume = 0
-        // AVPlayerLooper retains the queue + template item and keeps the loop
-        // gapless, independent of session length.
-        looper = AVPlayerLooper(player: queue, templateItem: item)
-        player = queue
+        // AVPlayerLooper enqueues COPIES of the template item into the queue and
+        // keeps the loop gapless; the template item itself is never played, so
+        // its own status stays .unknown — which is why readiness/failure must
+        // come from the looper and the queue, not the template item.
+        let looper = AVPlayerLooper(player: queue, templateItem: item)
+        self.looper = looper
+        self.player = queue
 
-        // The KVO callback runs on an arbitrary thread: read Sendable primitives
-        // here, then hop to the main actor to touch engine state.
-        statusObservation = item.observe(\.status, options: [.new]) { [weak self] observed, _ in
-            let status = observed.status
+        // Failure comes from the looper.
+        looperStatusObservation = looper.observe(\.status, options: [.new]) { [weak self] observed, _ in
+            let failed = observed.status == .failed
             let errorDescription = observed.error.map { String(describing: $0) }
             Task { @MainActor [weak self] in
-                self?.handleItemStatus(status, errorDescription: errorDescription)
+                if failed { self?.handleLooperFailed(errorDescription) }
             }
         }
+
+        // Readiness = the queue actually reaching `.playing`. The fade-in and the
+        // start-timeout cancellation hang off that, so we only commit once audio
+        // is genuinely flowing.
+        timeControlObservation = queue.observe(\.timeControlStatus, options: [.new]) { [weak self] observed, _ in
+            let isPlaying = observed.timeControlStatus == .playing
+            Task { @MainActor [weak self] in
+                if isPlaying { self?.handlePlaybackStarted() }
+            }
+        }
+
+        // Kick playback off; the queue begins as soon as its item is ready.
+        if shouldBePlaying { queue.play() }
     }
 
-    private func handleItemStatus(_ status: AVPlayerItem.Status, errorDescription: String?) {
+    private func handlePlaybackStarted() {
         guard !isStopped else { return }
-        switch status {
-        case .readyToPlay:
+        if !hasStarted {
+            hasStarted = true
+            cancelStartTimeout()
             #if DEBUG
             print("StreamAudioEngine: streaming '\(streamURL?.lastPathComponent ?? "?")' from Storage")
             #endif
-            if shouldBePlaying {
-                player?.play()
-                fade(to: targetVolume, duration: 2.0)
-            }
-        case .failed:
-            #if DEBUG
-            print("StreamAudioEngine: item failed to load: \(errorDescription ?? "unknown")")
-            #endif
-            fail()
-        default:
-            break
         }
+        guard shouldBePlaying else { return }
+        fade(to: targetVolume, duration: 2.0)
+    }
+
+    private func handleLooperFailed(_ errorDescription: String?) {
+        guard !isStopped else { return }
+        #if DEBUG
+        print("StreamAudioEngine: looper failed to load: \(errorDescription ?? "unknown")")
+        #endif
+        fail()
     }
 
     func pause() {
@@ -136,6 +163,28 @@ final class StreamAudioEngine {
         }
     }
 
+    // MARK: - Start timeout (never-silent guarantee)
+
+    /// Falls back to bundled/synth if real playback hasn't begun within
+    /// `startTimeoutSeconds`. Cancelled once audio is playing or on stop.
+    private func scheduleStartTimeout() {
+        cancelStartTimeout()
+        startTimeoutTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64((self?.startTimeoutSeconds ?? 8) * 1_000_000_000))
+            guard let self, !Task.isCancelled,
+                  !self.isStopped, !self.hasStarted, !self.didFail, self.shouldBePlaying else { return }
+            #if DEBUG
+            print("StreamAudioEngine: playback didn't start within \(self.startTimeoutSeconds)s; falling back")
+            #endif
+            self.fail()
+        }
+    }
+
+    private func cancelStartTimeout() {
+        startTimeoutTask?.cancel()
+        startTimeoutTask = nil
+    }
+
     // MARK: - Internals
 
     /// Reports a one-time failure and tears down so the controller can fall back.
@@ -149,8 +198,11 @@ final class StreamAudioEngine {
 
     private func teardown() {
         isStopped = true
-        statusObservation?.invalidate()
-        statusObservation = nil
+        cancelStartTimeout()
+        looperStatusObservation?.invalidate()
+        looperStatusObservation = nil
+        timeControlObservation?.invalidate()
+        timeControlObservation = nil
         looper?.disableLooping()
         looper = nil
         player?.pause()

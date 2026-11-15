@@ -52,7 +52,7 @@ final class MeditationAudioController {
         if let path = session.audioPaths[duration], !path.isEmpty {
             let engine = StreamAudioEngine()
             streamEngine = engine
-            engine.play(path: path) { [weak self] in
+            engine.play(path: path, duration: duration) { [weak self] in
                 // Signing/loading failed — drop to the bundled loop / synth.
                 guard let self, self.streamEngine === engine else { return }
                 #if DEBUG
