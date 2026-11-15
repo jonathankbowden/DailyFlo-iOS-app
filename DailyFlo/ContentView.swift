@@ -65,6 +65,17 @@ struct ContentView: View {
                     showJournalEntry = true
                 }
             }
+            // The Pro gate is presented here, on the ZStack — a DIFFERENT anchor
+            // from the journal `.sheet` below. Two `.sheet`s sharing one anchor
+            // don't compose: on a fresh account the gate presents then dismisses
+            // when the entitlement resolves, which left the sibling journal sheet
+            // non-interactive (every SwiftUI control dead; only PhotosPicker, a
+            // UIKit presentation, still worked). A full-screen cover is also the
+            // correct shape for a hard, non-dismissible gate — no swipe, no ✕
+            // (PaywallView(canClose: false)); entitlement is the only exit.
+            .fullScreenCover(isPresented: $showProGate) {
+                PaywallView(canClose: false)
+            }
         }
         .ignoresSafeArea(.container, edges: .bottom)
         .sheet(isPresented: $showJournalEntry) {
@@ -81,15 +92,6 @@ struct ContentView: View {
         .onChange(of: subs.isPro) { _, isPro in
             // Purchased or restored while the gate is up — drop it immediately.
             if isPro { showProGate = false }
-        }
-        .sheet(isPresented: $showProGate) {
-            // Hard gate: no ✕ and no swipe. Entitlement is the only exit
-            // (isPro flips → sheet drops). Restore and "I have a code" stay
-            // available inside so nobody gets trapped.
-            PaywallView(canClose: false)
-                .presentationDetents([.large])
-                .presentationDragIndicator(.hidden)
-                .interactiveDismissDisabled()
         }
     }
 
