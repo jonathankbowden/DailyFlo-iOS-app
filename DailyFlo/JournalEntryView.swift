@@ -259,6 +259,8 @@ struct JournalEntryView: View {
                 .frame(height: 232)
                 .frame(maxWidth: .infinity)
                 .clipped()
+                // Hit area = the drawn 232pt header, not the overflowing image.
+                .contentShape(Rectangle())
                 .overlay(alignment: .bottomTrailing) {
                     Button {
                         FloHaptics.light()
@@ -306,6 +308,13 @@ struct JournalEntryView: View {
     }
 
     /// The entry's photo, or the feeling's stock photo when there isn't one.
+    ///
+    /// The image is `scaledToFill` inside short frames (48pt editor strip,
+    /// 232pt posted header), so it lays out far taller than its frame. `.clipped()`
+    /// on the caller only clips DRAWING, not hit-testing — an unclipped,
+    /// near-screen-height portrait image would otherwise swallow taps across the
+    /// whole sheet (feeling row, title, editor, mic). Mark the image itself
+    /// non-interactive so a photo can never take touches anywhere it's used.
     @ViewBuilder
     private var photoView: some View {
         if let photoImage {
@@ -313,12 +322,14 @@ struct JournalEntryView: View {
                 Image(uiImage: photoImage)
                     .resizable()
                     .scaledToFill()
+                    .allowsHitTesting(false)
             }
         } else {
             Color.clear.overlay {
                 Image((selectedEmotion ?? .ashamed).photoName)
                     .resizable()
                     .scaledToFill()
+                    .allowsHitTesting(false)
             }
         }
     }
@@ -331,6 +342,9 @@ struct JournalEntryView: View {
                 .frame(height: 48)
                 .frame(maxWidth: .infinity)
                 .clipped()
+                // Confine the hit area to the drawn 48pt strip (clipped() only
+                // clips drawing, not hit-testing).
+                .contentShape(Rectangle())
                 .overlay(alignment: .bottomTrailing) {
                     PhotosPicker(selection: $selectedPhoto, matching: .images) {
                         RoundPhotoEditLabel()
@@ -340,6 +354,9 @@ struct JournalEntryView: View {
                     .padding(.trailing, 8)
                     .accessibilityLabel(photoImage == nil ? "Add a photo" : "Change photo")
                 }
+                // Kept: the edit button offsets below the 48pt strip into the
+                // title row, so the strip must sit above the later VStack
+                // siblings for the button to render on top.
                 .zIndex(1)
 
             TextField(
