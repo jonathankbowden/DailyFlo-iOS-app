@@ -34,6 +34,13 @@ enum AccountDeletion {
         //    is about to erase.
         JournalManager.shared.clearPendingQueueForCurrentUser()
 
+        // 0b. Remove the user's journal photos from Storage via the API — direct
+        //     deletes on storage.objects are blocked, so the RPC can't do it.
+        //     Best-effort: logs on failure and lets deletion proceed.
+        if let userId = SupabaseClient.shared.auth.currentSession?.user.id {
+            await JournalManager.shared.purgeRemotePhotos(for: userId)
+        }
+
         // 1. Server: delete the auth user + every owned row in one transaction.
         //    auth.uid() inside the function guarantees it only touches the
         //    caller's data.

@@ -19,9 +19,17 @@
 import Foundation
 
 enum JournalWriteKind: String, Codable {
+    // emotion_entries row
     case insert
     case update
     case softDelete
+    // journal-photos Storage object for the entry
+    case photoUpload
+    case photoDelete
+
+    /// Row ops and photo ops are coalesced independently, so a single entry id
+    /// can hold one pending row op AND one pending photo op at once.
+    var isPhoto: Bool { self == .photoUpload || self == .photoDelete }
 }
 
 /// One pending write. `entry` carries the full payload for insert/update and is
@@ -50,21 +58,23 @@ struct JournalWriteQueue {
         return ops
     }
 
-    /// Adds `op`, coalescing with any existing op for the same id.
+    /// Adds `op`, coalescing with any existing op of the SAME category (row vs
+    /// photo) for the same id.
     func enqueue(_ op: JournalWriteOp, for userId: UUID) {
         var ops = all(for: userId)
 
-        if let index = ops.firstIndex(where: { $0.id == op.id }) {
+        if let index = ops.firstIndex(where: { $0.id == op.id && $0.kind.isPhoto == op.kind.isPhoto }) {
             let existing = ops[index]
             switch (existing.kind, op.kind) {
-            case (.insert, .softDelete):
-                // Never synced → forget it entirely.
+            case (.insert, .softDelete), (.photoUpload, .photoDelete):
+                // A create that never synced, then a delete → forget both.
                 ops.remove(at: index)
-            case (.insert, _):
+            case (.insert, .insert), (.insert, .update):
                 // Stays an insert, carrying the newest payload.
                 ops[index] = JournalWriteOp(kind: .insert, id: op.id, entry: op.entry ?? existing.entry)
             default:
-                // update→update, update→softDelete, softDelete→*: the latest wins.
+                // update→update, update→softDelete, softDelete→*, photoUpload→
+                // photoUpload, photoDelete→*: the latest op wins.
                 ops[index] = op
             }
         } else {

@@ -52,6 +52,41 @@ enum JournalPhotoStore {
         try? FileManager.default.removeItem(at: url)
     }
 
+    /// The canonical stored filename for an entry ("<id>.jpg"), i.e. the value
+    /// kept in `JournalEntry.userPhotoURL`.
+    static func storedFilename(for entryID: UUID) -> String {
+        filename(for: entryID)
+    }
+
+    /// Whether a local JPEG exists for `entryID`.
+    static func hasPhoto(for entryID: UUID) -> Bool {
+        let url = directory().appendingPathComponent(filename(for: entryID))
+        return FileManager.default.fileExists(atPath: url.path)
+    }
+
+    /// JPEG bytes to upload for `entryID`: the stored image, downscaled so its
+    /// long edge is at most `maxLongEdge`, re-encoded at the usual quality.
+    /// Returns nil if there's no local file.
+    static func uploadData(for entryID: UUID, maxLongEdge: CGFloat = 2048) -> Data? {
+        let url = directory().appendingPathComponent(filename(for: entryID))
+        guard let image = UIImage(contentsOfFile: url.path) else { return nil }
+        return downscaled(image, maxLongEdge: maxLongEdge).jpegData(compressionQuality: jpegQuality)
+    }
+
+    /// Returns `image` unchanged if its long edge is within `maxLongEdge`,
+    /// otherwise an aspect-preserving downscaled copy.
+    private static func downscaled(_ image: UIImage, maxLongEdge: CGFloat) -> UIImage {
+        let longEdge = max(image.size.width, image.size.height)
+        guard longEdge > maxLongEdge else { return image }
+        let scale = maxLongEdge / longEdge
+        let newSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        return UIGraphicsImageRenderer(size: newSize, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: newSize))
+        }
+    }
+
     /// Removes every stored journal photo. Used by account deletion to return
     /// the device to a fresh-install state.
     static func deleteAll() {

@@ -32,8 +32,12 @@ import UIKit
 /// - `entry_date` is a DATE in the DB, so the original time-of-day is lost on
 ///   round-trip. We use `created_at` to recover a time for display. If backdating
 ///   becomes important, add an `entry_at` TIMESTAMPTZ column to `emotion_entries`.
-/// - User photos (`userPhotoURL`) are device-local only; they aren't in the
-///   pending queue's server payload because `emotion_entries` has no photo column.
+/// - User photos back up to the private `journal-photos` Storage bucket at
+///   `<uid>/<entryId>.jpg` (capped at 2048px, JPEG), with the object key kept in
+///   `emotion_entries.photo_path`. Upload/delete go through the same pending
+///   queue (offline-safe); a new install/phone restores them in the background
+///   via `restoreMissingPhotos`. The bare local filename still lives in
+///   `userPhotoURL` for instant rendering.
 @Observable
 class JournalManager {
     static let shared = JournalManager()
@@ -42,6 +46,14 @@ class JournalManager {
 
     private let saveKey = "journal_entries"
     private let table = "emotion_entries"
+    private let photosBucket = "journal-photos"
+
+    /// Storage object key for an entry's photo: "<uid>/<entryId>.jpg". Lowercased
+    /// because the RLS policy compares the first path segment to `auth.uid()::text`,
+    /// which Postgres renders lowercase (Swift's `uuidString` is uppercase).
+    private func photoKey(userId: UUID, entryId: UUID) -> String {
+        "\(userId.uuidString.lowercased())/\(entryId.uuidString.lowercased()).jpg"
+    }
 
     /// Persisted, per-user queue of writes not yet confirmed by Supabase.
     private let writeQueue = JournalWriteQueue()
@@ -114,35 +126,63 @@ class JournalManager {
 
         entries.insert(entry, at: 0)
         saveToCache()
-        enqueueAndReplay(JournalWriteOp(kind: .insert, id: entry.id, entry: entry), context: "addEntry")
+
+        var ops = [JournalWriteOp(kind: .insert, id: entry.id, entry: entry)]
+        if hasPhoto(entry) {
+            ops.append(JournalWriteOp(kind: .photoUpload, id: entry.id, entry: nil))
+        }
+        enqueueAndReplay(ops, context: "addEntry")
+    }
+
+    /// True when the entry carries a photo (local file present or a filename set).
+    private func hasPhoto(_ entry: JournalEntry) -> Bool {
+        entry.userPhotoURL != nil || JournalPhotoStore.hasPhoto(for: entry.id)
     }
 
     func updateEntry(_ entry: JournalEntry) {
+        let previouslyHadPhoto = entries.first(where: { $0.id == entry.id })?.userPhotoURL != nil
         if let index = entries.firstIndex(where: { $0.id == entry.id }) {
             entries[index] = entry
             saveToCache()
         }
-        enqueueAndReplay(JournalWriteOp(kind: .update, id: entry.id, entry: entry), context: "updateEntry")
+
+        var ops = [JournalWriteOp(kind: .update, id: entry.id, entry: entry)]
+        if hasPhoto(entry) {
+            // Upsert is idempotent, so re-sending on a text-only edit is safe (if
+            // wasteful); a future optimization could gate this on a content hash.
+            ops.append(JournalWriteOp(kind: .photoUpload, id: entry.id, entry: nil))
+        } else if previouslyHadPhoto {
+            // Photo was removed from an existing entry.
+            JournalPhotoStore.delete(for: entry.id)
+            ops.append(JournalWriteOp(kind: .photoDelete, id: entry.id, entry: nil))
+        }
+        enqueueAndReplay(ops, context: "updateEntry")
     }
 
     func deleteEntry(_ entry: JournalEntry) {
         entries.removeAll { $0.id == entry.id }
         saveToCache()
-        enqueueAndReplay(JournalWriteOp(kind: .softDelete, id: entry.id, entry: nil), context: "deleteEntry")
+
+        var ops = [JournalWriteOp(kind: .softDelete, id: entry.id, entry: nil)]
+        if hasPhoto(entry) {
+            JournalPhotoStore.delete(for: entry.id)
+            ops.append(JournalWriteOp(kind: .photoDelete, id: entry.id, entry: nil))
+        }
+        enqueueAndReplay(ops, context: "deleteEntry")
     }
 
-    /// Records a write in the per-user queue and kicks off a replay. Local state
+    /// Records writes in the per-user queue and kicks off a replay. Local state
     /// and the cache have already been updated by the caller; with no session
-    /// the op is simply held until sign-in. Public CRUD stays synchronous.
-    private func enqueueAndReplay(_ op: JournalWriteOp, context: String) {
+    /// the ops are simply held until sign-in. Public CRUD stays synchronous.
+    private func enqueueAndReplay(_ ops: [JournalWriteOp], context: String) {
         guard let userId = currentUserId() else {
             #if DEBUG
-            print("[JournalManager] \(context): no signed-in session — entry \(op.id) saved locally only")
+            print("[JournalManager] \(context): no signed-in session — saved locally only")
             #endif
             return
         }
         activeUserId = userId
-        writeQueue.enqueue(op, for: userId)
+        for op in ops { writeQueue.enqueue(op, for: userId) }
         Task { @MainActor in await replayQueue() }
     }
 
@@ -286,6 +326,9 @@ class JournalManager {
             // once each day holds a single entry.
             collapseDuplicateDays()
             saveToCache()
+            // Backfill any photos the server knows about but this device lacks
+            // (new install / new phone). Fire-and-forget; never blocks the UI.
+            restoreMissingPhotos(from: rows)
         } catch {
             #if DEBUG
             print("[JournalManager] refresh failed: \(error)")
@@ -317,6 +360,10 @@ class JournalManager {
                 succeeded = await remoteUpdate(entry, userId: userId)
             case .softDelete:
                 succeeded = await remoteSoftDelete(id: op.id)
+            case .photoUpload:
+                succeeded = await remotePhotoUpload(entryId: op.id, userId: userId)
+            case .photoDelete:
+                succeeded = await remotePhotoDelete(entryId: op.id, userId: userId)
             }
 
             if succeeded {
@@ -342,6 +389,8 @@ class JournalManager {
                 }
             case .softDelete:
                 result.removeAll { $0.id == op.id }
+            case .photoUpload, .photoDelete:
+                break   // photos are carried by local files / download, not the entry payload
             }
         }
         return result
@@ -355,6 +404,112 @@ class JournalManager {
             writeQueue.clear(for: userId)
         }
         activeUserId = nil
+    }
+
+    // MARK: - Photo backup (Supabase Storage: journal-photos/<uid>/<id>.jpg)
+
+    /// Uploads an entry's local photo (downscaled, JPEG) to Storage with upsert,
+    /// then records `photo_path` on the row. Returns false (so the queue retries)
+    /// if either step fails. If there's no local file, there's nothing to send —
+    /// treat as done so the queue doesn't wedge.
+    private func remotePhotoUpload(entryId: UUID, userId: UUID) async -> Bool {
+        guard let data = JournalPhotoStore.uploadData(for: entryId) else {
+            return true
+        }
+        let key = photoKey(userId: userId, entryId: entryId)
+        do {
+            try await SupabaseClient.shared.storage
+                .from(photosBucket)
+                .upload(key, data: data, options: FileOptions(contentType: "image/jpeg", upsert: true))
+            try await SupabaseClient.shared
+                .from(table)
+                .update(PhotoPathPayload(photoPath: key))
+                .eq("id", value: entryId)
+                .execute()
+            #if DEBUG
+            print("[JournalManager] photo upload OK for \(entryId) → \(key)")
+            #endif
+            return true
+        } catch {
+            logRemoteError(operation: "photo-upload", id: entryId, error: error)
+            return false
+        }
+    }
+
+    /// Removes an entry's Storage photo and clears `photo_path` on the row.
+    /// `remove` is lenient about a missing object, so an already-gone file still
+    /// succeeds; only a transport error returns false to retry.
+    private func remotePhotoDelete(entryId: UUID, userId: UUID) async -> Bool {
+        let key = photoKey(userId: userId, entryId: entryId)
+        do {
+            _ = try await SupabaseClient.shared.storage
+                .from(photosBucket)
+                .remove(paths: [key])
+            try await SupabaseClient.shared
+                .from(table)
+                .update(PhotoPathPayload(photoPath: nil))
+                .eq("id", value: entryId)
+                .execute()
+            #if DEBUG
+            print("[JournalManager] photo delete OK for \(entryId)")
+            #endif
+            return true
+        } catch {
+            logRemoteError(operation: "photo-delete", id: entryId, error: error)
+            return false
+        }
+    }
+
+    /// For each server row that has a `photo_path` but no local file (new install
+    /// / new phone), fetches the image in the background and fills it in. Never
+    /// blocks the caller or the UI.
+    private func restoreMissingPhotos(from rows: [EmotionEntryRow]) {
+        for row in rows {
+            guard let key = row.photoPath, !key.isEmpty,
+                  !JournalPhotoStore.hasPhoto(for: row.id) else { continue }
+            Task { @MainActor in await downloadPhoto(key: key, entryId: row.id) }
+        }
+    }
+
+    @MainActor
+    private func downloadPhoto(key: String, entryId: UUID) async {
+        do {
+            let data = try await SupabaseClient.shared.storage
+                .from(photosBucket)
+                .download(path: key)
+            guard let image = UIImage(data: data) else { return }
+            let filename = JournalPhotoStore.save(image, for: entryId)
+            // Surface it on the in-memory entry + cache so the feed updates.
+            if let index = entries.firstIndex(where: { $0.id == entryId }) {
+                entries[index] = entries[index].updating(userPhotoURL: .some(filename))
+                saveToCache()
+            }
+        } catch {
+            #if DEBUG
+            print("[JournalManager] photo download failed for \(entryId): \(error)")
+            #endif
+        }
+    }
+
+    /// Removes everything under journal-photos/<uid>/ via the Storage API. Called
+    /// by account deletion before the RPC (direct deletes on storage.objects are
+    /// blocked). Best-effort: logs and returns on failure so deletion proceeds.
+    func purgeRemotePhotos(for userId: UUID) async {
+        let folder = userId.uuidString.lowercased()
+        do {
+            let files = try await SupabaseClient.shared.storage
+                .from(photosBucket)
+                .list(path: folder)
+            let paths = files.map { "\(folder)/\($0.name)" }
+            guard !paths.isEmpty else { return }
+            _ = try await SupabaseClient.shared.storage
+                .from(photosBucket)
+                .remove(paths: paths)
+        } catch {
+            #if DEBUG
+            print("[JournalManager] purgeRemotePhotos failed: \(error)")
+            #endif
+        }
     }
 
     /// Insert-or-update by id. Upsert (not insert) so replaying a write after a
@@ -495,6 +650,7 @@ private struct EmotionEntryRow: Codable {
     let intensity: Int
     let notes: String?
     let voiceNoteUrl: String?
+    let photoPath: String?       // journal-photos Storage key, nil if none
     let createdAt: Date?         // populated on decode, nil on encode
 
     enum CodingKeys: String, CodingKey {
@@ -505,6 +661,7 @@ private struct EmotionEntryRow: Codable {
         case intensity
         case notes
         case voiceNoteUrl = "voice_note_url"
+        case photoPath = "photo_path"
         case createdAt = "created_at"
     }
 
@@ -516,10 +673,12 @@ private struct EmotionEntryRow: Codable {
         self.intensity = entry.intensity
         self.notes = entry.note.isEmpty ? nil : entry.note
         self.voiceNoteUrl = nil
+        self.photoPath = nil
         self.createdAt = nil
     }
 
-    // Don't encode created_at on insert/update; let the DB own it.
+    // Don't encode created_at (DB owns it) or photo_path (the photoUpload op sets
+    // it after the bytes land, so a row insert/text-edit never clobbers it).
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
@@ -542,14 +701,38 @@ private struct EmotionEntryRow: Codable {
             return nil
         }
         let phase = CycleManager.shared.phase(for: date)
+        // Preserve the user photo across a server round-trip: if the device still
+        // has the local file, keep its filename so the feed shows it. Rows whose
+        // photo lives only in Storage are backfilled by `restoreMissingPhotos`.
+        let localPhoto = JournalPhotoStore.hasPhoto(for: id) ? JournalPhotoStore.storedFilename(for: id) : nil
         return JournalEntry(
             id: id,
             date: date,
             emotion: emotion,
             intensity: intensity,
             note: notes ?? "",
-            cyclePhase: phase
+            cyclePhase: phase,
+            userPhotoURL: localPhoto
         )
+    }
+}
+
+// MARK: - photo_path update payload
+
+/// Encodes `{ "photo_path": <key> }` or `{ "photo_path": null }` so the Storage
+/// key can be set after upload or cleared after delete.
+private struct PhotoPathPayload: Encodable {
+    let photoPath: String?
+
+    enum CodingKeys: String, CodingKey { case photoPath = "photo_path" }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        if let photoPath {
+            try container.encode(photoPath, forKey: .photoPath)
+        } else {
+            try container.encodeNil(forKey: .photoPath)
+        }
     }
 }
 
