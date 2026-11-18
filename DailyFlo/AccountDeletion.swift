@@ -33,6 +33,7 @@ enum AccountDeletion {
         //    mid-deletion can't replay them and resurrect rows the server delete
         //    is about to erase.
         JournalManager.shared.clearPendingQueueForCurrentUser()
+        CycleManager.shared.clearPendingQueueForCurrentUser()
 
         // 0b. Remove the user's journal photos from Storage via the API — direct
         //     deletes on storage.objects are blocked, so the RPC can't do it.

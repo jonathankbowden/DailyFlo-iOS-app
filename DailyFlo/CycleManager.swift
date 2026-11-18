@@ -6,8 +6,10 @@
 //
 
 import Foundation
+import Network
 import Supabase
 import SwiftUI
+import UIKit
 
 // MARK: - Cycle Manager
 /// Central source of truth for cycle calculations.
@@ -25,12 +27,31 @@ import SwiftUI
 ///      need to overwrite display_name + birth_date.
 ///   2. Refresh from the server: pull the profile + latest cycle and write
 ///      them through to UserDefaults so views see fresh data.
+///
+/// Offline safety: cycle writes go through a persisted per-user queue
+/// (`CycleWriteQueue`). Logging a period writes UserDefaults optimistically and
+/// enqueues an UPSERT (the row id is derived from user+start_date, so a retry
+/// can't duplicate); the queue replays on foreground / network return / sign-in
+/// and at the start of `refresh()`, which also re-applies anything still pending
+/// on top of the server's latest cycle before publishing. The queue is cleared
+/// on sign-out and account deletion.
 @Observable
 class CycleManager {
     static let shared = CycleManager()
 
     private let profilesTable = "profiles"
     private let cyclesTable = "cycles"
+
+    /// Persisted, per-user queue of cycle writes not yet confirmed by Supabase.
+    private let writeQueue = CycleWriteQueue()
+    /// The user whose queue is in play — remembered so sign-out can clear it.
+    private var activeUserId: UUID?
+    /// Re-entrancy guard + "run again" flag for overlapping replay triggers.
+    private var isReplaying = false
+    private var replayRequested = false
+
+    private let pathMonitor = NWPathMonitor()
+    private let pathMonitorQueue = DispatchQueue(label: "app.dailyflo.cycle.network")
 
     private static let dbDateFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -42,9 +63,35 @@ class CycleManager {
     }()
 
     init() {
+        startNetworkMonitor()
+        observeForeground()
         Task { @MainActor in
             await observeAuthState()
         }
+    }
+
+    /// Replays the pending cycle queue whenever connectivity is (re)established.
+    private func startNetworkMonitor() {
+        pathMonitor.pathUpdateHandler = { [weak self] path in
+            guard path.status == .satisfied else { return }
+            Task { @MainActor in await self?.replayQueue() }
+        }
+        pathMonitor.start(queue: pathMonitorQueue)
+    }
+
+    /// Replays the pending cycle queue each time the app returns to the foreground.
+    private func observeForeground() {
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in await self?.replayQueue() }
+        }
+    }
+
+    private func currentUserId() -> UUID? {
+        SupabaseClient.shared.auth.currentSession?.user.id
     }
 
     // MARK: - User Cycle Data (cached in UserDefaults)
@@ -379,9 +426,15 @@ class CycleManager {
             switch event {
             case .initialSession, .signedIn:
                 guard let session else { break }
+                activeUserId = session.user.id
                 await pushPendingOnboardingIfNeeded(userId: session.user.id)
+                // refresh() starts by replaying the queue, covering sign-in.
                 await refresh(userId: session.user.id)
             case .signedOut, .userDeleted:
+                if let userId = activeUserId {
+                    writeQueue.clear(for: userId)
+                }
+                activeUserId = nil
                 clearLocalCache()
             default:
                 break
@@ -442,7 +495,7 @@ class CycleManager {
         // none, there's nothing truthful to insert; `refresh` backfills the
         // moment one exists locally.
         if let pendingLastPeriod {
-            _ = await insertInitialCycle(
+            await insertInitialCycle(
                 userId: userId,
                 startDate: pendingLastPeriod,
                 cycleLength: pendingCycleLength,
@@ -453,33 +506,30 @@ class CycleManager {
         UserDefaults.standard.set(false, forKey: "pendingOnboardingPayload")
     }
 
-    /// Inserts the onboarding-era cycle from a locally known period start.
-    /// Shared by the one-shot push and by `refresh`, which uses it to heal
-    /// accounts whose push never landed. Returns whether the insert succeeded.
+    /// Queues the onboarding-era cycle (is_predicted) from a locally known period
+    /// start. Shared by the one-shot push and by `refresh`, which uses it to heal
+    /// accounts whose cycle never landed. The deterministic id makes repeated
+    /// calls for the same start idempotent (one row, not many).
     @MainActor
-    private func insertInitialCycle(userId: UUID, startDate: Date, cycleLength: Int, periodLength: Int) async -> Bool {
+    private func insertInitialCycle(userId: UUID, startDate: Date, cycleLength: Int, periodLength: Int) async {
+        enqueueCycle(userId: userId, startDate: startDate, cycleLength: cycleLength, periodLength: periodLength, isPredicted: true)
+        await replayQueue()
+    }
+
+    /// Builds and enqueues a cycle upsert op. The row id is derived from
+    /// (user, start_date) so re-logging the same start never duplicates.
+    private func enqueueCycle(userId: UUID, startDate: Date, cycleLength: Int, periodLength: Int, isPredicted: Bool) {
+        let startString = Self.dbDateFormatter.string(from: startDate)
         let predictedEnd = Calendar.current.date(byAdding: .day, value: cycleLength, to: startDate) ?? startDate
-        let cycleRow = CycleInsertRow(
+        let op = CycleWriteOp(
+            id: Self.deterministicCycleId(userId: userId, startDate: startString),
             userId: userId,
-            startDate: Self.dbDateFormatter.string(from: startDate),
+            startDate: startString,
             predictedEndDate: Self.dbDateFormatter.string(from: predictedEnd),
             periodLengthDays: periodLength,
-            isPredicted: true
+            isPredicted: isPredicted
         )
-
-        do {
-            try await SupabaseClient.shared
-                .from(cyclesTable)
-                .insert(cycleRow)
-                .execute()
-            #if DEBUG
-            print("[CycleManager] initial cycle insert OK for user \(userId) (start \(cycleRow.startDate))")
-            #endif
-            return true
-        } catch {
-            logRemoteError(operation: "initial cycle insert", error: error)
-            return false
-        }
+        writeQueue.enqueue(op, for: userId)
     }
 
     // MARK: - Log a confirmed cycle start (post-onboarding)
@@ -495,33 +545,92 @@ class CycleManager {
         // (e.g. CalendarView) update instantly on modal dismiss.
         lastPeriodDate = startDate
 
-        guard let userId = SupabaseClient.shared.auth.currentSession?.user.id else {
+        guard let userId = currentUserId() else {
             #if DEBUG
             print("[CycleManager] logCycle: no signed-in session — saved locally only")
             #endif
             return
         }
 
-        let predictedEnd = Calendar.current.date(byAdding: .day, value: cycleLength, to: startDate) ?? startDate
-        let row = CycleInsertRow(
-            userId: userId,
-            startDate: Self.dbDateFormatter.string(from: startDate),
-            predictedEndDate: Self.dbDateFormatter.string(from: predictedEnd),
-            periodLengthDays: periodLength,
-            isPredicted: false
-        )
+        activeUserId = userId
+        // Durable: enqueue an upsert (is_predicted = false, user-confirmed) and
+        // try to send now. Offline, it rides the queue and replays on reconnect.
+        enqueueCycle(userId: userId, startDate: startDate, cycleLength: cycleLength, periodLength: periodLength, isPredicted: false)
+        await replayQueue()
+    }
 
+    // MARK: - Pending-write queue
+
+    /// Sends each pending cycle upsert in order, removing it on success. Stops at
+    /// the first failure (likely offline) and re-runs if work is enqueued during
+    /// the pass. Re-entrant-safe via `isReplaying`.
+    @MainActor
+    func replayQueue() async {
+        guard let userId = currentUserId() else { return }
+        guard !isReplaying else { replayRequested = true; return }
+        isReplaying = true
+        defer { isReplaying = false }
+
+        repeat {
+            replayRequested = false
+            var stoppedOnFailure = false
+            for op in writeQueue.all(for: userId) {
+                if await remoteUpsertCycle(op) {
+                    writeQueue.remove(matching: op, for: userId)
+                } else {
+                    stoppedOnFailure = true
+                    break
+                }
+            }
+            if stoppedOnFailure { break }
+        } while replayRequested
+    }
+
+    @discardableResult
+    private func remoteUpsertCycle(_ op: CycleWriteOp) async -> Bool {
         do {
             try await SupabaseClient.shared
                 .from(cyclesTable)
-                .insert(row)
+                .upsert(op, onConflict: "id")
                 .execute()
             #if DEBUG
-            print("[CycleManager] logCycle insert OK for user \(userId)")
+            print("[CycleManager] cycle upsert OK for user \(op.userId) (start \(op.startDate))")
             #endif
+            return true
         } catch {
-            logRemoteError(operation: "logCycle insert", error: error)
+            logRemoteError(operation: "cycle upsert", error: error)
+            return false
         }
+    }
+
+    /// Abandons queued cycle writes for the signed-in user. Called by account
+    /// deletion before the server delete so a reconnect can't replay them.
+    func clearPendingQueueForCurrentUser() {
+        if let userId = currentUserId() ?? activeUserId {
+            writeQueue.clear(for: userId)
+        }
+        activeUserId = nil
+    }
+
+    /// Stable `cycles.id` for a (user, start_date): re-logging the same start
+    /// upserts the same row instead of creating a duplicate. Pure, dependency-free
+    /// (two FNV-1a passes → 16 bytes), so it's identical across launches/devices.
+    static func deterministicCycleId(userId: UUID, startDate: String) -> UUID {
+        let input = Array("\(userId.uuidString)|\(startDate)".utf8)
+        func fnv1a(_ bytes: [UInt8], seed: UInt64) -> UInt64 {
+            var hash = seed
+            for byte in bytes { hash = (hash ^ UInt64(byte)) &* 1099511628211 }
+            return hash
+        }
+        func octets(_ value: UInt64) -> [UInt8] {
+            (0..<8).map { UInt8((value >> (8 * (7 - $0))) & 0xFF) }
+        }
+        let high = fnv1a(input, seed: 14695981039346656037)
+        let low = fnv1a(input.reversed(), seed: 1099511628211)
+        let b = octets(high) + octets(low)
+        let uuid: uuid_t = (b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7],
+                            b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15])
+        return UUID(uuid: uuid)
     }
 
     // MARK: - Refresh from Supabase
@@ -530,6 +639,10 @@ class CycleManager {
     /// through to UserDefaults so the synchronous read API sees fresh data.
     @MainActor
     func refresh(userId: UUID) async {
+        activeUserId = userId
+        // Flush anything logged offline BEFORE reading the server.
+        await replayQueue()
+
         do {
             let profile: ProfileFetchRow = try await SupabaseClient.shared
                 .from(profilesTable)
@@ -555,16 +668,21 @@ class CycleManager {
                 .execute()
                 .value
 
-            if let mostRecent = cycles.first,
-               let date = Self.dbDateFormatter.date(from: mostRecent.startDate) {
-                lastPeriodDate = date
+            // Newest start wins across the server's latest row AND anything still
+            // pending (e.g. a replay above that failed while offline), so a refresh
+            // never drops an unsynced log.
+            let serverStart = cycles.first.flatMap { Self.dbDateFormatter.date(from: $0.startDate) }
+            let pendingStarts = writeQueue.all(for: userId).compactMap { Self.dbDateFormatter.date(from: $0.startDate) }
+            let newest = ([serverStart].compactMap { $0 } + pendingStarts).max()
+
+            if let newest {
+                lastPeriodDate = newest
             } else if cycles.isEmpty,
                       let localStart = UserDefaults.standard.object(forKey: "lastPeriodDate") as? Date {
-                // The device knows a period start the server never received
-                // (an onboarding push that was refused, or a write that
-                // failed). Backfill it so partner share and any other device
-                // see the same cycle this phone has been showing.
-                _ = await insertInitialCycle(
+                // The device knows a period start neither the server nor the queue
+                // has (a pre-queue install, or an onboarding push that was refused).
+                // Backfill it so partner share and other devices see this cycle.
+                await insertInitialCycle(
                     userId: userId,
                     startDate: localStart,
                     cycleLength: cycleLength,
@@ -651,22 +769,6 @@ private struct ProfileUpsertRow: Encodable {
         try c.encode(defaultCycleLengthDays, forKey: .defaultCycleLengthDays)
         try c.encode(defaultPeriodLengthDays, forKey: .defaultPeriodLengthDays)
         try c.encode(onboardingCompletedAt, forKey: .onboardingCompletedAt)
-    }
-}
-
-private struct CycleInsertRow: Encodable {
-    let userId: UUID
-    let startDate: String         // "yyyy-MM-dd"
-    let predictedEndDate: String  // "yyyy-MM-dd"
-    let periodLengthDays: Int
-    let isPredicted: Bool
-
-    enum CodingKeys: String, CodingKey {
-        case userId = "user_id"
-        case startDate = "start_date"
-        case predictedEndDate = "predicted_end_date"
-        case periodLengthDays = "period_length_days"
-        case isPredicted = "is_predicted"
     }
 }
 

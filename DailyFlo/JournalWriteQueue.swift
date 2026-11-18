@@ -40,28 +40,21 @@ struct JournalWriteOp: Codable {
     let entry: JournalEntry?
 }
 
-/// Thin persistence wrapper. Stateless itself — everything lives in UserDefaults
-/// keyed by user id — so it's safe to hold as a `let` and call from any actor.
+/// Thin coalescing wrapper over `PendingWriteStore`. Stateless itself —
+/// everything lives in UserDefaults keyed by user id — so it's safe to hold as a
+/// `let` and call from any actor.
 struct JournalWriteQueue {
-    private let defaults = UserDefaults.standard
-
-    private func key(for userId: UUID) -> String {
-        "journal_pending_queue_\(userId.uuidString)"
-    }
+    private let store = PendingWriteStore<JournalWriteOp>(keyPrefix: "journal_pending_queue")
 
     /// The pending ops for a user, in replay order.
     func all(for userId: UUID) -> [JournalWriteOp] {
-        guard let data = defaults.data(forKey: key(for: userId)),
-              let ops = try? JSONDecoder().decode([JournalWriteOp].self, from: data) else {
-            return []
-        }
-        return ops
+        store.all(for: userId)
     }
 
     /// Adds `op`, coalescing with any existing op of the SAME category (row vs
     /// photo) for the same id.
     func enqueue(_ op: JournalWriteOp, for userId: UUID) {
-        var ops = all(for: userId)
+        var ops = store.all(for: userId)
 
         if let index = ops.firstIndex(where: { $0.id == op.id && $0.kind.isPhoto == op.kind.isPhoto }) {
             let existing = ops[index]
@@ -89,31 +82,18 @@ struct JournalWriteQueue {
             ops.append(op)
         }
 
-        save(ops, for: userId)
+        store.save(ops, for: userId)
     }
 
     /// Removes a specific op after it syncs — but only if the stored op is byte-
     /// for-byte what we replayed. If the user re-edited the same id mid-replay,
     /// the newer op differs and is left to sync on the next pass.
     func remove(matching op: JournalWriteOp, for userId: UUID) {
-        let target = try? JSONEncoder().encode(op)
-        var ops = all(for: userId)
-        ops.removeAll { candidate in
-            candidate.id == op.id && (try? JSONEncoder().encode(candidate)) == target
-        }
-        save(ops, for: userId)
+        store.remove(matching: op, for: userId)
     }
 
     /// Drops the whole queue for a user (sign-out / account deletion).
     func clear(for userId: UUID) {
-        defaults.removeObject(forKey: key(for: userId))
-    }
-
-    private func save(_ ops: [JournalWriteOp], for userId: UUID) {
-        if ops.isEmpty {
-            defaults.removeObject(forKey: key(for: userId))
-        } else if let data = try? JSONEncoder().encode(ops) {
-            defaults.set(data, forKey: key(for: userId))
-        }
+        store.clear(for: userId)
     }
 }
