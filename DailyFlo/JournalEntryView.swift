@@ -41,6 +41,11 @@ struct JournalEntryView: View {
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var showLogCycleModal = false
     @State private var showVoiceEntry = false
+    @State private var showDeleteConfirm = false
+    /// Drives the photo picker from the "Change photo" menu item (editing mode).
+    @State private var showPhotoPicker = false
+    /// Set when the entry is deleted, so the dismiss-time autosave is skipped.
+    @State private var isDeleted = false
 
     private let feelingRowInset: CGFloat = 30
 
@@ -157,6 +162,14 @@ struct JournalEntryView: View {
             guard let newItem else { return }
             Task { await importPhoto(newItem) }
         }
+        // "Change photo" menu item (editing mode) presents the picker here.
+        .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhoto, matching: .images)
+        .alert("Delete this entry?", isPresented: $showDeleteConfirm) {
+            Button("Delete", role: .destructive) { deleteEntry() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This can't be undone.")
+        }
         // Swipe-to-dismiss autosave. After an X close this is a no-op
         // because nothing changed since that save.
         .onDisappear {
@@ -181,7 +194,26 @@ struct JournalEntryView: View {
 
             Spacer()
 
-            SageCloseButton(action: close)
+            HStack(spacing: FloSpacing.xs) {
+                // Delete is offered once the entry exists in the store (a posted
+                // entry, or a new one that has autosaved).
+                if currentEntry != nil {
+                    Button {
+                        FloHaptics.light()
+                        showDeleteConfirm = true
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.system(size: 17, weight: .medium))
+                            .foregroundStyle(Color.floError)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.floPressed)
+                    .accessibilityLabel("Delete entry")
+                }
+
+                SageCloseButton(action: close)
+            }
         }
         .padding(.leading, 28)
         .padding(.trailing, FloSpacing.md)
@@ -334,6 +366,35 @@ struct JournalEntryView: View {
         }
     }
 
+    /// Photo button on the editor strip. With the entry's own photo it's a menu
+    /// (Change / Remove); otherwise a plain picker to add one.
+    @ViewBuilder
+    private var photoEditControl: some View {
+        if photoImage != nil {
+            Menu {
+                Button {
+                    showPhotoPicker = true
+                } label: {
+                    Label("Change photo", systemImage: "photo")
+                }
+                Button(role: .destructive) {
+                    removePhoto()
+                } label: {
+                    Label("Remove photo", systemImage: "trash")
+                }
+            } label: {
+                RoundPhotoEditLabel()
+            }
+            .accessibilityLabel("Change or remove photo")
+        } else {
+            PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                RoundPhotoEditLabel()
+            }
+            .buttonStyle(.floPressed)
+            .accessibilityLabel("Add a photo")
+        }
+    }
+
     // MARK: - Editor card (new entry, or a posted entry being edited)
 
     private var editorCard: some View {
@@ -346,13 +407,9 @@ struct JournalEntryView: View {
                 // clips drawing, not hit-testing).
                 .contentShape(Rectangle())
                 .overlay(alignment: .bottomTrailing) {
-                    PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                        RoundPhotoEditLabel()
-                    }
-                    .buttonStyle(.floPressed)
-                    .offset(y: 20)
-                    .padding(.trailing, 8)
-                    .accessibilityLabel(photoImage == nil ? "Add a photo" : "Change photo")
+                    photoEditControl
+                        .offset(y: 20)
+                        .padding(.trailing, 8)
                 }
                 // Kept: the edit button offsets below the 48pt strip into the
                 // title row, so the strip must sit above the later VStack
@@ -463,10 +520,33 @@ struct JournalEntryView: View {
         onDismiss()
     }
 
+    /// Deletes the posted entry (JournalManager handles the local file + queued
+    /// Storage photo delete) and dismisses. `isDeleted` stops the dismiss-time
+    /// autosave from resurrecting the row.
+    private func deleteEntry() {
+        guard let entry = currentEntry else { return }
+        FloHaptics.medium()
+        isDeleted = true
+        journalManager.deleteEntry(entry)
+        onDismiss()
+    }
+
+    /// Removes the entry's own photo: the strip falls back to the feeling's stock
+    /// photo. For an existing entry this persists now (local file deleted + Storage
+    /// delete queued via `updateEntry`); a brand-new entry just clears it.
+    private func removePhoto() {
+        FloHaptics.light()
+        withAnimation(FloAnimation.springSnappy) { photoImage = nil }
+        photoDirty = true
+        if currentEntry != nil {
+            autosave()
+        }
+    }
+
     /// Writes the entry if a feeling is picked and something changed.
     /// Idempotent: repeated calls with no edits write nothing.
     private func autosave() {
-        guard let emotion = selectedEmotion else { return }
+        guard !isDeleted, let emotion = selectedEmotion else { return }
         let note = composedNote
         let phase = CycleManager.shared.phase(for: entryDate)
 
@@ -474,8 +554,12 @@ struct JournalEntryView: View {
             guard existing.emotion != emotion || existing.note != note || photoDirty else { return }
 
             var photoURL = existing.userPhotoURL
-            if photoDirty, let photoImage {
-                photoURL = JournalPhotoStore.save(photoImage, for: existing.id) ?? photoURL
+            if photoDirty {
+                if let photoImage {
+                    photoURL = JournalPhotoStore.save(photoImage, for: existing.id) ?? photoURL
+                } else {
+                    photoURL = nil   // photo removed
+                }
             }
             let updated = JournalEntry(
                 id: existing.id,
