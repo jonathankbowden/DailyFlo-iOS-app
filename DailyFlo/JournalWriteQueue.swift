@@ -66,9 +66,17 @@ struct JournalWriteQueue {
         if let index = ops.firstIndex(where: { $0.id == op.id && $0.kind.isPhoto == op.kind.isPhoto }) {
             let existing = ops[index]
             switch (existing.kind, op.kind) {
-            case (.insert, .softDelete), (.photoUpload, .photoDelete):
-                // A create that never synced, then a delete → forget both.
+            case (.insert, .softDelete):
+                // A row insert that never synced, then a delete → forget both
+                // (there's no server row to delete).
                 ops.remove(at: index)
+            case (.photoUpload, .photoDelete):
+                // NOT drop-both: the photo may already be in Storage (the upload
+                // synced, or is mid-flight in a replay snapshot), so the delete
+                // MUST survive or the object is orphaned. Cancel the pending
+                // upload but keep the delete; deleting a never-uploaded object is
+                // a harmless no-op.
+                ops[index] = op
             case (.insert, .insert), (.insert, .update):
                 // Stays an insert, carrying the newest payload.
                 ops[index] = JournalWriteOp(kind: .insert, id: op.id, entry: op.entry ?? existing.entry)

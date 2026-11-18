@@ -63,6 +63,10 @@ class JournalManager {
     /// Re-entrancy guard so overlapping replay triggers (foreground + network +
     /// refresh) don't double-send.
     private var isReplaying = false
+    /// Set when a replay is requested while one is already running, so the active
+    /// pass loops again — work enqueued mid-pass (e.g. a photo delete during an
+    /// in-flight upload) is sent without waiting for the next external trigger.
+    private var replayRequested = false
 
     private let pathMonitor = NWPathMonitor()
     private let pathMonitorQueue = DispatchQueue(label: "app.dailyflo.journal.network")
@@ -345,33 +349,45 @@ class JournalManager {
     @MainActor
     func replayQueue() async {
         guard let userId = currentUserId() else { return }
-        guard !isReplaying else { return }
+        // Collapse concurrent triggers: if a pass is already running, ask it to
+        // loop again rather than starting a second one or dropping the request.
+        guard !isReplaying else { replayRequested = true; return }
         isReplaying = true
         defer { isReplaying = false }
 
-        for op in writeQueue.all(for: userId) {
-            let succeeded: Bool
-            switch op.kind {
-            case .insert:
-                guard let entry = op.entry else { writeQueue.remove(matching: op, for: userId); continue }
-                succeeded = await remoteUpsert(entry, userId: userId)
-            case .update:
-                guard let entry = op.entry else { writeQueue.remove(matching: op, for: userId); continue }
-                succeeded = await remoteUpdate(entry, userId: userId)
-            case .softDelete:
-                succeeded = await remoteSoftDelete(id: op.id)
-            case .photoUpload:
-                succeeded = await remotePhotoUpload(entryId: op.id, userId: userId)
-            case .photoDelete:
-                succeeded = await remotePhotoDelete(entryId: op.id, userId: userId)
+        repeat {
+            replayRequested = false
+            var stoppedOnFailure = false
+
+            for op in writeQueue.all(for: userId) {
+                let succeeded: Bool
+                switch op.kind {
+                case .insert:
+                    guard let entry = op.entry else { writeQueue.remove(matching: op, for: userId); continue }
+                    succeeded = await remoteUpsert(entry, userId: userId)
+                case .update:
+                    guard let entry = op.entry else { writeQueue.remove(matching: op, for: userId); continue }
+                    succeeded = await remoteUpdate(entry, userId: userId)
+                case .softDelete:
+                    succeeded = await remoteSoftDelete(id: op.id)
+                case .photoUpload:
+                    succeeded = await remotePhotoUpload(entryId: op.id, userId: userId)
+                case .photoDelete:
+                    succeeded = await remotePhotoDelete(entryId: op.id, userId: userId)
+                }
+
+                if succeeded {
+                    writeQueue.remove(matching: op, for: userId)
+                } else {
+                    stoppedOnFailure = true
+                    break
+                }
             }
 
-            if succeeded {
-                writeQueue.remove(matching: op, for: userId)
-            } else {
-                break
-            }
-        }
+            // A failure is usually offline — stop and wait for the next trigger.
+            // Otherwise loop again if more work was enqueued during this pass.
+            if stoppedOnFailure { break }
+        } while replayRequested
     }
 
     /// Overlays the still-pending ops onto a list of server rows: insert/update
@@ -442,17 +458,24 @@ class JournalManager {
     private func remotePhotoDelete(entryId: UUID, userId: UUID) async -> Bool {
         let key = photoKey(userId: userId, entryId: entryId)
         do {
-            _ = try await SupabaseClient.shared.storage
+            let removed = try await SupabaseClient.shared.storage
                 .from(photosBucket)
                 .remove(paths: [key])
+            #if DEBUG
+            if removed.isEmpty {
+                // Not a transport failure, but the object we expected wasn't there
+                // (never uploaded, or already removed) — surface it rather than
+                // reporting a silent success.
+                print("[JournalManager] photo delete: Storage removed nothing at \(key)")
+            } else {
+                print("[JournalManager] photo delete OK for \(entryId)")
+            }
+            #endif
             try await SupabaseClient.shared
                 .from(table)
                 .update(PhotoPathPayload(photoPath: nil))
                 .eq("id", value: entryId)
                 .execute()
-            #if DEBUG
-            print("[JournalManager] photo delete OK for \(entryId)")
-            #endif
             return true
         } catch {
             logRemoteError(operation: "photo-delete", id: entryId, error: error)
