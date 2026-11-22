@@ -4,14 +4,21 @@
 # SupabaseConfig.xcconfig is gitignored (it holds the Supabase URL and key), so
 # a cloud checkout doesn't have it. Recreate it from two Xcode Cloud secret
 # environment variables set on the workflow:
-#   SUPABASE_URL              e.g. https://<project>.supabase.co
+#   SUPABASE_PROJECT_REF      the project id only, e.g. ntyxfqwrtqscmdefbyfc
+#                             (Xcode Cloud rejects "://" in variable values,
+#                             so the full URL is built here)
 #   SUPABASE_PUBLISHABLE_KEY  the publishable (anon) key
+# SUPABASE_URL (full https URL) is still accepted if set instead of the ref.
 # Local builds are unaffected; they keep using your local SupabaseConfig.xcconfig.
 
 set -e
 
+if [ -z "$SUPABASE_URL" ] && [ -n "$SUPABASE_PROJECT_REF" ]; then
+  SUPABASE_URL="https://${SUPABASE_PROJECT_REF}.supabase.co"
+fi
+
 if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_PUBLISHABLE_KEY" ]; then
-  echo "error: SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY must be set as Xcode Cloud environment variables." >&2
+  echo "error: set SUPABASE_PROJECT_REF and SUPABASE_PUBLISHABLE_KEY as Xcode Cloud environment variables." >&2
   exit 1
 fi
 
