@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		E829C34230B35A74001BE92E /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = E829C34130B35A74001BE92E /* Sentry */; };
 		E83FA7812FBE25A100FC41E9 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = E83FA7802FBE25A100FC41E9 /* Supabase */; };
 		E83FA7852FC653AA00FC41E9 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = E83FA7842FC653AA00FC41E9 /* GoogleSignIn */; };
 		E83FA78E2FD0713200FC41E9 /* RevenueCat in Frameworks */ = {isa = PBXBuildFile; productRef = E83FA78D2FD0713200FC41E9 /* RevenueCat */; };
@@ -49,6 +50,7 @@
 				E83FA7812FBE25A100FC41E9 /* Supabase in Frameworks */,
 				E83FA7852FC653AA00FC41E9 /* GoogleSignIn in Frameworks */,
 				E83FA78E2FD0713200FC41E9 /* RevenueCat in Frameworks */,
+				E829C34230B35A74001BE92E /* Sentry in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -62,6 +64,7 @@
 				E80A61912F311F9A0046C0E9 /* DailyFlo */,
 				E80A61902F311F9A0046C0E9 /* Products */,
 				E8C3FE793047A52B00848435 /* PrivacyInfo.xcprivacy */,
+				E829C34030B35A74001BE92E /* Frameworks */,
 			);
 			sourceTree = "<group>";
 		};
@@ -71,6 +74,13 @@
 				E80A618F2F311F9A0046C0E9 /* DailyFlo.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		E829C34030B35A74001BE92E /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -96,6 +106,7 @@
 				E83FA7802FBE25A100FC41E9 /* Supabase */,
 				E83FA7842FC653AA00FC41E9 /* GoogleSignIn */,
 				E83FA78D2FD0713200FC41E9 /* RevenueCat */,
+				E829C34130B35A74001BE92E /* Sentry */,
 			);
 			productName = DailyFlo;
 			productReference = E80A618F2F311F9A0046C0E9 /* DailyFlo.app */;
@@ -129,6 +140,7 @@
 				E83FA77F2FBE25A100FC41E9 /* XCRemoteSwiftPackageReference "supabase-swift" */,
 				E83FA7832FC653AA00FC41E9 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
 				E83FA78C2FD0713200FC41E9 /* XCRemoteSwiftPackageReference "purchases-ios-spm" */,
+				E829C33F30B359C8001BE92E /* XCRemoteSwiftPackageReference "sentry-cocoa" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = E80A61902F311F9A0046C0E9 /* Products */;
@@ -393,6 +405,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		E829C33F30B359C8001BE92E /* XCRemoteSwiftPackageReference "sentry-cocoa" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/getsentry/sentry-cocoa";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 8.58.4;
+			};
+		};
 		E83FA77F2FBE25A100FC41E9 /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/supabase/supabase-swift";
@@ -420,6 +440,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		E829C34130B35A74001BE92E /* Sentry */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E829C33F30B359C8001BE92E /* XCRemoteSwiftPackageReference "sentry-cocoa" */;
+			productName = Sentry;
+		};
 		E83FA7802FBE25A100FC41E9 /* Supabase */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = E83FA77F2FBE25A100FC41E9 /* XCRemoteSwiftPackageReference "supabase-swift" */;
