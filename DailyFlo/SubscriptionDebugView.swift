@@ -11,6 +11,7 @@
 #if DEBUG
 
 import RevenueCat
+import Sentry
 import SwiftUI
 
 struct SubscriptionDebugView: View {
@@ -32,6 +33,7 @@ struct SubscriptionDebugView: View {
                 supporterOverrideCard
                 liveGatePreview
                 inspectorCard
+                sentryTestCard
             }
             .padding(.horizontal, FloSpacing.lg)
             .padding(.top, FloSpacing.md)
@@ -239,6 +241,32 @@ struct SubscriptionDebugView: View {
         )
     }
 
+    // MARK: - Sentry test
+
+    private var sentryTestCard: some View {
+        VStack(alignment: .leading, spacing: FloSpacing.md) {
+            sectionLabel("Sentry")
+
+            Button("Send test error to Sentry") {
+                FloHaptics.medium()
+                SentrySDK.capture(error: SentryTestError.manualTrigger)
+            }
+            .buttonStyle(.floTertiary)
+
+            Text("Captures a handled test error so you can confirm events reach the Sentry dashboard.")
+                .font(.floBodySmall)
+                .foregroundColor(.floGray)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(FloSpacing.lg)
+        .background(Color.white)
+        .cornerRadius(FloRadius.lg)
+        .overlay(
+            RoundedRectangle(cornerRadius: FloRadius.lg)
+                .stroke(Color.floLightGray, lineWidth: 1)
+        )
+    }
+
     private func sectionLabel(_ text: String) -> some View {
         Text(text.uppercased())
             .font(.system(size: 11, weight: .bold))
@@ -293,6 +321,15 @@ private extension SubscriptionManager {
         // honestly — the value lives in CustomerInfo and the inspector's
         // Refresh button is the way to surface it.
         return "(hidden — flip to From RC to see)"
+    }
+}
+
+// A distinct error type so test events are obvious in the Sentry dashboard.
+private enum SentryTestError: LocalizedError {
+    case manualTrigger
+
+    var errorDescription: String? {
+        "DailyFLO test error (manually triggered from SubscriptionDebugView)"
     }
 }
 

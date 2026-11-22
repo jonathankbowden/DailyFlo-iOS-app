@@ -55,6 +55,10 @@ enum AccountDeletion {
         //    device doesn't inherit anything.
         await SubscriptionManager.shared.unlinkUser()
 
+        // 2b. Detach the auth UUID from Sentry so nothing further is linked to
+        //     the deleted account.
+        SentryConfig.clearUser()
+
         // 3. Local caches → fresh install.
         clearLocalData()
 

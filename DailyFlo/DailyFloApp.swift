@@ -32,6 +32,9 @@ struct DailyFloApp: App {
     private let cycleManager = CycleManager.shared
 
     init() {
+        // Boot Sentry first so any crash during the rest of launch is captured.
+        SentryConfig.start()
+
         // Configure RevenueCat before any caller touches Purchases.shared
         // or SubscriptionManager.shared. Must happen on the first launch
         // tick — the SDK refuses to serve requests until this runs.
@@ -161,6 +164,8 @@ struct DailyFloApp: App {
                 // with a restored session, so users who signed in before this
                 // wiring existed get identified without re-authenticating.
                 if let session {
+                    // Attach the auth UUID (and nothing else) to crash reports.
+                    SentryConfig.setUser(id: session.user.id.uuidString)
                     await SubscriptionManager.shared.linkUser(session.user.id)
                 }
                 if session != nil, appState == .signIn {
@@ -170,6 +175,7 @@ struct DailyFloApp: App {
                 }
             case .signedIn:
                 if let session {
+                    SentryConfig.setUser(id: session.user.id.uuidString)
                     await SubscriptionManager.shared.linkUser(session.user.id)
                 }
                 if appState != .main {
@@ -178,6 +184,8 @@ struct DailyFloApp: App {
                     }
                 }
             case .signedOut, .userDeleted:
+                // Detach the auth UUID so later events are anonymous.
+                SentryConfig.clearUser()
                 await SubscriptionManager.shared.unlinkUser()
                 // Route to whichever state the user belongs in given current
                 // local flags. After the in-app "Reset" wipes UserDefaults,
