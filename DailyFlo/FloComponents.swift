@@ -97,7 +97,7 @@ struct ScreenHeader: View {
     /// over the font's own line height — a single-line title is unaffected.
     private var titleLineSpacing: CGFloat {
         let targetLineHeight: CGFloat = 39.6
-        let naturalLineHeight = UIFont(name: "LUNARY free", size: 36)?.lineHeight ?? 36
+        let naturalLineHeight = UIFont(name: Font.floSerifFaceName, size: 36)?.lineHeight ?? 36
         return max(0, targetLineHeight - naturalLineHeight)
     }
 

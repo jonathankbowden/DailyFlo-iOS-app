@@ -8,17 +8,18 @@
 import SwiftUI
 import PhotosUI
 
-/// One journal entry, new or posted, presented as a swipe-dismissable
-/// `.large` sheet (Figma "January 14" 15:3782 and "Add new journal entry"
-/// 15:3879).
+/// One journal entry, new or posted, presented as a `.large` sheet that only
+/// the back button closes (Brittany's review, Nov 25: no swipe-down, no ✕).
 ///
 /// `entry == nil` = compose for `date` (defaults to today). Under the
 /// one-entry-per-day rule the init first resolves any existing entry on that
 /// day and, if found, opens it as a posted entry instead of a blank composer.
 ///
-/// There is no Save button: the entry autosaves when the sheet closes (X,
-/// CLOSE or swipe) and before LOG CYCLE, as long as a feeling is picked. A new
-/// entry closed without a feeling is discarded.
+/// One screen for reading and writing: the title and text are always live
+/// fields, so tapping the text starts editing in place. There is no Save
+/// button: the entry autosaves on back, as long as a feeling is picked. A new
+/// entry closed without a feeling is discarded. The bottom bar is CLEAR ENTRY
+/// (delete with a 5s Undo, no confirm) and SHARE (iOS share sheet).
 struct JournalEntryView: View {
     let journalManager: JournalManager
     let onDismiss: () -> Void
@@ -35,16 +36,20 @@ struct JournalEntryView: View {
     @State private var photoImage: UIImage?
     /// True when `photoImage` changed since the last save.
     @State private var photoDirty = false
-    /// Posted entries open read-only; the photo's edit button switches to
-    /// the editor card. New entries open straight in the editor.
-    @State private var isEditing: Bool
     @State private var selectedPhoto: PhotosPickerItem?
-    @State private var showLogCycleModal = false
-    @State private var showDeleteConfirm = false
-    /// Drives the photo picker from the "Change photo" menu item (editing mode).
+    /// Drives the photo picker from the "Change photo" menu item.
     @State private var showPhotoPicker = false
-    /// Set when the entry is deleted, so the dismiss-time autosave is skipped.
-    @State private var isDeleted = false
+    /// What CLEAR ENTRY removed, held while its Undo toast is up.
+    @State private var cleared: ClearedEntry?
+    @FocusState private var bodyFocused: Bool
+
+    private struct ClearedEntry {
+        let id = UUID()
+        let emotion: CoreEmotion?
+        let title: String
+        let body: String
+        let photo: UIImage?
+    }
 
     private let feelingRowInset: CGFloat = 30
 
@@ -64,7 +69,6 @@ struct JournalEntryView: View {
         let resolvedEntry = entry ?? journalManager.entry(for: date ?? Date())
         openedPosted = resolvedEntry != nil
         _currentEntry = State(initialValue: resolvedEntry)
-        _isEditing = State(initialValue: resolvedEntry == nil)
 
         if let resolvedEntry {
             let parts = Self.splitNote(resolvedEntry.note)
@@ -100,19 +104,14 @@ struct JournalEntryView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            SheetGrabber()
+            // Frozen header: stays put while the entry scrolls.
+            header
+            FloHairline()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    FloHairline()
-                        .padding(.top, FloSpacing.md)
-
-                    header
-
-                    FloHairline()
-
                     Text("Feeling:")
-                        .font(.floLunary(size: 32))
+                        .font(.floSerif(size: 32))
                         .foregroundStyle(Color.black)
                         .padding(.leading, feelingRowInset)
                         .padding(.top, 18)
@@ -123,18 +122,13 @@ struct JournalEntryView: View {
 
                     FloRuleLine()
 
-                    if isEditing {
-                        editorCard
-                            .padding(.horizontal, feelingRowInset)
-                            .padding(.top, 20)
-                            .padding(.bottom, FloSpacing.lg)
-                    } else {
-                        postedContent
-                    }
+                    entryContent
                 }
             }
             .scrollIndicators(.hidden)
             .scrollDismissesKeyboard(.interactively)
+
+            FloHairline()
 
             actionRow
                 .padding(.horizontal, 36)
@@ -142,23 +136,16 @@ struct JournalEntryView: View {
                 .padding(.bottom, FloSpacing.md)
         }
         .background(Color.floBackground.ignoresSafeArea())
+        .overlay(alignment: .bottom) { undoToast }
         .presentationDetents([.large])
         .presentationDragIndicator(.hidden)
-        .logCycleModal(isPresented: $showLogCycleModal, date: entryDate)
+        // Back button only: no swipe-down to close.
+        .interactiveDismissDisabled()
         .onChange(of: selectedPhoto) { _, newItem in
             guard let newItem else { return }
             Task { await importPhoto(newItem) }
         }
-        // "Change photo" menu item (editing mode) presents the picker here.
         .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhoto, matching: .images)
-        .alert("Delete this entry?", isPresented: $showDeleteConfirm) {
-            Button("Delete", role: .destructive) { deleteEntry() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This can't be undone.")
-        }
-        // Swipe-to-dismiss autosave. After an X close this is a no-op
-        // because nothing changed since that save.
         .onDisappear {
             autosave()
         }
@@ -167,7 +154,17 @@ struct JournalEntryView: View {
     // MARK: - Header
 
     private var header: some View {
-        HStack(alignment: .center) {
+        HStack(alignment: .center, spacing: FloSpacing.xs) {
+            Button(action: close) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(Color.black)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.floPressed)
+            .accessibilityLabel("Back")
+
             VStack(alignment: .leading, spacing: 4) {
                 Text(openedPosted ? "DATE POSTED:" : "DATE:")
                     .font(.system(size: 11, weight: .black))
@@ -180,31 +177,10 @@ struct JournalEntryView: View {
             }
 
             Spacer()
-
-            HStack(spacing: FloSpacing.xs) {
-                // Delete is offered once the entry exists in the store (a posted
-                // entry, or a new one that has autosaved).
-                if currentEntry != nil {
-                    Button {
-                        FloHaptics.light()
-                        showDeleteConfirm = true
-                    } label: {
-                        Image(systemName: "trash")
-                            .font(.system(size: 17, weight: .medium))
-                            .foregroundStyle(Color.floError)
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.floPressed)
-                    .accessibilityLabel("Delete entry")
-                }
-
-                SageCloseButton(action: close)
-            }
         }
-        .padding(.leading, 28)
+        .padding(.leading, FloSpacing.sm)
         .padding(.trailing, FloSpacing.md)
-        .padding(.vertical, 18)
+        .padding(.vertical, 12)
     }
 
     private var formattedDate: String {
@@ -228,7 +204,6 @@ struct JournalEntryView: View {
                     }
                 }
                 .scrollTargetLayout()
-                // Room for the buttons' drop shadow inside the scroll clip.
                 .padding(.vertical, 6)
             }
             .contentMargins(.horizontal, feelingRowInset, for: .scrollContent)
@@ -263,98 +238,95 @@ struct JournalEntryView: View {
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .strokeBorder(Color.floInk, lineWidth: 1.5)
                 )
-                .floShadow(FloShadow.button)
         }
         .buttonStyle(.floPressed)
         .accessibilityLabel(emotion.rawValue)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
-    // MARK: - Posted entry
+    // MARK: - Entry (one layout for reading and writing)
 
-    private var postedContent: some View {
+    /// Photo, title and text. The fields are always live: tapping the text
+    /// starts editing right here. The text field grows with what's written,
+    /// and the whole page scrolls (no box-in-a-box scrolling).
+    private var entryContent: some View {
         VStack(alignment: .leading, spacing: 0) {
-            photoView
-                .frame(height: 232)
-                .frame(maxWidth: .infinity)
-                .clipped()
-                // Hit area = the drawn 232pt header, not the overflowing image.
-                .contentShape(Rectangle())
-                .overlay(alignment: .bottomTrailing) {
-                    Button {
-                        FloHaptics.light()
-                        withAnimation(FloAnimation.springGentle) { isEditing = true }
-                    } label: {
-                        RoundPhotoEditLabel()
-                    }
-                    .buttonStyle(.floPressed)
-                    .offset(y: 22)
-                    .padding(.trailing, 22)
-                    .accessibilityLabel("Edit entry")
-                }
+            photoHeader
 
-            if !entryTitle.isEmpty {
-                Text(entryTitle.uppercased())
-                    .font(.system(size: 13, weight: .heavy))
-                    .tracking(3)
-                    .foregroundStyle(Color.black)
-                    .padding(.horizontal, feelingRowInset)
-                    .padding(.top, 34)
-                    .padding(.bottom, 12)
-            } else {
-                Spacer().frame(height: 34)
-            }
+            TextField(
+                "",
+                text: $entryTitle,
+                prompt: Text("ENTER TITLE HERE").foregroundStyle(Color.floGray)
+            )
+            .font(.system(size: 13, weight: .heavy))
+            .tracking(3)
+            .foregroundStyle(Color.black)
+            .textInputAutocapitalization(.characters)
+            .submitLabel(.next)
+            .onSubmit { bodyFocused = true }
+            .padding(.horizontal, feelingRowInset)
+            .padding(.top, 34)
+            .padding(.bottom, 12)
+            .accessibilityLabel("Title")
 
             FloHairline()
                 .padding(.horizontal, feelingRowInset)
 
-            Group {
-                if entryBody.isEmpty && entryTitle.isEmpty {
-                    Text("Nothing written yet. Tap the pencil to add to this entry.")
-                        .foregroundStyle(Color.floGray)
-                } else {
-                    Text(entryBody)
-                        .foregroundStyle(Color.black)
-                }
-            }
-            .font(.system(size: 16))
-            .lineSpacing(16 * 0.7)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            TextField(
+                "",
+                text: $entryBody,
+                prompt: Text("Start typing here…").foregroundStyle(Color.floGray),
+                axis: .vertical
+            )
+            .font(.system(size: 15))
+            .lineSpacing(15 * 0.7)
+            .foregroundStyle(Color.black)
+            .lineLimit(10...)
+            .focused($bodyFocused)
             .padding(.horizontal, feelingRowInset)
             .padding(.top, 18)
             .padding(.bottom, FloSpacing.xl)
+            .accessibilityLabel("Entry")
         }
     }
 
-    /// The entry's photo, or the feeling's stock photo when there isn't one.
-    ///
-    /// The image is `scaledToFill` inside short frames (48pt editor strip,
-    /// 232pt posted header), so it lays out far taller than its frame. `.clipped()`
-    /// on the caller only clips DRAWING, not hit-testing — an unclipped,
-    /// near-screen-height portrait image would otherwise swallow taps across the
-    /// whole sheet (feeling row, title, editor, mic). Mark the image itself
-    /// non-interactive so a photo can never take touches anywhere it's used.
-    @ViewBuilder
-    private var photoView: some View {
-        if let photoImage {
-            Color.clear.overlay {
+    /// The entry's own photo at its true proportions (never cropped short),
+    /// or the feeling's stock photo as a fixed band when there isn't one.
+    /// Flat: no shadow.
+    private var photoHeader: some View {
+        Group {
+            if let photoImage {
                 Image(uiImage: photoImage)
                     .resizable()
-                    .scaledToFill()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(maxWidth: .infinity)
                     .allowsHitTesting(false)
-            }
-        } else {
-            Color.clear.overlay {
-                Image((selectedEmotion ?? .ashamed).photoName)
-                    .resizable()
-                    .scaledToFill()
-                    .allowsHitTesting(false)
+            } else {
+                // scaledToFill lays out taller than its frame; .clipped() only
+                // clips drawing, so pin the hit area to the drawn band.
+                Color.clear
+                    .frame(height: 232)
+                    .frame(maxWidth: .infinity)
+                    .overlay {
+                        Image((selectedEmotion ?? .ashamed).photoName)
+                            .resizable()
+                            .scaledToFill()
+                            .allowsHitTesting(false)
+                    }
+                    .clipped()
+                    .contentShape(Rectangle())
             }
         }
+        .overlay(alignment: .bottomTrailing) {
+            photoEditControl
+                .offset(y: 22)
+                .padding(.trailing, 22)
+        }
+        .zIndex(1)
     }
 
-    /// Photo button on the editor strip. With the entry's own photo it's a menu
-    /// (Change / Remove); otherwise a plain picker to add one.
+    /// Photo button: Change photo / Clear photo when the entry has its own
+    /// photo, otherwise a picker to add one.
     @ViewBuilder
     private var photoEditControl: some View {
         if photoImage != nil {
@@ -364,15 +336,15 @@ struct JournalEntryView: View {
                 } label: {
                     Label("Change photo", systemImage: "photo")
                 }
-                Button(role: .destructive) {
-                    removePhoto()
+                Button {
+                    clearPhoto()
                 } label: {
-                    Label("Remove photo", systemImage: "trash")
+                    Label("Clear photo", systemImage: "xmark")
                 }
             } label: {
                 RoundPhotoEditLabel()
             }
-            .accessibilityLabel("Change or remove photo")
+            .accessibilityLabel("Change or clear photo")
         } else {
             PhotosPicker(selection: $selectedPhoto, matching: .images) {
                 RoundPhotoEditLabel()
@@ -382,86 +354,70 @@ struct JournalEntryView: View {
         }
     }
 
-    // MARK: - Editor card (new entry, or a posted entry being edited)
+    // MARK: - Bottom bar
 
-    private var editorCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            photoView
-                .frame(height: 48)
-                .frame(maxWidth: .infinity)
-                .clipped()
-                // Confine the hit area to the drawn 48pt strip (clipped() only
-                // clips drawing, not hit-testing).
-                .contentShape(Rectangle())
-                .overlay(alignment: .bottomTrailing) {
-                    photoEditControl
-                        .offset(y: 20)
-                        .padding(.trailing, 8)
-                }
-                // Kept: the edit button offsets below the 48pt strip into the
-                // title row, so the strip must sit above the later VStack
-                // siblings for the button to render on top.
-                .zIndex(1)
-
-            TextField(
-                "",
-                text: $entryTitle,
-                prompt: Text("ENTER TITLE HERE").foregroundStyle(Color.black)
-            )
-            .font(.system(size: 12, weight: .heavy))
-            .tracking(2.5)
-            .foregroundStyle(Color.black)
-            .textInputAutocapitalization(.characters)
-            .submitLabel(.next)
-            .padding(.horizontal, 28)
-            .padding(.top, 30)
-            .padding(.bottom, 14)
-            .accessibilityLabel("Title")
-
-            FloHairline()
-                .padding(.horizontal, 18)
-
-            ZStack(alignment: .topLeading) {
-                if entryBody.isEmpty {
-                    Text("Start typing here…")
-                        .font(.system(size: 16))
-                        .foregroundStyle(Color.floCharcoal)
-                        .padding(.top, 8)
-                        .padding(.leading, 5)
-                        .allowsHitTesting(false)
-                }
-                TextEditor(text: $entryBody)
-                    .font(.system(size: 16))
-                    .lineSpacing(16 * 0.7)
-                    .scrollContentBackground(.hidden)
-                    .frame(minHeight: 300)
-                    .accessibilityLabel("Entry")
-            }
-            .padding(.leading, 23)
-            .padding(.trailing, 23)
-            .padding(.top, 12)
-            .padding(.bottom, FloSpacing.md)
-        }
-        .background(Color.white)
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .floShadow(FloShadow.raised)
+    private var hasContent: Bool {
+        selectedEmotion != nil || !entryTitle.isEmpty || !entryBody.isEmpty || photoImage != nil
     }
 
-    // MARK: - Actions row
-
-    /// LOG CYCLE + CLOSE, equal widths, per Brittany's "Journal Entry
-    /// Overlay" frame (2052:3261). CLOSE autosaves and dismisses, same as
-    /// the X in the header. Sharing an entry was removed with it (Nov 2026);
-    /// the ShareLink version is in git history if it comes back in v1.1.
+    /// CLEAR ENTRY + SHARE, equal widths, a hairline above (Brittany's sketch).
     private var actionRow: some View {
         HStack(spacing: FloSpacing.md) {
-            OutlinedActionButton(title: "Log cycle", icon: "checkmark.circle") {
-                autosave()
-                showLogCycleModal = true
+            OutlinedActionButton(title: "Clear entry") {
+                clearEntry()
             }
+            .disabled(!hasContent)
 
-            OutlinedActionButton(title: "Close", icon: "xmark.circle") {
-                close()
+            shareButton
+                .disabled(composedNote.isEmpty && photoImage == nil)
+        }
+    }
+
+    /// iOS share sheet: the photo (if any) with the title and text.
+    @ViewBuilder
+    private var shareButton: some View {
+        let title = entryTitle.isEmpty ? "Journal entry" : entryTitle
+        if let photoImage {
+            let image = Image(uiImage: photoImage)
+            ShareLink(
+                item: image,
+                subject: Text(title),
+                message: Text(composedNote),
+                preview: SharePreview(title, image: image)
+            ) {
+                OutlinedActionLabel(title: "Share")
+            }
+            .buttonStyle(.floPressed)
+        } else {
+            ShareLink(item: composedNote, subject: Text(title)) {
+                OutlinedActionLabel(title: "Share")
+            }
+            .buttonStyle(.floPressed)
+        }
+    }
+
+    @ViewBuilder
+    private var undoToast: some View {
+        if let cleared {
+            HStack {
+                Text("Entry cleared")
+                    .font(.floBodyMedium)
+                    .foregroundStyle(Color.white)
+                Spacer()
+                Button("Undo") { undoClear() }
+                    .font(.floButton)
+                    .foregroundStyle(Color.floSage)
+            }
+            .padding(.horizontal, FloSpacing.lg)
+            .padding(.vertical, FloSpacing.md)
+            .background(Capsule().fill(Color.black))
+            .padding(.horizontal, FloSpacing.lg)
+            .padding(.bottom, 96)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .task(id: cleared.id) {
+                try? await Task.sleep(for: .seconds(5))
+                guard !Task.isCancelled else { return }
+                withAnimation(FloAnimation.springGentle) { self.cleared = nil }
             }
         }
     }
@@ -493,21 +449,53 @@ struct JournalEntryView: View {
         onDismiss()
     }
 
-    /// Deletes the posted entry (JournalManager handles the local file + queued
-    /// Storage photo delete) and dismisses. `isDeleted` stops the dismiss-time
-    /// autosave from resurrecting the row.
-    private func deleteEntry() {
-        guard let entry = currentEntry else { return }
+    /// CLEAR ENTRY: deletes the stored entry now (JournalManager handles the
+    /// local file + queued Storage photo delete), empties the page, and holds
+    /// what was there for the 5s Undo. Nothing is left to autosave, because
+    /// the feeling is cleared too.
+    private func clearEntry() {
         FloHaptics.medium()
-        isDeleted = true
-        journalManager.deleteEntry(entry)
-        onDismiss()
+        let snapshot = ClearedEntry(
+            emotion: selectedEmotion,
+            title: entryTitle,
+            body: entryBody,
+            photo: photoImage
+        )
+        if let entry = currentEntry {
+            journalManager.deleteEntry(entry)
+        }
+        currentEntry = nil
+        photoDirty = false
+        bodyFocused = false
+        withAnimation(FloAnimation.springSnappy) {
+            selectedEmotion = nil
+            entryTitle = ""
+            entryBody = ""
+            photoImage = nil
+            cleared = snapshot
+        }
     }
 
-    /// Removes the entry's own photo: the strip falls back to the feeling's stock
-    /// photo. For an existing entry this persists now (local file deleted + Storage
-    /// delete queued via `updateEntry`); a brand-new entry just clears it.
-    private func removePhoto() {
+    /// Undo: puts everything back and saves it as the day's entry again
+    /// (photo re-saved and re-uploaded through the normal path).
+    private func undoClear() {
+        guard let snapshot = cleared else { return }
+        FloHaptics.light()
+        withAnimation(FloAnimation.springSnappy) {
+            selectedEmotion = snapshot.emotion
+            entryTitle = snapshot.title
+            entryBody = snapshot.body
+            photoImage = snapshot.photo
+            cleared = nil
+        }
+        photoDirty = snapshot.photo != nil
+        autosave()
+    }
+
+    /// Clears the entry's own photo: the header falls back to the feeling's
+    /// stock photo. For an existing entry this persists now (local file deleted
+    /// + Storage delete queued via `updateEntry`); a new entry just clears it.
+    private func clearPhoto() {
         FloHaptics.light()
         withAnimation(FloAnimation.springSnappy) { photoImage = nil }
         photoDirty = true
@@ -519,7 +507,7 @@ struct JournalEntryView: View {
     /// Writes the entry if a feeling is picked and something changed.
     /// Idempotent: repeated calls with no edits write nothing.
     private func autosave() {
-        guard !isDeleted, let emotion = selectedEmotion else { return }
+        guard let emotion = selectedEmotion else { return }
         let note = composedNote
         let phase = CycleManager.shared.phase(for: entryDate)
 

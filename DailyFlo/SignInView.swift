@@ -151,7 +151,7 @@ struct SignInView: View {
     private var brandingSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Daily")
-                .font(.custom("LUNARY free", size: 72))
+                .font(.floSerif(size: 72))
                 .foregroundColor(.floCharcoal)
 
             Text("FLO")
@@ -678,7 +678,7 @@ private struct PasswordSignInSheet: View {
                     .padding(.top, FloSpacing.sm)
 
                     Text("Log in with password")
-                        .font(.custom("LUNARY free", size: 32))
+                        .font(.floSerif(size: 32))
                         .foregroundColor(.floCharcoal)
                         .padding(.top, FloSpacing.md)
                         .accessibilityAddTraits(.isHeader)

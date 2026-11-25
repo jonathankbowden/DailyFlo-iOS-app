@@ -11,7 +11,9 @@ struct ContentView: View {
     // Tabs, left to right: 0=Calendar, 1=Journal, [+ FAB], 2=Profile, 3=Pause.
     // Calendar is the default tab on launch — it's the app's home screen.
     @State private var selectedTab = 0
-    @State private var showJournalEntry = false
+    /// The center + logs a period (Brittany's review, Nov 25). Journal
+    /// entries start from a calendar date instead.
+    @State private var showLogCycle = false
 
     // Single Pro gate for the whole app. Entitlement is checked once, here at
     // the top level, right after onboarding/sign-in land the user on the tabs —
@@ -62,7 +64,7 @@ struct ContentView: View {
                 // home-indicator region while the icons/capsule sit in the
                 // 88pt band above it.
                 FloTabBar(selectedTab: $selectedTab, bottomInset: bottomInset) {
-                    showJournalEntry = true
+                    showLogCycle = true
                 }
             }
             // The Pro gate is presented here, on the ZStack — a DIFFERENT anchor
@@ -78,14 +80,7 @@ struct ContentView: View {
             }
         }
         .ignoresSafeArea(.container, edges: .bottom)
-        .sheet(isPresented: $showJournalEntry) {
-            JournalEntryView(
-                journalManager: JournalManager.shared,
-                onDismiss: {
-                    showJournalEntry = false
-                }
-            )
-        }
+        .logCycleModal(isPresented: $showLogCycle, date: Date())
         .task {
             await evaluateProGate()
         }
@@ -339,7 +334,7 @@ struct FloTabBar: View {
             }
             .scaleEffect(plusScale)
         }
-        .accessibilityLabel("New entry")
+        .accessibilityLabel("Log period")
         .accessibilityHint("Logs a journal entry for today")
     }
 }

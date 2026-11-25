@@ -90,7 +90,7 @@ struct SplashView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     // "Daily" in large elegant Lunary
                     Text("Daily")
-                        .font(.custom("LUNARY free", size: 62))
+                        .font(.floSerif(size: 62))
                         .foregroundColor(.white)
                         .opacity(dailyOpacity)
                         .offset(y: dailyOffset)
@@ -159,7 +159,7 @@ struct SplashView: View {
                     // Greeting text — left-aligned, positioned at ~40% from top
                     VStack(alignment: .leading) {
                         Text(greeting.text)
-                            .font(.custom("LUNARY free", size: 58))
+                            .font(.floSerif(size: 58))
                             .foregroundColor(.white)
                             .lineSpacing(8)
                             .opacity(greetingOpacity)
