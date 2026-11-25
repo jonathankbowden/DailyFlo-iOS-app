@@ -99,15 +99,8 @@ struct SingleDayView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center, spacing: 14) {
                 // Back, not ✕ (Brittany's review: "no x-ing ever, only back").
-                Button(action: onDismiss) {
-                    FloIcon("chevron.left", size: 21)
-                        .foregroundStyle(Color.black)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.floPressed)
-                .accessibilityLabel("Back")
-                .padding(.leading, -FloSpacing.md)
+                FloBackButton(action: onDismiss)
+                    .padding(.leading, -FloSpacing.md)
 
                 Text(phase.number)
                     .font(.floLunary(size: 54))

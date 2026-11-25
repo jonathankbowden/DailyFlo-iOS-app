@@ -111,7 +111,7 @@ struct JournalEntryView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Feeling:")
-                        .font(.floSerif(size: 32))
+                        .font(.floSerif(size: 28))
                         .foregroundStyle(Color.black)
                         .padding(.leading, feelingRowInset)
                         .padding(.top, 18)
@@ -155,23 +155,15 @@ struct JournalEntryView: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: FloSpacing.xs) {
-            Button(action: close) {
-                FloIcon("chevron.left", size: 21)
-                    .foregroundStyle(Color.black)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.floPressed)
-            .accessibilityLabel("Back")
+            FloBackButton(action: close)
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
                 Text(openedPosted ? "DATE POSTED:" : "DATE:")
-                    .font(.system(size: 11, weight: .black))
-                    .tracking(1.5)
+                    .font(.floInter(12, bold: true))
                     .foregroundStyle(Color.black)
 
                 Text(formattedDate)
-                    .font(.system(size: 18, weight: .light))
+                    .font(.floInter(16))
                     .foregroundStyle(Color.black)
             }
 
@@ -204,6 +196,7 @@ struct JournalEntryView: View {
                 }
                 .scrollTargetLayout()
                 .padding(.vertical, 6)
+                .padding(.trailing, 2) // room for the offset plate
             }
             .contentMargins(.horizontal, feelingRowInset, for: .scrollContent)
             .scrollIndicators(.hidden)
@@ -223,20 +216,14 @@ struct JournalEntryView: View {
             FloHaptics.selection()
             withAnimation(FloAnimation.springSnappy) { selectedEmotion = emotion }
         } label: {
+            // Figma "Emotions - button": 136 × 44, serif 22.
             Text(emotion.rawValue)
-                .font(.floSerif(size: 20))
+                .font(.floSerif(size: 22))
                 .foregroundStyle(Color.black)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
-                .frame(width: 120, height: 44)
-                .background(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(isSelected ? Color.floFeelingSelected : Color.floButtonFill)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .strokeBorder(Color.floInk, lineWidth: 1.5)
-                )
+                .frame(width: 136)
+                .floButtonShape(fill: isSelected ? Color.floFeelingSelected : Color.floButtonFill)
         }
         .buttonStyle(.floPressed)
         .accessibilityLabel(emotion.rawValue)
@@ -257,8 +244,7 @@ struct JournalEntryView: View {
                 text: $entryTitle,
                 prompt: Text("ENTER TITLE HERE").foregroundStyle(Color.floGray)
             )
-            .font(.system(size: 13, weight: .heavy))
-            .tracking(3)
+            .font(.floInter(16, bold: true))
             .foregroundStyle(Color.black)
             .textInputAutocapitalization(.characters)
             .submitLabel(.next)
@@ -277,8 +263,9 @@ struct JournalEntryView: View {
                 prompt: Text("Start typing here…").foregroundStyle(Color.floGray),
                 axis: .vertical
             )
-            .font(.system(size: 15))
-            .lineSpacing(15 * 0.7)
+            // Figma: Source Sans 16 on a 28.5pt line.
+            .font(.floReading(16))
+            .lineSpacing(8.5)
             .foregroundStyle(Color.black)
             .lineLimit(10...)
             .focused($bodyFocused)

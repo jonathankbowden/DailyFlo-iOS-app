@@ -29,30 +29,20 @@ struct OutlinedActionLabel: View {
     var icon: String? = nil
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             if let icon {
-                FloIcon(icon, size: 14)
+                FloIcon(icon, size: 18)
                     .foregroundStyle(Color.floDeepTeal)
             }
             Text(title.uppercased())
-                .font(.system(size: 11.5, weight: .black))
-                .tracking(2.8)
+                .font(.floInter(14, bold: true))
                 .foregroundStyle(Color.black)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
         }
         .padding(.horizontal, 12)
         .frame(maxWidth: .infinity)
-        .frame(height: 47)
-        .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(Color.floButtonFill)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .strokeBorder(Color.floInk, lineWidth: 1.5)
-        )
-        .floShadow(FloShadow.button)
+        .floButtonShape()
         .contentShape(Rectangle())
     }
 }
@@ -280,6 +270,61 @@ struct RoundCloseButton: View {
     }
 }
 
+// MARK: - Button shape (Figma "Emotions - button" / "Log Cycle")
+
+/// 44pt tall, 6pt corners, #F8F8F8 fill, 1pt #707070 border, and a flat
+/// #ECEFEC plate offset 2pt right and down. The plate is part of the drawing,
+/// not a blur shadow, so it stays within "as flat as possible".
+struct FloButtonShape: ViewModifier {
+    var fill: Color = .floButtonFill
+
+    func body(content: Content) -> some View {
+        content
+            .frame(height: 44)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(fill)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(Color.floInk, lineWidth: 1)
+            )
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.floButtonPlate)
+                    .offset(x: 2, y: 2)
+            )
+    }
+}
+
+extension View {
+    func floButtonShape(fill: Color = .floButtonFill) -> some View {
+        modifier(FloButtonShape(fill: fill))
+    }
+}
+
+// MARK: - Back button
+
+/// Feather arrow-left, black, no circle (Brittany: feather-style, not the
+/// filled green circle).
+struct FloBackButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button {
+            FloHaptics.light()
+            action()
+        } label: {
+            FloIcon("arrow.left", size: 24)
+                .foregroundStyle(Color.black)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.floPressed)
+        .accessibilityLabel("Back")
+    }
+}
+
 // MARK: - Rules
 
 /// 1pt #EDEDED hairline.
@@ -289,10 +334,10 @@ struct FloHairline: View {
     }
 }
 
-/// 1.5pt #707070 rule.
+/// 1pt #707070 rule (Figma "Line 21").
 struct FloRuleLine: View {
     var body: some View {
-        Rectangle().fill(Color.floRule).frame(height: 1.5)
+        Rectangle().fill(Color.floRule).frame(height: 1)
     }
 }
 
@@ -319,7 +364,6 @@ struct RoundPhotoEditLabel: View {
             .foregroundStyle(Color.floInk)
             .frame(width: 36, height: 36)
             .background(Circle().fill(Color.white))
-            .floShadow(FloShadow.medium)
             .frame(width: 44, height: 44)
             .contentShape(Circle())
     }
