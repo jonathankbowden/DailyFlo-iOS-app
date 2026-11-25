@@ -140,19 +140,19 @@ struct ScreenHeader: View {
 
             // Eyebrow — uppercase, tracked, small bold, 17pt below the title.
             if let eyebrow {
+                // Figma: Inter Bold 12, black.
                 Text(eyebrow.uppercased())
-                    .font(.floLabel)
-                    .fontWeight(.bold)
-                    .foregroundColor(.floCharcoal)
-                    .tracking(2)
+                    .font(.floInter(12, bold: true))
+                    .foregroundColor(.black)
                     .padding(.top, 17)
             }
 
             // Subtitle — sentence case, 18pt below the eyebrow.
             if let subtitle {
+                // Figma: Inter 16, black.
                 Text(subtitle)
-                    .font(.floBodyMedium)
-                    .foregroundColor(.floGray)
+                    .font(.floInter(16))
+                    .foregroundColor(.black)
                     .padding(.top, 18)
             }
         }
