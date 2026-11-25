@@ -218,6 +218,9 @@ struct FloShadow {
     static let button = none
     static let raised = none
     static let deep = none
+    /// The one exception to flat: Pause cards keep their soft float
+    /// (Brittany's review, Nov 25).
+    static let card = Shadow(color: .black.opacity(0.20), radius: 17, x: 0, y: 22)
 
     struct Shadow {
         let color: Color
