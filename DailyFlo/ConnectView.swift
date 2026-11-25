@@ -224,8 +224,7 @@ struct ConnectMainView: View {
                     }
                     dismiss()
                 }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 28))
+                    FloIcon("xmark.circle.fill", size: 32)
                         .foregroundColor(.floGray.opacity(0.5))
                 }
                 .floHitTarget()
@@ -249,8 +248,7 @@ struct ConnectMainView: View {
                     .fill(Color.floSage.opacity(0.1))
                     .frame(width: 160, height: 160)
 
-                Image(systemName: "person.2.circle")
-                    .font(.system(size: 64))
+                FloIcon("person.2.circle", size: 74)
                     .foregroundColor(.floSage)
             }
             .padding(.vertical, FloSpacing.lg)
@@ -273,7 +271,7 @@ struct ConnectMainView: View {
                 showInviteSheet = true
             }) {
                 HStack(spacing: FloSpacing.sm) {
-                    Image(systemName: "paperplane.fill")
+                    FloIcon("paperplane.fill", size: 23)
                     Text("Send Invite")
                 }
                 .font(.floButton)
@@ -316,8 +314,7 @@ struct ConnectMainView: View {
                                 .tint(.floSage)
                                 .frame(width: 32, height: 32)
                         } else {
-                            Image(systemName: "arrow.right.circle.fill")
-                                .font(.system(size: 32))
+                            FloIcon("arrow.right.circle.fill", size: 37)
                                 .foregroundColor(canSubmitCode ? .floSage : .floSage.opacity(0.4))
                         }
                     }
@@ -358,8 +355,7 @@ struct ConnectMainView: View {
                     .frame(width: 100, height: 100)
                     .rotationEffect(.degrees(-90))
 
-                Image(systemName: "clock")
-                    .font(.system(size: 32))
+                FloIcon("clock", size: 37)
                     .foregroundColor(.floSage)
             }
 
@@ -384,7 +380,7 @@ struct ConnectMainView: View {
                 showShareSheet = true
             }) {
                 HStack(spacing: FloSpacing.xs) {
-                    Image(systemName: "square.and.arrow.up")
+                    FloIcon("square.and.arrow.up", size: 23)
                     Text("Share Invite Again")
                 }
                 .font(.floButton)
@@ -424,8 +420,7 @@ struct ConnectMainView: View {
                             .fontWeight(.semibold)
                             .foregroundColor(.floCharcoal)
 
-                        Image(systemName: "checkmark.seal.fill")
-                            .font(.system(size: 16))
+                        FloIcon("checkmark.seal.fill", size: 18)
                             .foregroundColor(.floSage)
                     }
 
@@ -441,8 +436,7 @@ struct ConnectMainView: View {
                     FloHaptics.light()
                     showPartnerOptions = true
                 }) {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 20))
+                    FloIcon("ellipsis", size: 23)
                         .foregroundColor(.floGray)
                 }
                 .floHitTarget()
@@ -547,8 +541,7 @@ struct ConnectMainView: View {
 
     private func infoRow(icon: String, text: String) -> some View {
         HStack(spacing: FloSpacing.sm) {
-            Image(systemName: icon)
-                .font(.system(size: 14))
+            FloIcon(icon, size: 16)
                 .foregroundColor(.floSage)
                 .frame(width: 24)
 
@@ -567,8 +560,7 @@ struct ConnectMainView: View {
             showSyncInfo = true
         }) {
             HStack(spacing: FloSpacing.md) {
-                Image(systemName: "info.circle.fill")
-                    .font(.system(size: 24))
+                FloIcon("info.circle.fill", size: 28)
                     .foregroundColor(.floSage)
 
                 VStack(alignment: .leading, spacing: FloSpacing.xs) {
@@ -584,8 +576,7 @@ struct ConnectMainView: View {
 
                 Spacer()
 
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 14))
+                FloIcon("chevron.right", size: 16)
                     .foregroundColor(.floGray)
             }
             .padding(FloSpacing.md)
@@ -617,7 +608,7 @@ struct InviteCodeBadge: View {
 
             Button(action: copy) {
                 HStack(spacing: FloSpacing.xs) {
-                    Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                    FloIcon(copied ? "checkmark" : "doc.on.doc", size: 23)
                     Text(copied ? "Copied" : "Copy Code")
                 }
                 .font(.floBodyMedium)
@@ -660,8 +651,7 @@ struct InvitePartnerSheet: View {
                         .fill(Color.floSage.opacity(0.1))
                         .frame(width: 120, height: 120)
 
-                    Image(systemName: "heart.text.square.fill")
-                        .font(.system(size: 48))
+                    FloIcon("heart.text.square.fill", size: 55)
                         .foregroundColor(.floSage)
                 }
                 .padding(.top, FloSpacing.xl)
@@ -689,7 +679,7 @@ struct InvitePartnerSheet: View {
                     showShareSheet = true
                 }) {
                     HStack(spacing: FloSpacing.sm) {
-                        Image(systemName: "square.and.arrow.up")
+                        FloIcon("square.and.arrow.up", size: 23)
                         Text("Share Code")
                     }
                     .font(.floButton)
@@ -917,7 +907,7 @@ struct PartnerOptionsSheet: View {
                 if isDisconnecting {
                     ProgressView().tint(.floError)
                 } else {
-                    Image(systemName: "person.crop.circle.badge.xmark")
+                    FloIcon("person.crop.circle.badge.xmark", size: 23)
                 }
                 Text(isTracker ? "Disconnect" : "Stop Supporting")
                     .font(.floButton)
@@ -1013,8 +1003,7 @@ struct CycleSyncInfoSheet: View {
                             .frame(height: 180)
 
                         VStack {
-                            Image(systemName: "figure.2.and.child.holdinghands")
-                                .font(.system(size: 48))
+                            FloIcon("figure.2.and.child.holdinghands", size: 55)
                                 .foregroundColor(.floSage)
 
                             Text("Better Together")
@@ -1080,8 +1069,7 @@ struct CycleSyncInfoSheet: View {
 
     private func benefitRow(icon: String, title: String, description: String) -> some View {
         HStack(alignment: .top, spacing: FloSpacing.md) {
-            Image(systemName: icon)
-                .font(.system(size: 20))
+            FloIcon(icon, size: 23)
                 .foregroundColor(.floSage)
                 .frame(width: 32, height: 32)
                 .background(Color.floSage.opacity(0.1))

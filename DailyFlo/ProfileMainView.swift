@@ -439,8 +439,7 @@ struct ProfileMainView: View {
                         .fill(Color.floSage.opacity(0.1))
                         .frame(width: 100, height: 100)
 
-                    Image(systemName: "person.2.circle")
-                        .font(.system(size: 44))
+                    FloIcon("person.2.circle", size: 51)
                         .foregroundColor(.floSage)
                 }
 
@@ -459,7 +458,7 @@ struct ProfileMainView: View {
                     showConnect = true
                 }) {
                     HStack(spacing: FloSpacing.sm) {
-                        Image(systemName: "paperplane.fill")
+                        FloIcon("paperplane.fill", size: 23)
                         Text("Connect a Partner")
                     }
                     .font(.floButton)
@@ -502,8 +501,7 @@ struct ProfileMainView: View {
                         if isLoadingProfile && profile == nil {
                             FloLoadingIndicator(size: 20, color: .floSage, lineWidth: 2)
                         } else if avatarInitial.isEmpty {
-                            Image(systemName: "person.fill")
-                                .font(.floDisplaySmall)
+                            FloIcon("person.fill", size: 25)
                                 .foregroundColor(.floSage)
                         } else {
                             Text(avatarInitial)
@@ -570,8 +568,7 @@ struct ProfileMainView: View {
                     if isSigningOut {
                         FloLoadingIndicator(size: 18, color: .floError, lineWidth: 2)
                     } else {
-                        Image(systemName: "rectangle.portrait.and.arrow.right")
-                            .font(.system(size: 18, weight: .medium))
+                        FloIcon("rectangle.portrait.and.arrow.right", size: 21)
                     }
 
                     Text("Sign Out")
@@ -602,8 +599,7 @@ struct ProfileMainView: View {
                     if isDeleting {
                         FloLoadingIndicator(size: 18, color: .floError, lineWidth: 2)
                     } else {
-                        Image(systemName: "trash")
-                            .font(.system(size: 18, weight: .medium))
+                        FloIcon("trash", size: 21)
                     }
 
                     Text(isDeleting ? "Deleting…" : "Delete Account")
@@ -635,8 +631,7 @@ struct ProfileMainView: View {
                     if isResetting {
                         FloLoadingIndicator(size: 18, color: .floGray, lineWidth: 2)
                     } else {
-                        Image(systemName: "arrow.counterclockwise.circle")
-                            .font(.system(size: 20))
+                        FloIcon("arrow.counterclockwise.circle", size: 23)
                             .foregroundColor(.floGray)
                     }
 
@@ -683,8 +678,7 @@ struct ProfileMainView: View {
             showComingSoon = true
         }) {
             HStack {
-                Image(systemName: icon)
-                    .font(.system(size: 20))
+                FloIcon(icon, size: 23)
                     .foregroundColor(.floCharcoal)
 
                 Text(title)
@@ -693,8 +687,7 @@ struct ProfileMainView: View {
 
                 Spacer()
 
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 14))
+                FloIcon("chevron.right", size: 16)
                     .foregroundColor(.floGray)
             }
             .padding(.horizontal, FloSpacing.lg)
@@ -717,8 +710,7 @@ struct ProfileMainView: View {
                 if isRestoring {
                     FloLoadingIndicator(size: 20, color: .floCharcoal, lineWidth: 2)
                 } else {
-                    Image(systemName: "arrow.clockwise.circle")
-                        .font(.system(size: 20))
+                    FloIcon("arrow.clockwise.circle", size: 23)
                         .foregroundColor(.floCharcoal)
                 }
 
@@ -774,8 +766,7 @@ struct ProfileMainView: View {
             showSubscriptionDebug = true
         }) {
             HStack {
-                Image(systemName: "hammer.circle")
-                    .font(.system(size: 20))
+                FloIcon("hammer.circle", size: 23)
                     .foregroundColor(.floCharcoal)
 
                 Text("Developer")
@@ -792,8 +783,7 @@ struct ProfileMainView: View {
                     .background(Color.floGray.opacity(0.1))
                     .cornerRadius(FloRadius.full)
 
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 14))
+                FloIcon("chevron.right", size: 16)
                     .foregroundColor(.floGray)
             }
             .padding(.horizontal, FloSpacing.lg)
@@ -853,8 +843,7 @@ struct PartnerCard: View {
                 Button(action: {
                     FloHaptics.light()
                 }) {
-                    Image(systemName: "square.and.pencil")
-                        .font(.system(size: 16))
+                    FloIcon("square.and.pencil", size: 18)
                         .foregroundColor(.floGray)
                         .padding(FloSpacing.sm)
                         .background(Color.white.opacity(0.95))
@@ -908,8 +897,7 @@ struct AddPartnerCard: View {
             VStack {
                 Spacer()
 
-                Image(systemName: "plus.circle")
-                    .font(.system(size: 40))
+                FloIcon("plus.circle", size: 46)
                     .foregroundColor(.floGray.opacity(0.5))
 
                 Text("Add Partner")
@@ -944,8 +932,7 @@ struct PhaseNotificationCard: View {
                         isEnabled.toggle()
                     }
                 }) {
-                    Image(systemName: isEnabled ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 20))
+                    FloIcon(isEnabled ? "checkmark.circle.fill" : "circle", size: 23)
                         .foregroundColor(isEnabled ? .floTeal : .floGray)
                 }
                 .buttonStyle(PlainButtonStyle())

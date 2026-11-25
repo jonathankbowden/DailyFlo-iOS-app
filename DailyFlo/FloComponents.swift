@@ -31,8 +31,7 @@ struct OutlinedActionLabel: View {
     var body: some View {
         HStack(spacing: 8) {
             if let icon {
-                Image(systemName: icon)
-                    .font(.system(size: 12, weight: .bold))
+                FloIcon(icon, size: 14)
                     .foregroundStyle(Color.floDeepTeal)
             }
             Text(title.uppercased())
@@ -269,8 +268,7 @@ struct RoundCloseButton: View {
             FloHaptics.light()
             action()
         } label: {
-            Image(systemName: "xmark")
-                .font(.system(size: 13, weight: .medium))
+            FloIcon("xmark", size: 15)
                 .foregroundStyle(Color.black)
                 .frame(width: 36, height: 36)
                 .background(Circle().fill(Color.white))
@@ -317,8 +315,7 @@ struct RoundPhotoEditLabel: View {
     var icon: String = "square.and.pencil"
 
     var body: some View {
-        Image(systemName: icon)
-            .font(.system(size: 14, weight: .medium))
+        FloIcon(icon, size: 16)
             .foregroundStyle(Color.floInk)
             .frame(width: 36, height: 36)
             .background(Circle().fill(Color.white))
@@ -326,4 +323,117 @@ struct RoundPhotoEditLabel: View {
             .frame(width: 44, height: 44)
             .contentShape(Circle())
     }
+}
+
+// MARK: - Icons (Feather)
+
+/// Every icon in the app is drawn from the Feather set (feathericons.com, MIT;
+/// license in licenses/). Brittany's review, Nov 25.
+///
+/// Call sites name icons by their old SF Symbol names, so nothing upstream had
+/// to change; this maps each to its Feather drawing in
+/// Assets.xcassets/Feather (`fi-<name>`, vector, template-rendered, so
+/// `.foregroundStyle` tints it). `size` is the icon's square in points. Brand
+/// marks with no Feather equivalent (Apple, Google) keep their SF Symbol.
+struct FloIcon: View {
+    let name: String
+    let size: CGFloat?
+
+    init(_ name: String, size: CGFloat? = 20) {
+        self.name = name
+        self.size = size
+    }
+
+    var body: some View {
+        if let feather = Self.featherName(for: name) {
+            let image = Image("fi-\(feather)")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+            if let size {
+                image.frame(width: size, height: size)
+            } else {
+                image
+            }
+        } else if let size {
+            Image(systemName: name)
+                .font(.system(size: size * 0.87))
+        } else {
+            Image(systemName: name)
+                .resizable()
+                .scaledToFit()
+        }
+    }
+
+    static func featherName(for name: String) -> String? {
+        sfToFeather[name]
+    }
+
+    private static let sfToFeather: [String: String] = [
+        "arrow.clockwise.circle": "rotate-cw",
+        "arrow.counterclockwise.circle": "rotate-ccw",
+        "arrow.left": "arrow-left",
+        "arrow.right": "arrow-right",
+        "arrow.right.circle.fill": "arrow-right-circle",
+        "bell": "bell",
+        "book.closed": "book",
+        "bubble.left.and.bubble.right.fill": "message-circle",
+        "calendar": "calendar",
+        "checkmark": "check",
+        "checkmark.circle": "check-circle",
+        "checkmark.circle.fill": "check-circle",
+        "checkmark.seal.fill": "award",
+        "chevron.left": "chevron-left",
+        "chevron.right": "chevron-right",
+        "circle": "circle",
+        "clock": "clock",
+        "cloud.rain.fill": "cloud-rain",
+        "doc.on.doc": "copy",
+        "ellipsis": "more-horizontal",
+        "exclamationmark.triangle.fill": "alert-triangle",
+        "eye": "eye",
+        "eye.slash": "eye-off",
+        "eye.slash.fill": "eye-off",
+        "figure.2.and.child.holdinghands": "users",
+        "flame.fill": "zap",
+        "hammer.circle": "tool",
+        "hand.raised.fill": "shield",
+        "heart": "heart",
+        "heart.fill": "heart-fill",
+        "heart.slash.fill": "heart",
+        "heart.text.square": "heart",
+        "heart.text.square.fill": "heart",
+        "info.circle.fill": "info",
+        "leaf": "feather",
+        "lock": "lock",
+        "lock.fill": "lock",
+        "lock.shield.fill": "shield",
+        "magnifyingglass": "search",
+        "mic": "mic",
+        "mic.fill": "mic",
+        "moon.stars": "moon",
+        "paperplane.fill": "send",
+        "pause": "pause",
+        "pencil": "edit-2",
+        "person": "user",
+        "person.2": "users",
+        "person.2.circle": "users",
+        "person.crop.circle.badge.xmark": "user-x",
+        "person.fill": "user",
+        "person.fill.questionmark": "user",
+        "photo": "image",
+        "play.fill": "play-fill",
+        "plus": "plus",
+        "plus.circle": "plus-circle",
+        "rectangle.portrait": "smartphone",
+        "rectangle.portrait.and.arrow.right": "log-out",
+        "square.and.arrow.up": "share",
+        "square.and.pencil": "edit",
+        "sun.max.fill": "sun",
+        "trash": "trash-2",
+        "waveform": "activity",
+        "wifi.exclamationmark": "wifi-off",
+        "xmark": "x",
+        "xmark.circle.fill": "x-circle",
+    ]
 }

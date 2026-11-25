@@ -364,8 +364,7 @@ struct SupporterHomeView: View {
 
     private func infoCard(icon: String, message: String) -> some View {
         HStack(alignment: .top, spacing: FloSpacing.md) {
-            Image(systemName: icon)
-                .font(.system(size: 20))
+            FloIcon(icon, size: 23)
                 .foregroundColor(.floSage)
                 .frame(width: 32, height: 32)
                 .background(Color.floSage.opacity(0.1))
@@ -399,8 +398,7 @@ struct SupporterHomeView: View {
                 if isSigningOut {
                     FloLoadingIndicator(size: 18, color: .floError, lineWidth: 2)
                 } else {
-                    Image(systemName: "rectangle.portrait.and.arrow.right")
-                        .font(.system(size: 18, weight: .medium))
+                    FloIcon("rectangle.portrait.and.arrow.right", size: 21)
                 }
                 Text("Sign Out")
                     .font(.floButton)

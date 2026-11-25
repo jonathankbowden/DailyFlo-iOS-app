@@ -156,8 +156,7 @@ struct JournalEntryView: View {
     private var header: some View {
         HStack(alignment: .center, spacing: FloSpacing.xs) {
             Button(action: close) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 18, weight: .medium))
+                FloIcon("chevron.left", size: 21)
                     .foregroundStyle(Color.black)
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
@@ -334,12 +333,12 @@ struct JournalEntryView: View {
                 Button {
                     showPhotoPicker = true
                 } label: {
-                    Label("Change photo", systemImage: "photo")
+                    Label("Change photo", image: "fi-image")
                 }
                 Button {
                     clearPhoto()
                 } label: {
-                    Label("Clear photo", systemImage: "xmark")
+                    Label("Clear photo", image: "fi-x")
                 }
             } label: {
                 RoundPhotoEditLabel()
