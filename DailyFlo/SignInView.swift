@@ -192,8 +192,7 @@ struct SignInView: View {
     private var appleSignInButton: some View {
         Button(action: startSignInWithApple) {
             HStack(spacing: FloSpacing.sm) {
-                Image(systemName: "applelogo")
-                    .font(.system(size: 18, weight: .medium))
+                FloIcon("applelogo", size: 21)
                 Text("Sign in with Apple")
                     .font(.floButton)
             }
@@ -213,8 +212,7 @@ struct SignInView: View {
             action()
         }) {
             HStack(spacing: FloSpacing.sm) {
-                Image(systemName: icon)
-                    .font(.system(size: 20))
+                FloIcon(icon, size: 23)
                     .foregroundColor(.floCharcoal)
                     .frame(width: 24, height: 24)
 
@@ -772,7 +770,7 @@ private struct PasswordSignInSheet: View {
                     FloHaptics.light()
                     isShowingPassword.toggle()
                 } label: {
-                    Image(systemName: isShowingPassword ? "eye.slash" : "eye")
+                    FloIcon(isShowingPassword ? "eye.slash" : "eye", size: 23)
                         .foregroundColor(.floGray)
                         .frame(width: 24, height: 24)
                 }

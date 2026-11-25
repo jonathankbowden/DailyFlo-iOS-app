@@ -150,8 +150,7 @@ struct OnboardingView: View {
             if currentPage > 0 {
                 Button(action: goBack) {
                     HStack(spacing: FloSpacing.xs) {
-                        Image(systemName: "arrow.left")
-                            .font(.system(size: 14, weight: .medium))
+                        FloIcon("arrow.left", size: 16)
                         Text("Back")
                     }
                     .font(.floButton)
@@ -172,8 +171,7 @@ struct OnboardingView: View {
             Button(action: goNext) {
                 HStack(spacing: FloSpacing.xs) {
                     Text(currentPage == pages.count - 1 ? "Get Started" : "Next")
-                    Image(systemName: "arrow.right")
-                        .font(.system(size: 14, weight: .semibold))
+                    FloIcon("arrow.right", size: 16)
                 }
                 .font(.floButton)
                 .foregroundColor(.white)

@@ -9,6 +9,9 @@
 		<string>lunary-free.otf</string>
 		<string>DMSerifDisplay-Regular.ttf</string>
 		<string>DMSerifDisplay-Italic.ttf</string>
+		<string>Inter-Regular.ttf</string>
+		<string>Inter-Bold.ttf</string>
+		<string>SourceSans3-Regular.ttf</string>
 	</array>
 	<key>UIUserInterfaceStyle</key>
 	<string>Light</string>

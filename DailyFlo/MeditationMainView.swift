@@ -396,8 +396,7 @@ struct MeditationCard: View {
                     .overlay(alignment: .topLeading) {
                         VStack(alignment: .leading, spacing: 14) {
                             Text(session.title)
-                                .font(.system(size: 15, weight: .heavy))
-                                .tracking(2.5)
+                                .font(.floInter(16, bold: true))
                                 .foregroundColor(.white)
 
                             Rectangle()
@@ -417,8 +416,7 @@ struct MeditationCard: View {
                         .padding(26)
                     }
                     .overlay(
-                        Image(systemName: "play.fill")
-                            .font(.system(size: 24))
+                        FloIcon("play.fill", size: 28)
                             .foregroundStyle(.white)
                             .offset(x: 2) // optical centering of the triangle
                             .frame(width: 70, height: 70)
@@ -437,8 +435,7 @@ struct MeditationCard: View {
             // through to the card button below.
             if showsFavorite {
                 Button(action: onFavorite) {
-                    Image(systemName: session.isFavorite ? "heart.fill" : "heart")
-                        .font(.system(size: 20))
+                    FloIcon(session.isFavorite ? "heart.fill" : "heart", size: 23)
                         .foregroundColor(.white)
                         .scaleEffect(session.isFavorite ? 1.1 : 1.0)
                         .frame(width: 44, height: 44)
@@ -611,8 +608,7 @@ struct MeditationPlayerView: View {
                 audio.stop()
                 onDismiss()
             }) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 16, weight: .bold))
+                FloIcon("xmark", size: 18)
                     .foregroundColor(.white)
                     .frame(width: 44, height: 44)
                     .background(.ultraThinMaterial.opacity(0.6))
@@ -628,8 +624,7 @@ struct MeditationPlayerView: View {
                 FloHaptics.selection()
                 onFavorite()
             }) {
-                Image(systemName: session.isFavorite ? "heart.fill" : "heart")
-                    .font(.system(size: 16, weight: .bold))
+                FloIcon(session.isFavorite ? "heart.fill" : "heart", size: 18)
                     .foregroundColor(session.isFavorite ? .phaseMenstrual : .white)
                     .frame(width: 44, height: 44)
                     .background(.ultraThinMaterial.opacity(0.6))
@@ -679,8 +674,7 @@ struct MeditationPlayerView: View {
                         .frame(width: buttonSize, height: buttonSize)
                         .shadow(color: Color.black.opacity(0.3), radius: 10, x: 0, y: 4)
 
-                    Image(systemName: isPlaying ? "pause" : "play.fill")
-                        .font(.system(size: 26, weight: .semibold))
+                    FloIcon(isPlaying ? "pause" : "play.fill", size: 30)
                         .foregroundColor(.white)
                         .offset(x: isPlaying ? 0 : 2)
                 }

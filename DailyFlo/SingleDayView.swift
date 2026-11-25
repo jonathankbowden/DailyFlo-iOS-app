@@ -99,16 +99,8 @@ struct SingleDayView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center, spacing: 14) {
                 // Back, not ✕ (Brittany's review: "no x-ing ever, only back").
-                Button(action: onDismiss) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(Color.black)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.floPressed)
-                .accessibilityLabel("Back")
-                .padding(.leading, -FloSpacing.md)
+                FloBackButton(action: onDismiss)
+                    .padding(.leading, -FloSpacing.md)
 
                 Text(phase.number)
                     .font(.floLunary(size: 54))
@@ -121,8 +113,7 @@ struct SingleDayView: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                     Text(phase.subtitle.uppercased())
-                        .font(.system(size: 11, weight: .heavy))
-                        .tracking(1.2)
+                        .font(.floInter(10, bold: true))
                         .foregroundStyle(Color.floDeepTeal)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
@@ -207,8 +198,7 @@ struct PhaseTabCard: View {
                 .clipped()
 
             Text("MY \(tab.rawValue)")
-                .font(.system(size: 12, weight: .heavy))
-                .tracking(1.5)
+                .font(.floInter(13, bold: true))
                 .foregroundStyle(Color.black)
                 .padding(.top, 20)
                 .padding(.bottom, 14)

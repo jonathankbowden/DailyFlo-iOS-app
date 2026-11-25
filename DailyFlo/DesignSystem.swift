@@ -40,12 +40,13 @@ extension Color {
     static let dotMeditated = Color(hex: "BFD7DB")      // Light mint - meditated
 
     // Restyle palette (Summer 2026 canvas) — high-contrast black and white
-    static let floInk = Color(hex: "6B6B6B")            // Outlined button border
-    static let floButtonFill = Color(hex: "FAFAFA")     // Outlined button fill
-    static let floDeepTeal = Color(hex: "40676E")       // Taglines, button icons
+    static let floInk = Color(hex: "707070")            // Outlined button border (Figma)
+    static let floButtonFill = Color(hex: "F8F8F8")     // Outlined button fill (Figma)
+    static let floButtonPlate = Color(hex: "ECEFEC")    // Offset plate behind buttons (Figma)
+    static let floDeepTeal = Color(hex: "365C62")       // Taglines, button icons (Figma)
     static let floSageX = Color(hex: "6FA090")          // Thin close X, play button
     static let floStone = Color(hex: "EAECE6")          // Pause tab highlight, modal header strip
-    static let floHairline = Color(hex: "EDEDED")       // Hairline dividers
+    static let floHairline = Color(hex: "EFEFEF")       // Hairline dividers (Figma)
     static let floRule = Color(hex: "707070")           // Heavier rule under tab rows
     static let floFeelingSelected = Color(hex: "C9D8D1") // Selected feeling in the journal
     static let floPhaseTab = Color(hex: "ADD1B7")       // Selected MIND/BODY/SOUL tab
@@ -114,6 +115,16 @@ extension Font {
 
     // Caption for small annotations
     static let floCaption = Font.system(size: 11, weight: .regular, design: .default)
+
+    // Sans for labels, dates, titles and buttons, as in Brittany's Figma.
+    static func floInter(_ size: CGFloat, bold: Bool = false) -> Font {
+        Font.custom(bold ? "Inter-Bold" : "Inter-Regular", size: size)
+    }
+
+    // Long-form reading text (journal entries), as in Brittany's Figma.
+    static func floReading(_ size: CGFloat = 16) -> Font {
+        Font.custom("SourceSans3-Regular", size: size)
+    }
 
     // Serif headings: DM Serif Display.
     static func floSerif(size: CGFloat) -> Font {
@@ -430,7 +441,7 @@ extension ButtonStyle where Self == FloPressedStyle {
 ///
 /// Apply it to the `Button` (or the button's `label`) at the call site:
 /// ```swift
-/// Button { … } label: { Image(systemName: "xmark") }
+/// Button { … } label: { FloIcon("xmark", size: 23) }
 ///     .buttonStyle(.floPressed)
 ///     .floHitTarget()               // icon/small button → 44×44 min
 ///
@@ -686,7 +697,7 @@ struct FloToastStyle: ViewModifier {
 
     func body(content: Content) -> some View {
         HStack(spacing: FloSpacing.sm) {
-            Image(systemName: type.icon)
+            FloIcon(type.icon, size: 23)
                 .foregroundColor(.white)
             content
                 .font(.floBodyMedium)
@@ -766,7 +777,7 @@ private extension View {
             HStack(spacing: FloSpacing.xxl) {
                 VStack(spacing: FloSpacing.sm) {
                     Button { } label: {
-                        Image(systemName: "xmark").font(.system(size: 16, weight: .semibold))
+                        FloIcon("xmark", size: 18)
                     }
                     .buttonStyle(.floPressed)
                     .debugHitArea()
@@ -774,7 +785,7 @@ private extension View {
                 }
                 VStack(spacing: FloSpacing.sm) {
                     Button { } label: {
-                        Image(systemName: "xmark").font(.system(size: 16, weight: .semibold))
+                        FloIcon("xmark", size: 18)
                     }
                     .buttonStyle(.floPressed)
                     .floHitTarget()                // ← expands to 44×44, glyph unmoved
@@ -812,7 +823,7 @@ private extension View {
         VStack(alignment: .leading, spacing: FloSpacing.md) {
             Text("Disabled (still not tappable)").font(.floLabel).foregroundColor(.floGray)
             Button { } label: {
-                Image(systemName: "trash").font(.system(size: 16, weight: .semibold))
+                FloIcon("trash", size: 18)
             }
             .buttonStyle(.floPressed)
             .floHitTarget()

@@ -29,31 +29,20 @@ struct OutlinedActionLabel: View {
     var icon: String? = nil
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             if let icon {
-                Image(systemName: icon)
-                    .font(.system(size: 12, weight: .bold))
+                FloIcon(icon, size: 18)
                     .foregroundStyle(Color.floDeepTeal)
             }
             Text(title.uppercased())
-                .font(.system(size: 11.5, weight: .black))
-                .tracking(2.8)
+                .font(.floInter(14, bold: true))
                 .foregroundStyle(Color.black)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
         }
         .padding(.horizontal, 12)
         .frame(maxWidth: .infinity)
-        .frame(height: 47)
-        .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(Color.floButtonFill)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .strokeBorder(Color.floInk, lineWidth: 1.5)
-        )
-        .floShadow(FloShadow.button)
+        .floButtonShape()
         .contentShape(Rectangle())
     }
 }
@@ -131,10 +120,10 @@ struct ScreenHeader: View {
                     FloHaptics.selection()
                     NotificationCenter.default.post(name: .floShowCalendar, object: nil)
                 } label: {
+                    // Figma: Inter Bold 16, black.
                     Text("FLO")
-                        .font(.system(size: 20, weight: .black))
-                        .foregroundColor(.floCharcoal)
-                        .tracking(3)
+                        .font(.floInter(16, bold: true))
+                        .foregroundColor(.black)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Go to calendar")
@@ -151,19 +140,19 @@ struct ScreenHeader: View {
 
             // Eyebrow — uppercase, tracked, small bold, 17pt below the title.
             if let eyebrow {
+                // Figma: Inter Bold 12, black.
                 Text(eyebrow.uppercased())
-                    .font(.floLabel)
-                    .fontWeight(.bold)
-                    .foregroundColor(.floCharcoal)
-                    .tracking(2)
+                    .font(.floInter(12, bold: true))
+                    .foregroundColor(.black)
                     .padding(.top, 17)
             }
 
             // Subtitle — sentence case, 18pt below the eyebrow.
             if let subtitle {
+                // Figma: Inter 16, black.
                 Text(subtitle)
-                    .font(.floBodyMedium)
-                    .foregroundColor(.floGray)
+                    .font(.floInter(16))
+                    .foregroundColor(.black)
                     .padding(.top, 18)
             }
         }
@@ -212,8 +201,9 @@ struct SegmentedCapsTabs<Option: Hashable>: View {
             withAnimation(FloAnimation.springSnappy) { selection = option }
         } label: {
             Text(title(option).uppercased())
-                .font(.system(size: 11.5, weight: .heavy))
-                .tracking(2)
+                // Figma "Phase - mini nav": Inter Bold, small caps label.
+                .font(.floInter(11, bold: true))
+                .tracking(0.5)
                 .foregroundStyle(Color.black)
                 .frame(width: 96, height: 25)
                 .background(
@@ -269,8 +259,7 @@ struct RoundCloseButton: View {
             FloHaptics.light()
             action()
         } label: {
-            Image(systemName: "xmark")
-                .font(.system(size: 13, weight: .medium))
+            FloIcon("xmark", size: 15)
                 .foregroundStyle(Color.black)
                 .frame(width: 36, height: 36)
                 .background(Circle().fill(Color.white))
@@ -279,6 +268,61 @@ struct RoundCloseButton: View {
         .buttonStyle(.floPressed)
         .floHitTarget()
         .accessibilityLabel("Close")
+    }
+}
+
+// MARK: - Button shape (Figma "Emotions - button" / "Log Cycle")
+
+/// 44pt tall, 6pt corners, #F8F8F8 fill, 1pt #707070 border, and a flat
+/// #ECEFEC plate offset 2pt right and down. The plate is part of the drawing,
+/// not a blur shadow, so it stays within "as flat as possible".
+struct FloButtonShape: ViewModifier {
+    var fill: Color = .floButtonFill
+
+    func body(content: Content) -> some View {
+        content
+            .frame(height: 44)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(fill)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(Color.floInk, lineWidth: 1)
+            )
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.floButtonPlate)
+                    .offset(x: 2, y: 2)
+            )
+    }
+}
+
+extension View {
+    func floButtonShape(fill: Color = .floButtonFill) -> some View {
+        modifier(FloButtonShape(fill: fill))
+    }
+}
+
+// MARK: - Back button
+
+/// Feather arrow-left, black, no circle (Brittany: feather-style, not the
+/// filled green circle).
+struct FloBackButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button {
+            FloHaptics.light()
+            action()
+        } label: {
+            FloIcon("arrow.left", size: 24)
+                .foregroundStyle(Color.black)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.floPressed)
+        .accessibilityLabel("Back")
     }
 }
 
@@ -291,10 +335,10 @@ struct FloHairline: View {
     }
 }
 
-/// 1.5pt #707070 rule.
+/// 1pt #707070 rule (Figma "Line 21").
 struct FloRuleLine: View {
     var body: some View {
-        Rectangle().fill(Color.floRule).frame(height: 1.5)
+        Rectangle().fill(Color.floRule).frame(height: 1)
     }
 }
 
@@ -317,13 +361,124 @@ struct RoundPhotoEditLabel: View {
     var icon: String = "square.and.pencil"
 
     var body: some View {
-        Image(systemName: icon)
-            .font(.system(size: 14, weight: .medium))
+        FloIcon(icon, size: 16)
             .foregroundStyle(Color.floInk)
             .frame(width: 36, height: 36)
             .background(Circle().fill(Color.white))
-            .floShadow(FloShadow.medium)
             .frame(width: 44, height: 44)
             .contentShape(Circle())
     }
+}
+
+// MARK: - Icons (Feather)
+
+/// Every icon in the app is drawn from the Feather set (feathericons.com, MIT;
+/// license in licenses/). Brittany's review, Nov 25.
+///
+/// Call sites name icons by their old SF Symbol names, so nothing upstream had
+/// to change; this maps each to its Feather drawing in
+/// Assets.xcassets/Feather (`fi-<name>`, vector, template-rendered, so
+/// `.foregroundStyle` tints it). `size` is the icon's square in points. Brand
+/// marks with no Feather equivalent (Apple, Google) keep their SF Symbol.
+struct FloIcon: View {
+    let name: String
+    let size: CGFloat?
+
+    init(_ name: String, size: CGFloat? = 20) {
+        self.name = name
+        self.size = size
+    }
+
+    var body: some View {
+        if let feather = Self.featherName(for: name) {
+            let image = Image("fi-\(feather)")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+            if let size {
+                image.frame(width: size, height: size)
+            } else {
+                image
+            }
+        } else if let size {
+            Image(systemName: name)
+                .font(.system(size: size * 0.87))
+        } else {
+            Image(systemName: name)
+                .resizable()
+                .scaledToFit()
+        }
+    }
+
+    static func featherName(for name: String) -> String? {
+        sfToFeather[name]
+    }
+
+    private static let sfToFeather: [String: String] = [
+        "arrow.clockwise.circle": "rotate-cw",
+        "arrow.counterclockwise.circle": "rotate-ccw",
+        "arrow.left": "arrow-left",
+        "arrow.right": "arrow-right",
+        "arrow.right.circle.fill": "arrow-right-circle",
+        "bell": "bell",
+        "book.closed": "book",
+        "bubble.left.and.bubble.right.fill": "message-circle",
+        "calendar": "calendar",
+        "checkmark": "check",
+        "checkmark.circle": "check-circle",
+        "checkmark.circle.fill": "check-circle",
+        "checkmark.seal.fill": "award",
+        "chevron.left": "chevron-left",
+        "chevron.right": "chevron-right",
+        "circle": "circle",
+        "clock": "clock",
+        "cloud.rain.fill": "cloud-rain",
+        "doc.on.doc": "copy",
+        "ellipsis": "more-horizontal",
+        "exclamationmark.triangle.fill": "alert-triangle",
+        "eye": "eye",
+        "eye.slash": "eye-off",
+        "eye.slash.fill": "eye-off",
+        "figure.2.and.child.holdinghands": "users",
+        "flame.fill": "zap",
+        "hammer.circle": "tool",
+        "hand.raised.fill": "shield",
+        "heart": "heart",
+        "heart.fill": "heart-fill",
+        "heart.slash.fill": "heart",
+        "heart.text.square": "heart",
+        "heart.text.square.fill": "heart",
+        "info.circle.fill": "info",
+        "leaf": "feather",
+        "lock": "lock",
+        "lock.fill": "lock",
+        "lock.shield.fill": "shield",
+        "magnifyingglass": "search",
+        "mic": "mic",
+        "mic.fill": "mic",
+        "moon.stars": "moon",
+        "paperplane.fill": "send",
+        "pause": "pause",
+        "pencil": "edit-2",
+        "person": "user",
+        "person.2": "users",
+        "person.2.circle": "users",
+        "person.crop.circle.badge.xmark": "user-x",
+        "person.fill": "user",
+        "person.fill.questionmark": "user",
+        "photo": "image",
+        "play.fill": "play-fill",
+        "plus": "plus",
+        "plus.circle": "plus-circle",
+        "rectangle.portrait": "smartphone",
+        "rectangle.portrait.and.arrow.right": "log-out",
+        "square.and.arrow.up": "share",
+        "square.and.pencil": "edit",
+        "sun.max.fill": "sun",
+        "trash": "trash-2",
+        "waveform": "activity",
+        "wifi.exclamationmark": "wifi-off",
+        "xmark": "x",
+        "xmark.circle.fill": "x-circle",
+    ]
 }

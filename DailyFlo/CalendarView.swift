@@ -55,9 +55,7 @@ struct CalendarView: View {
                 )
 
                 // Full-width divider line (top of days row)
-                Rectangle()
-                    .fill(Color(hex: "E5E5E5"))
-                    .frame(height: 1)
+                FloHairline()
                     .padding(.top, FloSpacing.lg)
 
                 // Day of week headers (42px height with lines above and below)
@@ -66,9 +64,7 @@ struct CalendarView: View {
                     .background(Color.white)
 
                 // Bottom divider line (darker)
-                Rectangle()
-                    .fill(Color(hex: "707070"))
-                    .frame(height: 1)
+                FloRuleLine()
 
                 // Scrollable calendar with multiple months. Vertical-only.
                 // Each month block carries its OWN Layout.screenMargin inset, so
@@ -127,10 +123,10 @@ struct CalendarView: View {
     private var dayOfWeekHeader: some View {
         LazyVGrid(columns: CalendarColumns.gridItems, spacing: 0) {
             ForEach(Array(daysOfWeek.enumerated()), id: \.offset) { _, day in
+                // Figma: Inter Bold 16, black.
                 Text(day)
-                    .font(.floLabel)
-                    .fontWeight(.medium)
-                    .foregroundColor(.floCharcoal)
+                    .font(.floInter(16, bold: true))
+                    .foregroundColor(.black)
                     .frame(maxWidth: .infinity)
             }
         }
@@ -165,9 +161,7 @@ struct CalendarView: View {
         return VStack(spacing: 0) {
             // A line between months. Every month draws it, so month blocks
             // stay equal height (scrollPosition depends on that).
-            Rectangle()
-                .fill(Color(hex: "E5E5E5"))
-                .frame(height: 1)
+            FloHairline()
                 .opacity(monthOffset == monthOffsets.first ? 0 : 1)
 
             monthLabelRow(monthAbbrev, firstDayColumn: firstWeekday)
@@ -210,10 +204,10 @@ struct CalendarView: View {
     private func monthLabelRow(_ abbrev: String, firstDayColumn: Int) -> some View {
         LazyVGrid(columns: CalendarColumns.gridItems, spacing: 0) {
             ForEach(0..<CalendarColumns.count, id: \.self) { column in
+                // Figma: Inter Bold 10, black.
                 Text(column == firstDayColumn ? abbrev : "")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.floGray)
-                    .tracking(1)
+                    .font(.floInter(10, bold: true))
+                    .foregroundColor(.black)
                     .frame(maxWidth: .infinity)
             }
         }
@@ -511,9 +505,9 @@ struct DayCellWithPhase: View {
                     }
 
                     Text("\(day)")
-                        .font(isToday ? .system(size: 16, weight: .bold) : .floBodyMedium)
-                        .fontWeight(isToday ? .bold : (isSelected ? .semibold : .regular))
-                        .foregroundColor(isSelected && !isToday ? .white : (isToday ? .black : .floCharcoal))
+                        // Figma: bold 16, black.
+                        .font(.floInter(16, bold: true))
+                        .foregroundColor(isSelected && !isToday ? .white : .black)
                 }
                 .frame(width: 32, height: 32)
                 .scaleEffect(isSelected ? 1.05 : 1.0)
