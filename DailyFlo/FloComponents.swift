@@ -201,8 +201,9 @@ struct SegmentedCapsTabs<Option: Hashable>: View {
             withAnimation(FloAnimation.springSnappy) { selection = option }
         } label: {
             Text(title(option).uppercased())
-                .font(.system(size: 11.5, weight: .heavy))
-                .tracking(2)
+                // Figma "Phase - mini nav": Inter Bold, small caps label.
+                .font(.floInter(11, bold: true))
+                .tracking(0.5)
                 .foregroundStyle(Color.black)
                 .frame(width: 96, height: 25)
                 .background(

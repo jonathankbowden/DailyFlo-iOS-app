@@ -396,8 +396,7 @@ struct MeditationCard: View {
                     .overlay(alignment: .topLeading) {
                         VStack(alignment: .leading, spacing: 14) {
                             Text(session.title)
-                                .font(.system(size: 15, weight: .heavy))
-                                .tracking(2.5)
+                                .font(.floInter(16, bold: true))
                                 .foregroundColor(.white)
 
                             Rectangle()
