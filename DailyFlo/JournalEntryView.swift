@@ -349,7 +349,7 @@ struct JournalEntryView: View {
     /// CLEAR ENTRY + SHARE, equal widths, a hairline above (Brittany's sketch).
     private var actionRow: some View {
         HStack(spacing: FloSpacing.md) {
-            OutlinedActionButton(title: "Clear entry") {
+            OutlinedActionButton(title: "Clear entry", icon: "xmark.circle.fill") {
                 clearEntry()
             }
             .disabled(!hasContent)
@@ -371,12 +371,12 @@ struct JournalEntryView: View {
                 message: Text(composedNote),
                 preview: SharePreview(title, image: image)
             ) {
-                OutlinedActionLabel(title: "Share")
+                OutlinedActionLabel(title: "Share", icon: "square.and.arrow.up")
             }
             .buttonStyle(.floPressed)
         } else {
             ShareLink(item: composedNote, subject: Text(title)) {
-                OutlinedActionLabel(title: "Share")
+                OutlinedActionLabel(title: "Share", icon: "square.and.arrow.up")
             }
             .buttonStyle(.floPressed)
         }

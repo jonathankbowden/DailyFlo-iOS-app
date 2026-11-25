@@ -120,10 +120,10 @@ struct ScreenHeader: View {
                     FloHaptics.selection()
                     NotificationCenter.default.post(name: .floShowCalendar, object: nil)
                 } label: {
+                    // Figma: Inter Bold 16, black.
                     Text("FLO")
-                        .font(.system(size: 20, weight: .black))
-                        .foregroundColor(.floCharcoal)
-                        .tracking(3)
+                        .font(.floInter(16, bold: true))
+                        .foregroundColor(.black)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Go to calendar")
