@@ -91,34 +91,53 @@ struct ScreenHeader: View {
     var eyebrow: String? = nil
     var subtitle: String? = nil
     let leadingIcon: String
+    /// Makes the leading icon tappable (the Calendar uses it to jump to today).
+    var onLeadingIconTap: (() -> Void)? = nil
 
     /// LUNARY 36pt has a 39.6pt line height per Figma (node 2383:2152).
     /// `lineSpacing` only adds gaps *between* wrapped lines, so it's the delta
     /// over the font's own line height — a single-line title is unaffected.
     private var titleLineSpacing: CGFloat {
         let targetLineHeight: CGFloat = 39.6
-        let naturalLineHeight = UIFont(name: "LUNARY free", size: 36)?.lineHeight ?? 36
+        let naturalLineHeight = UIFont(name: Font.floSerifFaceName, size: 36)?.lineHeight ?? 36
         return max(0, targetLineHeight - naturalLineHeight)
+    }
+
+    private var leadingIconImage: some View {
+        Image(leadingIcon)
+            .renderingMode(.template)
+            .resizable()
+            .aspectRatio(contentMode: .fit)
+            .frame(width: 24, height: 24)
+            .foregroundColor(.floCharcoal)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Icon + FLO wordmark on one row.
             HStack {
-                Image(leadingIcon)
-                    .renderingMode(.template)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 24, height: 24)
-                    .foregroundColor(.floCharcoal)
+                if let onLeadingIconTap {
+                    Button(action: onLeadingIconTap) { leadingIconImage }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Go to today")
+                } else {
+                    leadingIconImage
+                }
 
                 Spacer()
 
-                Text("FLO")
-                    .font(.system(size: 20, weight: .black))
-                    .foregroundColor(.floCharcoal)
-                    .tracking(3)
-                    .accessibilityHidden(true)
+                // FLO on any screen goes home to the Calendar (Brittany's review).
+                Button {
+                    FloHaptics.selection()
+                    NotificationCenter.default.post(name: .floShowCalendar, object: nil)
+                } label: {
+                    Text("FLO")
+                        .font(.system(size: 20, weight: .black))
+                        .foregroundColor(.floCharcoal)
+                        .tracking(3)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Go to calendar")
             }
             .padding(.top, FloSpacing.md)
 

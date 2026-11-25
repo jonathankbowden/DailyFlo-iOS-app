@@ -98,6 +98,18 @@ struct SingleDayView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center, spacing: 14) {
+                // Back, not ✕ (Brittany's review: "no x-ing ever, only back").
+                Button(action: onDismiss) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(Color.black)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.floPressed)
+                .accessibilityLabel("Back")
+                .padding(.leading, -FloSpacing.md)
+
                 Text(phase.number)
                     .font(.floLunary(size: 54))
                     .foregroundStyle(Color.black)
@@ -117,8 +129,6 @@ struct SingleDayView: View {
                 }
 
                 Spacer(minLength: FloSpacing.sm)
-
-                SageCloseButton(action: onDismiss)
             }
         }
         .accessibilityElement(children: .contain)
@@ -168,20 +178,10 @@ struct SingleDayView: View {
 
     private var actionRow: some View {
         HStack(spacing: 14) {
+            // No Add/Edit entry here: tapping the date on the calendar is the
+            // journal (Brittany's review, Nov 25).
             OutlinedActionButton(title: "Log cycle", icon: "checkmark.circle") {
                 showLogCycle = true
-            }
-
-            if !isFutureDay {
-                if entry == nil {
-                    OutlinedActionButton(title: "Add entry", icon: "plus") {
-                        showJournalEntry = true
-                    }
-                } else {
-                    OutlinedActionButton(title: "Edit entry", icon: "pencil") {
-                        showJournalEntry = true
-                    }
-                }
             }
         }
     }

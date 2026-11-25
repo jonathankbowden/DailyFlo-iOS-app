@@ -314,6 +314,11 @@ private struct MeditationColumn: View {
             .padding(.top, Self.topGap)
             .padding(.bottom, tabBarClearance)
         }
+        // The column is exactly card-width, so its own clip cut the cards'
+        // shadow off at the sides (Brittany: "drop shadows cut off"). Let it
+        // spill; the outer horizontal ScrollView's frame still clips at the
+        // divider and the screen edges.
+        .scrollClipDisabled()
     }
 }
 
@@ -389,7 +394,7 @@ struct MeditationCard: View {
                         }
                     )
                     .overlay(alignment: .topLeading) {
-                        VStack(alignment: .leading, spacing: 10) {
+                        VStack(alignment: .leading, spacing: 14) {
                             Text(session.title)
                                 .font(.system(size: 15, weight: .heavy))
                                 .tracking(2.5)
@@ -399,7 +404,7 @@ struct MeditationCard: View {
                                 .fill(Color.white)
                                 .frame(width: 54, height: 1)
 
-                            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                            HStack(alignment: .firstTextBaseline, spacing: 6) {
                                 Text("\(displayDuration.rawValue)")
                                     .font(.floLunary(size: 36))
                                     .foregroundColor(.white)
@@ -409,7 +414,7 @@ struct MeditationCard: View {
                             }
                         }
                         .shadow(color: .black.opacity(0.35), radius: 4, y: 1)
-                        .padding(22)
+                        .padding(26)
                     }
                     .overlay(
                         Image(systemName: "play.fill")
@@ -421,7 +426,7 @@ struct MeditationCard: View {
                             .accessibilityHidden(true)
                     )
                     .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
-                    .floShadow(FloShadow.deep)
+                    .floShadow(FloShadow.card)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.floPressed)

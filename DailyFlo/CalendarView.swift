@@ -9,7 +9,10 @@ import SwiftUI
 
 struct CalendarView: View {
     @State private var selectedDate: Date? = nil
+    /// Tapping a date opens that day's journal entry (new or existing);
+    /// tapping the phase band opens the phase view (Brittany's review, Nov 25).
     @State private var showSingleDay = false
+    @State private var showEntry = false
 
     // Drives scrollPosition anchoring; starts on the current month (offset 0).
     @State private var scrolledMonth: Int? = 0
@@ -47,7 +50,8 @@ struct CalendarView: View {
                     title: "Hello, \(cycleManager.userName)!",
                     eyebrow: cycleManager.currentPhaseLabel,
                     subtitle: "Next period: \(cycleManager.nextPeriodFormatted)",
-                    leadingIcon: "calendar"
+                    leadingIcon: "calendar",
+                    onLeadingIconTap: scrollToToday
                 )
 
                 // Full-width divider line (top of days row)
@@ -85,6 +89,18 @@ struct CalendarView: View {
                     .padding(.bottom, tabBarClearance) // clear the tab bar
                 }
                 .scrollPosition(id: $scrolledMonth, anchor: .top)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .floCalendarToToday)) { _ in
+            scrollToToday()
+        }
+        .sheet(isPresented: $showEntry) {
+            if let date = selectedDate {
+                JournalEntryView(
+                    date: date,
+                    journalManager: JournalManager.shared,
+                    onDismiss: { showEntry = false }
+                )
             }
         }
         .sheet(isPresented: $showSingleDay, onDismiss: playLogConfirmationIfNeeded) {
@@ -147,6 +163,13 @@ struct CalendarView: View {
         // the grid's left edge aligns with the greeting and weekday row at 24pt
         // on cold launch — no scroll API can move it.
         return VStack(spacing: 0) {
+            // A line between months. Every month draws it, so month blocks
+            // stay equal height (scrollPosition depends on that).
+            Rectangle()
+                .fill(Color(hex: "E5E5E5"))
+                .frame(height: 1)
+                .opacity(monthOffset == monthOffsets.first ? 0 : 1)
+
             monthLabelRow(monthAbbrev, firstDayColumn: firstWeekday)
 
             LazyVGrid(columns: CalendarColumns.gridItems, spacing: FloSpacing.xs) {
@@ -161,7 +184,10 @@ struct CalendarView: View {
                             columnIndex: index % 7,
                             emphasizeAsNewStart: emphasizeLoggedStart && isLoggedCycleStart(day, in: monthDate),
                             onTapDay: {
-                                selectDay(day, in: monthDate, cycleData: cycleData)
+                                selectDay(day, in: monthDate, opensEntry: true)
+                            },
+                            onTapPhase: {
+                                selectDay(day, in: monthDate, opensEntry: false)
                             }
                         )
                     } else {
@@ -291,7 +317,9 @@ struct CalendarView: View {
         return dayDate > Date()
     }
 
-    private func selectDay(_ day: Int, in monthDate: Date, cycleData: CycleData) {
+    /// A date opens its journal entry (past, today or future); the phase band
+    /// opens the phase view.
+    private func selectDay(_ day: Int, in monthDate: Date, opensEntry: Bool) {
         FloHaptics.selection()
         var components = calendar.dateComponents([.year, .month], from: monthDate)
         components.day = day
@@ -299,7 +327,18 @@ struct CalendarView: View {
         withAnimation(FloAnimation.springSnappy) {
             selectedDate = date
         }
-        showSingleDay = true
+        if opensEntry {
+            showEntry = true
+        } else {
+            showSingleDay = true
+        }
+    }
+
+    private func scrollToToday() {
+        FloHaptics.selection()
+        withAnimation(FloAnimation.springGentle) {
+            scrolledMonth = 0
+        }
     }
 
     // MARK: - Cycle Data (from CycleManager using real onboarding data)
@@ -392,8 +431,10 @@ struct DayCellWithPhase: View {
     let cycleData: CycleData
     let columnIndex: Int // 0-6, which column this day is in
     var emphasizeAsNewStart: Bool = false // transient soft ring after logging a cycle
-    /// Any tap in the cell opens the day sheet.
+    /// Tapping the day number opens that day's journal entry.
     let onTapDay: () -> Void
+    /// Tapping the phase band around the number opens the phase view.
+    let onTapPhase: () -> Void
 
     /// Opacity applied to phase tints in estimated (past) months. Muting is done
     /// via opacity on the existing phase tokens — no new colors introduced.
@@ -477,6 +518,11 @@ struct DayCellWithPhase: View {
                 .frame(width: 32, height: 32)
                 .scaleEffect(isSelected ? 1.05 : 1.0)
                 .animation(FloAnimation.springSnappy, value: isSelected)
+                // The number (a 36pt circle) is the date's own target.
+                .contentShape(Circle().inset(by: -2))
+                .onTapGesture { onTapDay() }
+                .accessibilityAddTraits(.isButton)
+                .accessibilityLabel("Journal for day \(day)")
 
                 // Phase indicator dots
                 indicatorDots
@@ -486,8 +532,9 @@ struct DayCellWithPhase: View {
         .frame(height: 56)
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
+        // Everything in the cell outside the number is the phase band.
         .onTapGesture {
-            onTapDay()
+            if cycleData.hasPhaseData { onTapPhase() } else { onTapDay() }
         }
     }
 

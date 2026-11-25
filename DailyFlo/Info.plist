@@ -7,6 +7,8 @@
 	<key>UIAppFonts</key>
 	<array>
 		<string>lunary-free.otf</string>
+		<string>DMSerifDisplay-Regular.ttf</string>
+		<string>DMSerifDisplay-Italic.ttf</string>
 	</array>
 	<key>UIUserInterfaceStyle</key>
 	<string>Light</string>

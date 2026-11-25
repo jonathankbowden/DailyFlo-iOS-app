@@ -76,7 +76,7 @@ struct CodeEntryView: View {
     private var brandingSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Daily")
-                .font(.custom("LUNARY free", size: 72))
+                .font(.floSerif(size: 72))
                 .foregroundColor(.floCharcoal)
 
             Text("FLO")
@@ -104,7 +104,7 @@ struct CodeEntryView: View {
             VStack(alignment: .leading, spacing: FloSpacing.lg) {
                 VStack(alignment: .leading, spacing: FloSpacing.xs) {
                     Text("Check your email")
-                        .font(.custom("LUNARY free", size: 28))
+                        .font(.floSerif(size: 28))
                         .foregroundColor(.floCharcoal)
                         .accessibilityAddTraits(.isHeader)
 
@@ -187,7 +187,7 @@ struct CodeEntryView: View {
         }()
         let isNext = (code.count == index) && codeFieldFocused
         return Text(digit)
-            .font(.custom("LUNARY free", size: 26))
+            .font(.floSerif(size: 26))
             .foregroundColor(.floCharcoal)
             .frame(maxWidth: .infinity)
             .frame(height: 56)

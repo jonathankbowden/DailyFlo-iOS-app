@@ -11,7 +11,9 @@ struct ContentView: View {
     // Tabs, left to right: 0=Calendar, 1=Journal, [+ FAB], 2=Profile, 3=Pause.
     // Calendar is the default tab on launch — it's the app's home screen.
     @State private var selectedTab = 0
-    @State private var showJournalEntry = false
+    /// The center + logs a period (Brittany's review, Nov 25). Journal
+    /// entries start from a calendar date instead.
+    @State private var showLogCycle = false
 
     // Single Pro gate for the whole app. Entitlement is checked once, here at
     // the top level, right after onboarding/sign-in land the user on the tabs —
@@ -62,7 +64,7 @@ struct ContentView: View {
                 // home-indicator region while the icons/capsule sit in the
                 // 88pt band above it.
                 FloTabBar(selectedTab: $selectedTab, bottomInset: bottomInset) {
-                    showJournalEntry = true
+                    showLogCycle = true
                 }
             }
             // The Pro gate is presented here, on the ZStack — a DIFFERENT anchor
@@ -78,16 +80,16 @@ struct ContentView: View {
             }
         }
         .ignoresSafeArea(.container, edges: .bottom)
-        .sheet(isPresented: $showJournalEntry) {
-            JournalEntryView(
-                journalManager: JournalManager.shared,
-                onDismiss: {
-                    showJournalEntry = false
-                }
-            )
-        }
+        .logCycleModal(isPresented: $showLogCycle, date: Date())
         .task {
             await evaluateProGate()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .floShowCalendar)) { _ in
+            if selectedTab == 0 {
+                NotificationCenter.default.post(name: .floCalendarToToday, object: nil)
+            } else {
+                withAnimation(FloAnimation.tabSwitch) { selectedTab = 0 }
+            }
         }
         .onChange(of: subs.isPro) { _, isPro in
             // Purchased or restored while the gate is up — drop it immediately.
@@ -104,6 +106,10 @@ struct ContentView: View {
     private func evaluateProGate() async {
         guard !hasEvaluatedProGate else { return }
         hasEvaluatedProGate = true
+        #if DEBUG
+        // CI screenshot runs skip the paywall so the real screens show.
+        if ProcessInfo.processInfo.arguments.contains("--screenshots") { return }
+        #endif
         await subs.refreshCustomerInfo()
         if !subs.isPro {
             showProGate = true
@@ -259,7 +265,7 @@ struct FloTabBar: View {
                     filletRadius: filletRadius,
                     plusCenterAboveTop: plusCenterAboveTop
                 )
-                .fill(Color.floCharcoal)
+                .fill(Color.black)
 
                 // Sliding sage capsule under the selected tab.
                 Capsule()
@@ -289,7 +295,14 @@ struct FloTabBar: View {
         let columnWidth = width / 5
         let isSelected = selectedTab == tab.tag
         return Button {
-            guard selectedTab != tab.tag else { return }
+            guard selectedTab != tab.tag else {
+                // Re-tapping Calendar while it's showing jumps back to today.
+                if tab.tag == 0 {
+                    FloHaptics.selection()
+                    NotificationCenter.default.post(name: .floCalendarToToday, object: nil)
+                }
+                return
+            }
             FloHaptics.selection()
             withAnimation(FloAnimation.tabSwitch) {
                 selectedTab = tab.tag
@@ -335,7 +348,7 @@ struct FloTabBar: View {
             }
             .scaleEffect(plusScale)
         }
-        .accessibilityLabel("New entry")
+        .accessibilityLabel("Log period")
         .accessibilityHint("Logs a journal entry for today")
     }
 }
