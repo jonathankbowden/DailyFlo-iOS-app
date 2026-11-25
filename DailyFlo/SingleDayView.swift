@@ -168,20 +168,10 @@ struct SingleDayView: View {
 
     private var actionRow: some View {
         HStack(spacing: 14) {
+            // No Add/Edit entry here: tapping the date on the calendar is the
+            // journal (Brittany's review, Nov 25).
             OutlinedActionButton(title: "Log cycle", icon: "checkmark.circle") {
                 showLogCycle = true
-            }
-
-            if !isFutureDay {
-                if entry == nil {
-                    OutlinedActionButton(title: "Add entry", icon: "plus") {
-                        showJournalEntry = true
-                    }
-                } else {
-                    OutlinedActionButton(title: "Edit entry", icon: "pencil") {
-                        showJournalEntry = true
-                    }
-                }
             }
         }
     }

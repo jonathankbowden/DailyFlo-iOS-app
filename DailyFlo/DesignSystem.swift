@@ -81,6 +81,15 @@ extension Color {
     }
 }
 
+// MARK: - Navigation signals
+extension Notification.Name {
+    /// Switch to the Calendar tab (the FLO wordmark on any screen).
+    static let floShowCalendar = Notification.Name("floShowCalendar")
+    /// Scroll the Calendar back to today (its header icon, or re-tapping the
+    /// Calendar tab while it's showing).
+    static let floCalendarToToday = Notification.Name("floCalendarToToday")
+}
+
 // MARK: - Typography
 extension Font {
     // Display/Headers. Every serif in the app is DM Serif Display

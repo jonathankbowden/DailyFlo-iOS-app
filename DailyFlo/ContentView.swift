@@ -84,6 +84,13 @@ struct ContentView: View {
         .task {
             await evaluateProGate()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .floShowCalendar)) { _ in
+            if selectedTab == 0 {
+                NotificationCenter.default.post(name: .floCalendarToToday, object: nil)
+            } else {
+                withAnimation(FloAnimation.tabSwitch) { selectedTab = 0 }
+            }
+        }
         .onChange(of: subs.isPro) { _, isPro in
             // Purchased or restored while the gate is up — drop it immediately.
             if isPro { showProGate = false }
@@ -288,7 +295,14 @@ struct FloTabBar: View {
         let columnWidth = width / 5
         let isSelected = selectedTab == tab.tag
         return Button {
-            guard selectedTab != tab.tag else { return }
+            guard selectedTab != tab.tag else {
+                // Re-tapping Calendar while it's showing jumps back to today.
+                if tab.tag == 0 {
+                    FloHaptics.selection()
+                    NotificationCenter.default.post(name: .floCalendarToToday, object: nil)
+                }
+                return
+            }
             FloHaptics.selection()
             withAnimation(FloAnimation.tabSwitch) {
                 selectedTab = tab.tag
