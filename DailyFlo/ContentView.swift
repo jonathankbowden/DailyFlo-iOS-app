@@ -263,7 +263,7 @@ struct FloTabBar: View {
                     filletRadius: filletRadius,
                     plusCenterAboveTop: plusCenterAboveTop
                 )
-                .fill(Color.floCharcoal)
+                .fill(Color.black)
 
                 // Sliding sage capsule under the selected tab.
                 Capsule()

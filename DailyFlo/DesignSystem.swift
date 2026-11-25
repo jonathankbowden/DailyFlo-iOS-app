@@ -83,10 +83,13 @@ extension Color {
 
 // MARK: - Typography
 extension Font {
-    // Display/Headers - Lunary font
-    static let floDisplayLarge = Font.custom("LUNARY free", size: 34).weight(.regular)
-    static let floDisplayMedium = Font.custom("LUNARY free", size: 28).weight(.regular)
-    static let floDisplaySmall = Font.custom("LUNARY free", size: 22).weight(.regular)
+    // Display/Headers. Every serif in the app is DM Serif Display
+    // (Brittany's review, Nov 25): one face, set here, so no screen
+    // names a font file directly.
+    static let floSerifFaceName = "DMSerifDisplay-Regular"
+    static let floDisplayLarge = Font.custom(floSerifFaceName, size: 34)
+    static let floDisplayMedium = Font.custom(floSerifFaceName, size: 28)
+    static let floDisplaySmall = Font.custom(floSerifFaceName, size: 22)
 
     // Body text - system font for readability with optimized line height
     static let floBodyLarge = Font.system(size: 17, weight: .regular, design: .default)
@@ -103,15 +106,15 @@ extension Font {
     // Caption for small annotations
     static let floCaption = Font.system(size: 11, weight: .regular, design: .default)
 
-    // Serif font for elegant headings
+    // Serif headings: DM Serif Display.
     static func floSerif(size: CGFloat) -> Font {
-        Font.custom("Times New Roman", size: size)
+        Font.custom(floSerifFaceName, size: size)
     }
 
-    // Lunary display face (lunary-free.otf) at an arbitrary size — the same
-    // custom font used for the app's large greetings/headers.
+    // Historical name kept so call sites don't churn: this was the Lunary
+    // display face and is now the same DM Serif Display as floSerif.
     static func floLunary(size: CGFloat) -> Font {
-        Font.custom("LUNARY free", size: size)
+        Font.custom(floSerifFaceName, size: size)
     }
 }
 
@@ -195,15 +198,17 @@ struct FloRadius {
 
 // MARK: - Shadows
 struct FloShadow {
-    static let small = Shadow(color: .black.opacity(0.04), radius: 4, x: 0, y: 2)
-    static let medium = Shadow(color: .black.opacity(0.08), radius: 8, x: 0, y: 4)
-    static let large = Shadow(color: .black.opacity(0.12), radius: 16, x: 0, y: 8)
-    static let elevated = Shadow(color: .black.opacity(0.16), radius: 24, x: 0, y: 12)
-    // Restyle: soft button lift, raised editor card, and the deep float under big cards.
-    // Figma blur ≈ 2 × SwiftUI radius.
-    static let button = Shadow(color: .black.opacity(0.10), radius: 1.5, x: 0, y: 2)
-    static let raised = Shadow(color: .black.opacity(0.14), radius: 14, x: 0, y: 12)
-    static let deep = Shadow(color: .black.opacity(0.20), radius: 17, x: 0, y: 22)
+    // "As flat as possible" (Brittany's review, Nov 25): every preset draws
+    // nothing. The names stay so call sites don't change; to bring depth
+    // back later, give one preset a value again here.
+    private static let none = Shadow(color: .clear, radius: 0, x: 0, y: 0)
+    static let small = none
+    static let medium = none
+    static let large = none
+    static let elevated = none
+    static let button = none
+    static let raised = none
+    static let deep = none
 
     struct Shadow {
         let color: Color
