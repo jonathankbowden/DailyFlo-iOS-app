@@ -342,7 +342,7 @@ struct FloTabBar: View {
                 Circle()
                     .fill(Color.floSage)
                     .frame(width: plusDiameter, height: plusDiameter)
-                Image(systemName: "plus")
+                FloIcon("plus", size: 23)
                     .font(.system(size: iconSize, weight: .semibold))
                     .foregroundColor(.white)
             }

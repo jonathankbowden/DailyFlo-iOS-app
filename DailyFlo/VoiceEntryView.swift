@@ -160,8 +160,7 @@ struct VoiceEntryView: View {
                     .fill(Color.floSage)
                     .frame(width: 80, height: 80)
                     .overlay(
-                        Image(systemName: "mic.fill")
-                            .font(.system(size: 32, weight: .medium))
+                        FloIcon("mic.fill", size: 37)
                             .foregroundColor(.white)
                     )
                     .shadow(color: Color.floSage.opacity(0.3), radius: 12, x: 0, y: 6)
@@ -325,8 +324,7 @@ struct VoiceEntryView: View {
                     .fill(Color.floSage)
                     .frame(width: 72, height: 72)
                     .overlay(
-                        Image(systemName: "mic.fill")
-                            .font(.system(size: 28, weight: .medium))
+                        FloIcon("mic.fill", size: 32)
                             .foregroundColor(.white)
                     )
                     .shadow(color: Color.floSage.opacity(0.3), radius: 10, x: 0, y: 5)

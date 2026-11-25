@@ -129,8 +129,7 @@ struct PaywallView: View {
                         FloHaptics.light()
                         dismiss()
                     } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 15, weight: .semibold))
+                        FloIcon("xmark", size: 17)
                             .foregroundColor(.floCharcoal.opacity(0.6))
                             .frame(width: 32, height: 32)
                             .background(Color.white.opacity(0.7))
@@ -196,8 +195,7 @@ struct PaywallView: View {
                 Circle()
                     .fill(Color.floMint.opacity(0.5))
                     .frame(width: 36, height: 36)
-                Image(systemName: icon)
-                    .font(.system(size: 16, weight: .medium))
+                FloIcon(icon, size: 18)
                     .foregroundColor(.floTeal)
             }
             VStack(alignment: .leading, spacing: 2) {

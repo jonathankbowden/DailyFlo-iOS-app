@@ -100,8 +100,7 @@ struct SingleDayView: View {
             HStack(alignment: .center, spacing: 14) {
                 // Back, not ✕ (Brittany's review: "no x-ing ever, only back").
                 Button(action: onDismiss) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 18, weight: .medium))
+                    FloIcon("chevron.left", size: 21)
                         .foregroundStyle(Color.black)
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())

@@ -59,8 +59,7 @@ struct SubscriptionDebugView: View {
                 FloHaptics.light()
                 onClose?()
             } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 14, weight: .semibold))
+                FloIcon("xmark", size: 16)
                     .foregroundColor(.floCharcoal.opacity(0.7))
                     .frame(width: 32, height: 32)
                     .background(Color.white)
@@ -173,8 +172,7 @@ struct SubscriptionDebugView: View {
                 Circle()
                     .fill(isPro ? Color.floSage.opacity(0.2) : Color.floGray.opacity(0.15))
                     .frame(width: 44, height: 44)
-                Image(systemName: isPro ? "checkmark.seal.fill" : "lock.fill")
-                    .font(.system(size: 18, weight: .semibold))
+                FloIcon(isPro ? "checkmark.seal.fill" : "lock.fill", size: 21)
                     .foregroundColor(isPro ? .floSage : .floGray)
             }
 

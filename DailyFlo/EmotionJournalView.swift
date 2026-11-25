@@ -116,8 +116,7 @@ struct EmotionJournalView: View {
     // MARK: - Search Bar
     private var searchBar: some View {
         HStack(spacing: FloSpacing.sm) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 16))
+            FloIcon("magnifyingglass", size: 18)
                 .foregroundColor(isSearchFocused ? .floSage : .floGray)
                 .animation(FloAnimation.easeOutQuick, value: isSearchFocused)
 
@@ -133,8 +132,7 @@ struct EmotionJournalView: View {
                     FloHaptics.light()
                     searchText = ""
                 }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 16))
+                    FloIcon("xmark.circle.fill", size: 18)
                         .foregroundColor(.floGray)
                 }
                 .buttonStyle(.floPressed)
@@ -163,8 +161,7 @@ struct EmotionJournalView: View {
                 VStack(spacing: FloSpacing.md) {
                     Spacer().frame(height: FloSpacing.xxl)
 
-                    Image(systemName: "book.closed")
-                        .font(.system(size: 48))
+                    FloIcon("book.closed", size: 55)
                         .foregroundColor(.floGray.opacity(0.4))
 
                     Text("No entries yet")
@@ -181,8 +178,7 @@ struct EmotionJournalView: View {
                 VStack(spacing: FloSpacing.md) {
                     Spacer().frame(height: FloSpacing.xxl)
 
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 36))
+                    FloIcon("magnifyingglass", size: 41)
                         .foregroundColor(.floGray.opacity(0.4))
 
                     Text("No entries match \"\(searchText)\"")
@@ -237,8 +233,7 @@ struct JournalCardView: View {
                 VStack(alignment: .leading, spacing: FloSpacing.xs) {
                     // Emotion chip
                     HStack(spacing: FloSpacing.xs) {
-                        Image(systemName: entry.emotion.icon)
-                            .font(.system(size: 14))
+                        FloIcon(entry.emotion.icon, size: 16)
                         Text(entry.emotion.rawValue.uppercased())
                             .font(.floLabel)
                             .fontWeight(.medium)
@@ -541,8 +536,7 @@ struct JournalFeedView: View {
     }
 
     private func badgeIcon(systemName: String) -> some View {
-        Image(systemName: systemName)
-            .font(.system(size: 16, weight: .medium))
+        FloIcon(systemName, size: 18)
             .foregroundColor(.floCharcoal)
             .allowsHitTesting(false)
     }
@@ -654,8 +648,7 @@ struct JournalDaySheet: View {
                         onDismiss()
                     } label: {
                         HStack(spacing: FloSpacing.xs) {
-                            Image(systemName: "chevron.left")
-                                .font(.system(size: 16, weight: .medium))
+                            FloIcon("chevron.left", size: 18)
                             Text("Journal")
                                 .font(.floBodyMedium)
                         }
@@ -720,8 +713,7 @@ struct JournalDaySheet: View {
                     .fill(entry.emotion.color.opacity(0.15))
                     .frame(width: 44, height: 44)
 
-                Image(systemName: entry.emotion.icon)
-                    .font(.system(size: 18))
+                FloIcon(entry.emotion.icon, size: 21)
                     .foregroundColor(entry.emotion.color)
             }
 
@@ -746,8 +738,7 @@ struct JournalDaySheet: View {
 
             Spacer()
 
-            Image(systemName: "chevron.right")
-                .font(.system(size: 14, weight: .medium))
+            FloIcon("chevron.right", size: 16)
                 .foregroundColor(.floGray)
         }
         .padding(FloSpacing.md)
@@ -758,8 +749,7 @@ struct JournalDaySheet: View {
 
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: FloSpacing.md) {
-            Image(systemName: "leaf")
-                .font(.system(size: 36))
+            FloIcon("leaf", size: 41)
                 .foregroundColor(.floSage.opacity(0.6))
 
             Text("Nothing logged on this day.")
@@ -854,8 +844,7 @@ struct JournalBaseView: View {
 
     private var searchBar: some View {
         HStack(spacing: FloSpacing.sm) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 16))
+            FloIcon("magnifyingglass", size: 18)
                 .foregroundColor(isSearchFocused ? .floSage : .floGray)
                 .animation(FloAnimation.easeOutQuick, value: isSearchFocused)
 
@@ -871,8 +860,7 @@ struct JournalBaseView: View {
                     FloHaptics.light()
                     searchText = ""
                 }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 16))
+                    FloIcon("xmark.circle.fill", size: 18)
                         .foregroundColor(.floGray)
                 }
                 .buttonStyle(.floPressed)
@@ -901,8 +889,7 @@ struct JournalBaseView: View {
                     VStack(spacing: FloSpacing.md) {
                         Spacer().frame(height: FloSpacing.xxl)
 
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 36))
+                        FloIcon("magnifyingglass", size: 41)
                             .foregroundColor(.floGray.opacity(0.4))
 
                         Text("No entries match \"\(searchText)\"")

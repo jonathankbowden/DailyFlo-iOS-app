@@ -430,7 +430,7 @@ extension ButtonStyle where Self == FloPressedStyle {
 ///
 /// Apply it to the `Button` (or the button's `label`) at the call site:
 /// ```swift
-/// Button { … } label: { Image(systemName: "xmark") }
+/// Button { … } label: { FloIcon("xmark", size: 23) }
 ///     .buttonStyle(.floPressed)
 ///     .floHitTarget()               // icon/small button → 44×44 min
 ///
@@ -686,7 +686,7 @@ struct FloToastStyle: ViewModifier {
 
     func body(content: Content) -> some View {
         HStack(spacing: FloSpacing.sm) {
-            Image(systemName: type.icon)
+            FloIcon(type.icon, size: 23)
                 .foregroundColor(.white)
             content
                 .font(.floBodyMedium)
@@ -766,7 +766,7 @@ private extension View {
             HStack(spacing: FloSpacing.xxl) {
                 VStack(spacing: FloSpacing.sm) {
                     Button { } label: {
-                        Image(systemName: "xmark").font(.system(size: 16, weight: .semibold))
+                        FloIcon("xmark", size: 18)
                     }
                     .buttonStyle(.floPressed)
                     .debugHitArea()
@@ -774,7 +774,7 @@ private extension View {
                 }
                 VStack(spacing: FloSpacing.sm) {
                     Button { } label: {
-                        Image(systemName: "xmark").font(.system(size: 16, weight: .semibold))
+                        FloIcon("xmark", size: 18)
                     }
                     .buttonStyle(.floPressed)
                     .floHitTarget()                // ← expands to 44×44, glyph unmoved
@@ -812,7 +812,7 @@ private extension View {
         VStack(alignment: .leading, spacing: FloSpacing.md) {
             Text("Disabled (still not tappable)").font(.floLabel).foregroundColor(.floGray)
             Button { } label: {
-                Image(systemName: "trash").font(.system(size: 16, weight: .semibold))
+                FloIcon("trash", size: 18)
             }
             .buttonStyle(.floPressed)
             .floHitTarget()
