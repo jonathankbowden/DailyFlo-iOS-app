@@ -104,6 +104,10 @@ struct ContentView: View {
     private func evaluateProGate() async {
         guard !hasEvaluatedProGate else { return }
         hasEvaluatedProGate = true
+        #if DEBUG
+        // CI screenshot runs skip the paywall so the real screens show.
+        if ProcessInfo.processInfo.arguments.contains("--screenshots") { return }
+        #endif
         await subs.refreshCustomerInfo()
         if !subs.isPro {
             showProGate = true

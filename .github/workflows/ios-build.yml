@@ -1,0 +1,69 @@
+# Builds every pushed branch (not main — Xcode Cloud owns main) on a GitHub
+# macOS runner, then launches the Debug build in a simulator with
+# --screenshots and uploads PNGs, so changes can be checked without a Mac.
+name: iOS build + screenshots
+
+on:
+  push:
+    branches-ignore: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pick newest Xcode
+        run: |
+          ls -d /Applications/Xcode*.app
+          XC=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
+          sudo xcode-select -s "$XC"
+          xcodebuild -version
+
+      - name: Placeholder Supabase config (never real keys)
+        run: |
+          printf 'SUPABASE_URL = https:/$()/example.supabase.co\nSUPABASE_PUBLISHABLE_KEY = ci-placeholder\n' > SupabaseConfig.xcconfig
+
+      - name: Build for simulator
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project DailyFlo.xcodeproj -scheme DailyFlo -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build CODE_SIGNING_ALLOWED=NO \
+            | tee build.log | grep -E 'error:|warning: .*(deprecated)|BUILD (SUCCEEDED|FAILED)' || true
+          grep -q 'BUILD SUCCEEDED' build.log
+
+      - name: Screenshots
+        if: success()
+        run: |
+          set -x
+          DEV=$(xcrun simctl list devices available -j | python3 -c "import json,sys;d=json.load(sys.stdin)['devices'];print(next(x['udid'] for k,v in sorted(d.items(),reverse=True) if 'iOS' in k for x in v if x['name'].startswith('iPhone 1') and 'Pro' in x['name']))")
+          xcrun simctl boot "$DEV"
+          xcrun simctl bootstatus "$DEV" -b
+          APP=$(find build/Build/Products -name 'DailyFlo.app' -maxdepth 3 | head -1)
+          xcrun simctl install "$DEV" "$APP"
+          BID=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$APP/Info.plist")
+          xcrun simctl launch "$DEV" "$BID" --screenshots
+          sleep 25
+          mkdir -p shots
+          xcrun simctl io "$DEV" screenshot shots/00_live.png
+          DOCS="$(xcrun simctl get_app_container "$DEV" "$BID" data)/Documents"
+          cp "$DOCS"/*.png shots/ || true
+          ls -la shots
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-${{ github.run_number }}
+          path: |
+            build.log
+            shots/
+          retention-days: 7

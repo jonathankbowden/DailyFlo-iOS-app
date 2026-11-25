@@ -35,6 +35,14 @@ struct DailyFloApp: App {
         // Boot Sentry first so any crash during the rest of launch is captured.
         SentryConfig.start()
 
+        #if DEBUG
+        // CI screenshot runs (GitHub Actions) launch straight into the main
+        // app so screens can be captured without a real sign-in.
+        if ProcessInfo.processInfo.arguments.contains("--screenshots") {
+            _appState = State(initialValue: .main)
+        }
+        #endif
+
         // Configure RevenueCat before any caller touches Purchases.shared
         // or SubscriptionManager.shared. Must happen on the first launch
         // tick — the SDK refuses to serve requests until this runs.
