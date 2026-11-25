@@ -40,7 +40,6 @@ struct JournalEntryView: View {
     @State private var isEditing: Bool
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var showLogCycleModal = false
-    @State private var showVoiceEntry = false
     @State private var showDeleteConfirm = false
     /// Drives the photo picker from the "Change photo" menu item (editing mode).
     @State private var showPhotoPicker = false
@@ -146,18 +145,6 @@ struct JournalEntryView: View {
         .presentationDetents([.large])
         .presentationDragIndicator(.hidden)
         .logCycleModal(isPresented: $showLogCycleModal, date: entryDate)
-        .sheet(isPresented: $showVoiceEntry) {
-            VoiceEntryView(
-                onComplete: { title, body in
-                    entryTitle = title
-                    entryBody = body
-                    showVoiceEntry = false
-                },
-                onDismiss: { showVoiceEntry = false }
-            )
-            .presentationDetents([.large])
-            .presentationDragIndicator(.hidden)
-        }
         .onChange(of: selectedPhoto) { _, newItem in
             guard let newItem else { return }
             Task { await importPhoto(newItem) }
@@ -263,7 +250,7 @@ struct JournalEntryView: View {
             withAnimation(FloAnimation.springSnappy) { selectedEmotion = emotion }
         } label: {
             Text(emotion.rawValue)
-                .font(.floLunary(size: 26))
+                .font(.floSerif(size: 20))
                 .foregroundStyle(Color.black)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
@@ -451,23 +438,9 @@ struct JournalEntryView: View {
                     .accessibilityLabel("Entry")
             }
             .padding(.leading, 23)
-            .padding(.trailing, 44)
+            .padding(.trailing, 23)
             .padding(.top, 12)
             .padding(.bottom, FloSpacing.md)
-            .overlay(alignment: .topTrailing) {
-                Button {
-                    FloHaptics.light()
-                    showVoiceEntry = true
-                } label: {
-                    Image(systemName: "mic")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(Color.floDeepTeal)
-                }
-                .buttonStyle(.floPressed)
-                .floHitTarget()
-                .padding(.trailing, 4)
-                .accessibilityLabel("Voice input")
-            }
         }
         .background(Color.white)
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
